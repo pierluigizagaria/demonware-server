@@ -38,5 +38,7 @@ stdout.txt
 /.toolchain/
 /runtime/
 /.npauth/
+/identity/
+/sessions/
 /profiles/
 /*.economy-v2.json
