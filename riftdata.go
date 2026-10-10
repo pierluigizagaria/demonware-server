@@ -21,7 +21,6 @@ package main
 import (
 	"encoding/binary"
 	"errors"
-	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -145,10 +144,10 @@ func riftFile(name string, now time.Time) ([]byte, string, bool) {
 		number := riftChallengeNumber(cfg.ChallengeRifts, now)
 		out, err := patchChallengeConfig(src, number)
 		if err != nil {
-			log.Printf("[D3 Rift] %s: %v", p, err)
+			diagnosticLogf("[D3 Rift] %s: %v", p, err)
 			return nil, "", false
 		}
-		log.Printf("[D3 Rift] config -> challenge %d (mode %q), times never expire", number, cfg.ChallengeRifts.Mode)
+		diagnosticLogf("[D3 Rift] config -> challenge %d (mode %q), times never expire", number, cfg.ChallengeRifts.Mode)
 		return out, p, true
 	}
 	m := riftDataName.FindStringSubmatch(name)
@@ -160,9 +159,9 @@ func riftFile(name string, now time.Time) ([]byte, string, bool) {
 	p := files[n%len(files)]
 	data, err := os.ReadFile(p)
 	if err != nil {
-		log.Printf("[D3 Rift] %s: %v", p, err)
+		diagnosticLogf("[D3 Rift] %s: %v", p, err)
 		return nil, "", false
 	}
-	log.Printf("[D3 Rift] %s -> %s (%d of %d files)", name, filepath.Base(p), n%len(files)+1, len(files))
+	diagnosticLogf("[D3 Rift] %s -> %s (%d of %d files)", name, filepath.Base(p), n%len(files)+1, len(files))
 	return data, p, true
 }

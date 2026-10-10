@@ -22,7 +22,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -45,7 +44,7 @@ func loadGates() {
 	requireAccount = os.Getenv("NEXTENDO_REQUIRE_ACCOUNT") == "1"
 	v := os.Getenv("NEXTENDO_REQUIRE_SIGNED_TOKEN")
 	requireSignedToken = v == "1" || v == "true"
-	log.Printf("[D3 Gates] account=%s secret=%v require_account=%v require_signed_token=%v",
+	diagnosticLogf("[D3 Gates] account=%s secret=%v require_account=%v require_signed_token=%v",
 		accountBaseURL, len(nextendoSecret) > 0, requireAccount, requireSignedToken)
 }
 
@@ -56,7 +55,7 @@ func admitPlayer(id *playerID, nnex, ip string) (bool, string) {
 		pid, ok := nextendoPIDFromToken(nnex)
 		proven = ok && pid == id.PID
 		if !proven {
-			log.Printf("[D3 Gates] pid=%d %q: nx2 not proven by this secret (valid=%v proves=%d)", id.PID, id.Username, ok, pid)
+			diagnosticLogf("[D3 Gates] pid=%d %q: nx2 not proven by this secret (valid=%v proves=%d)", id.PID, id.Username, ok, pid)
 		}
 	}
 	if requireSignedToken && !proven {
@@ -66,14 +65,14 @@ func admitPlayer(id *playerID, nnex, ip string) (bool, string) {
 		if requireAccount {
 			return false, "no Nextendo account in the login token"
 		}
-		log.Printf("[D3 Gates] %q has no Nextendo PID: allowed (NEXTENDO_REQUIRE_ACCOUNT=0)", id.Username)
+		diagnosticLogf("[D3 Gates] %q has no Nextendo PID: allowed (NEXTENDO_REQUIRE_ACCOUNT=0)", id.Username)
 		return true, ""
 	}
 	if allow, reason := nextendoOnlineCheck(id.PID, id.Kind, ip); !allow {
 		if requireAccount {
 			return false, "online-check: " + reason
 		}
-		log.Printf("[D3 Gates] pid=%d online-check refused (%s): allowed (NEXTENDO_REQUIRE_ACCOUNT=0)", id.PID, reason)
+		diagnosticLogf("[D3 Gates] pid=%d online-check refused (%s): allowed (NEXTENDO_REQUIRE_ACCOUNT=0)", id.PID, reason)
 	}
 	return true, ""
 }

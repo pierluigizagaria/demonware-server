@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -40,11 +39,43 @@ func serveAuth() error {
 		return err
 	}
 	if ctrSigner != nil {
-		log.Printf("[CTR Auth] signed replies enabled for title 5775 (client trust mod required)")
+		diagnosticLogf("[CTR Auth] signed replies enabled for title 5775 (client trust mod required)")
 	}
 	dumps := runDumpDir("auth")
 
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := newPlatformAuthHandler(nintendoPlatform{}, ctrSigner, sessDir, dumps)
+
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%d", authPort),
+		Handler: h,
+		// The client is an embedded 2018 curl: don't require TLS 1.2+.
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS10},
+		ReadHeaderTimeout: 15 * time.Second,
+	}
+	ln, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		return err
+	}
+	// Behind sni-router: the PROXY header carries the player's address (proxyproto.go).
+	proxyProto := os.Getenv("NEXTENDO_PROXY_PROTOCOL") == "1"
+	if proxyProto {
+		ln = newProxyListener(ln)
+	}
+	diagnosticLogf("[D3 Auth] listening HTTPS :%d (proxyProto=%v, cert=%s)", authPort, proxyProto, certFile)
+	return srv.ServeTLS(ln, certFile, keyFile)
+}
+
+// clientIP returns the caller's address without the port (127.0.0.1 behind sni-router).
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+func newPlatformAuthHandler(platform platformAuthenticator, ctrSigner *ctrAuthSigner, sessDir, dumps string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := authReqNum.Add(1)
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		r.Body.Close()
@@ -54,12 +85,12 @@ func serveAuth() error {
 		}
 
 		// Request line only: the body carries the player's NSA id_token.
-		log.Printf("[D3 Auth] #%d %s %s%s from %s (%d bytes)", n, r.Method, r.Host, r.URL.RequestURI(), r.RemoteAddr, len(body))
-		if dumps != "" && len(body) > 0 {
+		diagnosticLogf("[D3 Auth] #%d %s %s%s from %s (%d bytes)", n, r.Method, r.Host, r.URL.RequestURI(), r.RemoteAddr, len(body))
+		if !redactLogs && dumps != "" && len(body) > 0 {
 			name := fmt.Sprintf("%03d_%s_%s.bin", n, r.Method,
 				strings.NewReplacer("/", "_", "?", "_", "&", "_", ":", "_").Replace(strings.TrimPrefix(r.URL.RequestURI(), "/")))
 			if err := os.WriteFile(filepath.Join(dumps, name), body, 0o644); err != nil {
-				log.Printf("[D3 Auth] dump: %v", err)
+				diagnosticLogf("[D3 Auth] dump: %v", err)
 			}
 		}
 
@@ -80,9 +111,10 @@ func serveAuth() error {
 		_ = json.Unmarshal(body, &req)
 
 		// Nextendo gates BEFORE issuing any ticket at all (gates.go).
-		id, nnex := playerIdentity(body)
-		if ok, reason := admitPlayer(&id, nnex, clientIP(r)); !ok {
-			log.Printf("[D3 Auth] #%d %q pid=%d kind=%s REFUSED (%s)", n, id.Username, id.PID, id.Kind, reason)
+		id, identityErr := platform.Authenticate(body, clientIP(r))
+		if identityErr != nil {
+			reason := "platform verification failed"
+			diagnosticLogf("[D3 Auth] #%d %q pid=%d kind=%s REFUSED (%s)", n, id.Username, id.PID, id.Kind, reason)
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -115,13 +147,13 @@ func serveAuth() error {
 		// CFriendManager::getFriendByOnlineId(Net::MatchMakingInfo +0x170), and an
 		// id that changes on every connection matches no friend.
 		userID, expiry := uint64(1), uint64(time.Now().Unix()+86400)
-		if titleID == 5775 {
+		if isCTRTitle(titleID) {
 			userID, expiry = id.PID, id.PID
 		}
 		binary.LittleEndian.PutUint64(clientTicket[17:], userID)
 		binary.LittleEndian.PutUint64(clientTicket[25:], expiry)
 		if _, err := rand.Read(clientTicket[33:97]); err != nil { // session key
-			log.Printf("[D3 Auth] rand: %v", err)
+			diagnosticLogf("[D3 Auth] rand: %v", err)
 		}
 		// +97 [24]: the lobby key. The lobby connection (0xBFC8F0) copies a
 		// config block whose bytes 0x88..0xA0 become conn+0x100, the key that
@@ -141,7 +173,7 @@ func serveAuth() error {
 		if err := os.MkdirAll(sessDir, 0o755); err == nil {
 			name := fmt.Sprintf("%d_%x.tkt", time.Now().Unix(), clientTicket[33:37])
 			if err := os.WriteFile(filepath.Join(sessDir, name), clientTicket, 0o644); err != nil {
-				log.Printf("[D3 Auth] session: %v", err)
+				diagnosticLogf("[D3 Auth] session: %v", err)
 			}
 			if raw, err := json.Marshal(id); err == nil {
 				_ = os.WriteFile(filepath.Join(sessDir, fmt.Sprintf("id_%x.json", clientTicket[33:41])), raw, 0o644)
@@ -174,10 +206,7 @@ func serveAuth() error {
 		// bdAntiCheat::reportExtendedAuthInfo gives up and igNetTaskReportExtendedAuthInfo
 		// fails, which fails the WHOLE LSG login sequence: the game retries with backoff, then
 		// goes offline until restart.
-		extra, _ := json.Marshal(map[string]string{
-			"nso_subscription_status": "1",
-			"extended_data":           fmt.Sprintf("nextendo:%d", id.PID),
-		})
+		extra, _ := json.Marshal(platform.AuthData(id))
 
 		resp := struct {
 			AuthTask     string `json:"auth_task"`
@@ -195,10 +224,10 @@ func serveAuth() error {
 			ExtraData:    string(extra),
 		}
 		out, _ := json.Marshal(resp)
-		if titleID == 5775 && ctrSigner != nil {
+		if isCTRTitle(titleID) && ctrSigner != nil {
 			signature, err := ctrSigner.sign(out)
 			if err != nil {
-				log.Printf("[CTR Auth] %v", err)
+				diagnosticLogf("[CTR Auth] %v", err)
 				http.Error(w, "authentication signing failed", http.StatusInternalServerError)
 				return
 			}
@@ -206,37 +235,10 @@ func serveAuth() error {
 		}
 
 		loginsTotal.Add(1)
-		log.Printf("[D3 Auth] #%d %q pid=%d kind=%s -> 200 code=700 auth_task=%s", n, id.Username, id.PID, id.Kind, authTask)
+		diagnosticLogf("[D3 Auth] #%d %q pid=%d kind=%s -> 200 code=700 auth_task=%s", n, id.Username, id.PID, id.Kind, authTask)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(out)
 	})
 
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", authPort),
-		Handler: h,
-		// The client is an embedded 2018 curl: don't require TLS 1.2+.
-		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS10},
-		ReadHeaderTimeout: 15 * time.Second,
-	}
-	ln, err := net.Listen("tcp", srv.Addr)
-	if err != nil {
-		return err
-	}
-	// Behind sni-router: the PROXY header carries the player's address (proxyproto.go).
-	proxyProto := os.Getenv("NEXTENDO_PROXY_PROTOCOL") == "1"
-	if proxyProto {
-		ln = newProxyListener(ln)
-	}
-	log.Printf("[D3 Auth] listening HTTPS :%d (proxyProto=%v, cert=%s)", authPort, proxyProto, certFile)
-	return srv.ServeTLS(ln, certFile, keyFile)
-}
-
-// clientIP returns the caller's address without the port (127.0.0.1 behind sni-router).
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }

@@ -19,7 +19,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -192,7 +191,7 @@ func clampDates(c *pubConfig) {
 		"buff_start": &c.BuffStart, "buff_end": &c.BuffEnd,
 	} {
 		if fixed, changed := clampGameDate(*d); changed {
-			log.Printf("[D3 Pubfiles] %s %q is past 19 Jan 2038, which the game cannot hold: using %q", name, *d, fixed)
+			diagnosticLogf("[D3 Pubfiles] %s %q is past 19 Jan 2038, which the game cannot hold: using %q", name, *d, fixed)
 			*d = fixed
 		}
 	}
@@ -205,7 +204,7 @@ func loadPubConfig(path string) (pubConfig, error) {
 		// First run: write the default file so there is something to edit,
 		// rather than failing.
 		if werr := os.WriteFile(path, defaultPubfiles, 0o644); werr == nil {
-			log.Printf("[D3 Pubfiles] %s created with defaults", path)
+			diagnosticLogf("[D3 Pubfiles] %s created with defaults", path)
 		}
 		return c, nil
 	}
@@ -254,9 +253,9 @@ func writePubfiles(cfgPath, outDir string) error {
 		}
 	}
 	if len(on) == 0 {
-		log.Printf("[D3 Pubfiles] %s: season %d, no community event", outDir, cfg.Season)
+		diagnosticLogf("[D3 Pubfiles] %s: season %d, no community event", outDir, cfg.Season)
 	} else {
-		log.Printf("[D3 Pubfiles] %s: season %d, events: %s", outDir, cfg.Season, strings.Join(on, ", "))
+		diagnosticLogf("[D3 Pubfiles] %s: season %d, events: %s", outDir, cfg.Season, strings.Join(on, ", "))
 	}
 	return nil
 }

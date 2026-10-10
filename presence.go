@@ -16,7 +16,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -70,7 +69,7 @@ func startPresenceReporter() {
 	base := envOr("NEXTENDO_ACCOUNT_URL", "http://127.0.0.1:8080")
 	key := os.Getenv("NEXTENDO_INTERNAL_KEY")
 	client := &http.Client{Timeout: 5 * time.Second}
-	log.Printf("[presence] reporting players to %s/internal/presence-batch every %s", base, presenceInterval)
+	diagnosticLogf("[presence] reporting players to %s/internal/presence-batch every %s", base, presenceInterval)
 	go func() {
 		lastLogged := map[string]int{}
 		for {
@@ -95,12 +94,12 @@ func startPresenceReporter() {
 				}
 				resp, err := client.Do(req)
 				if err != nil {
-					log.Printf("[presence] %v", err)
+					diagnosticLogf("[presence] %v", err)
 					continue
 				}
 				resp.Body.Close()
 				if resp.StatusCode != http.StatusOK || len(pids) != lastLogged[app] {
-					log.Printf("[presence] app=%s %d player(s) %v -> HTTP %d", app, len(pids), pids, resp.StatusCode)
+					diagnosticLogf("[presence] app=%s %d player(s) %v -> HTTP %d", app, len(pids), pids, resp.StatusCode)
 					lastLogged[app] = len(pids)
 				}
 			}

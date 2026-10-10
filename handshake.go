@@ -33,7 +33,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -98,13 +97,17 @@ type lobbyConn struct {
 }
 
 func (l *lobbyConn) logf(format string, a ...any) {
-	log.Printf("#%d "+format, append([]any{l.n}, a...)...)
+	diagnosticLogf("#%d "+format, append([]any{l.n}, a...)...)
 }
 
 func (l *lobbyConn) readFull(n int) ([]byte, error) {
 	b := make([]byte, n)
 	// Long: a connection kept silent must last as long as the game keeps it.
-	_ = l.c.SetReadDeadline(time.Now().Add(30 * time.Minute))
+	if l.keys == nil {
+		_ = l.c.SetReadDeadline(time.Now().Add(15 * time.Second))
+	} else {
+		_ = l.c.SetReadDeadline(time.Time{})
+	}
 	_, err := io.ReadFull(l.c, b)
 	return b, err
 }
@@ -136,7 +139,7 @@ func (l *lobbyConn) send(b []byte) error {
 }
 
 func (l *lobbyConn) dump(tag string, b []byte) {
-	if l.dumpDir == "" {
+	if redactLogs || l.dumpDir == "" {
 		return
 	}
 	name := fmt.Sprintf("lobby_%03d_%s.bin", l.n, tag)

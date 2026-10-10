@@ -19,7 +19,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -169,7 +168,7 @@ func generatedPubfile(name string, now time.Time) ([]byte, string, bool) {
 	}
 	cfg, err := loadPubConfig(pubConfigPath)
 	if err != nil {
-		log.Printf("[D3 Season] %s: %v", pubConfigPath, err)
+		diagnosticLogf("[D3 Season] %s: %v", pubConfigPath, err)
 		return nil, "", false
 	}
 	eff := effectiveConfig(cfg, now)
@@ -180,7 +179,7 @@ func generatedPubfile(name string, now time.Time) ([]byte, string, bool) {
 // logGenerated records what a generated file was served with.
 func logGenerated(name string, c pubConfig) {
 	if strings.Contains(name, "season") {
-		log.Printf("[D3 Season] %s -> season %d, start %s, end %s", name, c.Season, c.SeasonStart, c.SeasonEnd)
+		diagnosticLogf("[D3 Season] %s -> season %d, start %s, end %s", name, c.Season, c.SeasonStart, c.SeasonEnd)
 		return
 	}
 	var on []string
@@ -189,5 +188,5 @@ func logGenerated(name string, c pubConfig) {
 			on = append(on, e)
 		}
 	}
-	log.Printf("[D3 Season] %s -> season %d, %d events on: %s", name, c.Season, len(on), strings.Join(on, " "))
+	diagnosticLogf("[D3 Season] %s -> season %d, %d events on: %s", name, c.Season, len(on), strings.Join(on, " "))
 }

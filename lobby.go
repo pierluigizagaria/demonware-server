@@ -24,7 +24,7 @@ func startLobby() {
 		}
 		ln, err := net.Listen("tcp", ":"+p)
 		if err != nil {
-			log.Printf("[D3 Lobby] port %s unavailable: %v", p, err)
+			diagnosticLogf("[D3 Lobby] port %s unavailable: %v", p, err)
 			continue
 		}
 		opened++
@@ -46,5 +46,5 @@ func startLobby() {
 	if opened == 0 {
 		log.Fatal("[D3 Lobby] no port could be opened")
 	}
-	log.Printf("[D3 Lobby] listening TCP %s (%d port(s), dumps=%v)", lobbyPorts, opened, dumps != "")
+	diagnosticLogf("[D3 Lobby] listening TCP %s (%d port(s), dumps=%v)", lobbyPorts, opened, dumps != "")
 }

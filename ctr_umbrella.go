@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,12 +35,12 @@ func handleCTRUmbrella(w http.ResponseWriter, r *http.Request, body []byte, n ui
 		if len(preview) > 300 {
 			preview = preview[:300]
 		}
-		log.Printf("[CTR Umbrella] #%d %s -> %d (%s) body=%s", n, r.URL.RequestURI(), code, reason, preview)
+		diagnosticLogf("[CTR Umbrella] #%d %s -> %d (%s) body=%s", n, r.URL.RequestURI(), code, reason, preview)
 		http.Error(w, reason, code)
 	}
-	if dumps != "" && len(body) > 0 {
+	if !redactLogs && dumps != "" && len(body) > 0 {
 		if err := os.WriteFile(filepath.Join(dumps, fmt.Sprintf("%03d_umbrella.json", n)), body, 0o644); err != nil {
-			log.Printf("[CTR Umbrella] dump: %v", err)
+			diagnosticLogf("[CTR Umbrella] dump: %v", err)
 		}
 	}
 	if r.Method != http.MethodPost {
@@ -56,12 +55,12 @@ func handleCTRUmbrella(w http.ResponseWriter, r *http.Request, body []byte, n ui
 		deny(400, fmt.Sprintf("unreadable request: %v", err))
 		return
 	}
-	if req.TitleID != 5775 {
+	if !isCTRTitle(uint32(req.TitleID)) {
 		deny(400, fmt.Sprintf("unexpected title %d", req.TitleID))
 		return
 	}
 	ticket, err := base64.StdEncoding.DecodeString(req.Ticket)
-	if err != nil || len(ticket) != 128 || binary.LittleEndian.Uint32(ticket[:4]) != ticketMagic || binary.LittleEndian.Uint32(ticket[5:9]) != 5775 {
+	if err != nil || len(ticket) != 128 || binary.LittleEndian.Uint32(ticket[:4]) != ticketMagic || binary.LittleEndian.Uint32(ticket[5:9]) != uint32(req.TitleID) {
 		deny(401, fmt.Sprintf("invalid ticket (decoded %d bytes, err %v)", len(ticket), err))
 		return
 	}
@@ -95,7 +94,7 @@ func handleCTRUmbrella(w http.ResponseWriter, r *http.Request, body []byte, n ui
 		deny(500, "token generation failed")
 		return
 	}
-	log.Printf("[CTR Umbrella] #%d pid=%d -> 200 (lsg token issued)", n, id.PID)
+	diagnosticLogf("[CTR Umbrella] #%d pid=%d -> 200 (lsg token issued)", n, id.PID)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
 		ID       uint64 `json:"umbrellaID"`

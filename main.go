@@ -69,12 +69,12 @@ func envOrInt(key string, def int) int {
 // runDumpDir returns this run's capture directory for one component, "" when
 // captures are off.
 func runDumpDir(component string) string {
-	if dumpRoot == "off" || dumpRoot == "0" {
+	if redactLogs || dumpRoot == "off" || dumpRoot == "0" {
 		return ""
 	}
 	dir := filepath.Join(dumpRoot, runStamp, component)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		log.Printf("[D3] dumps %s: %v", dir, err)
+		diagnosticLogf("[D3] dumps %s: %v", dir, err)
 		return ""
 	}
 	return dir
@@ -96,7 +96,7 @@ func main() {
 		log.Fatalf("[D3] sessions dir: %v", err)
 	}
 	if err := writePubfiles(pubConfigPath, pubDir); err != nil {
-		log.Printf("[D3 Pubfiles] %v", err)
+		diagnosticLogf("[D3 Pubfiles] %v", err)
 	}
 	loadGates()
 	loadWallets()

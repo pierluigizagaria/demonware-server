@@ -32,3 +32,11 @@ stdout.txt
 /wallets/
 /economy-v2.json
 /ctr-leaderboards-v1.json
+
+# Component-owned private validation state
+/.cache/
+/.toolchain/
+/runtime/
+/.npauth/
+/profiles/
+/*.economy-v2.json

@@ -17,7 +17,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"sort"
 	"sync"
@@ -385,8 +384,8 @@ func startDashboard() {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 	mux.HandleFunc("/pubfiles/", pubfilesHandler)
 
-	log.Printf("[D3 Dashboard] stats API on :%s (token=%v)", port, token != "")
+	diagnosticLogf("[D3 Dashboard] stats API on :%s (token=%v)", port, token != "")
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		log.Printf("[D3 Dashboard] HTTP error: %v", err)
+		diagnosticLogf("[D3 Dashboard] HTTP error: %v", err)
 	}
 }

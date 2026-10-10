@@ -234,6 +234,10 @@ func taskReply(task byte, errCode uint32, results func(w *bdWriter) uint32) []by
 
 // onTask handles a decrypted request. payload = bytes after the inner type.
 func (l *lobbyConn) onTask(payload []byte) {
+	if len(payload) == 18 && payload[0] == 18 && payload[1] == 1 && payload[2] == 0 && payload[3] == 1 {
+		_ = l.sendEncrypted(innerTaskReply, taskReply(1, errUnhandled, nil))
+		return
+	}
 	if len(payload) < 3 {
 		l.logf("task: payload too short %X", payload)
 		return
@@ -258,7 +262,9 @@ func (l *lobbyConn) onTask(payload []byte) {
 
 	var reply []byte
 	switch {
-	case service == 4 && l.player != nil && l.player.Title == 5775:
+	case service == 38 && task == 6:
+		reply = l.onPlatformIdentityReport(task, r)
+	case service == 4 && l.player != nil && isCTRTitle(l.player.Title):
 		reply = l.onCTRStats(task, r)
 	case service == svcTitleUtilities && task == taskGetServerTime:
 		now := uint32(time.Now().Unix())
