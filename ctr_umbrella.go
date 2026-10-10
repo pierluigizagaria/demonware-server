@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
@@ -65,28 +64,9 @@ func handleCTRUmbrella(w http.ResponseWriter, r *http.Request, body []byte, n ui
 		return
 	}
 	// Accept only a ticket issued by this private server, not arbitrary claims.
-	files, _ := filepath.Glob(filepath.Join(sessDir, "*.tkt"))
-	issued := false
-	for _, f := range files {
-		b, e := os.ReadFile(f)
-		if e == nil && bytes.Equal(b, ticket) {
-			issued = true
-			break
-		}
-	}
-	if !issued {
-		deny(401, fmt.Sprintf("ticket not issued here (%d on file)", len(files)))
-		return
-	}
-	// +25 carries the online id for CTR: age is read from the issue time (+13).
-	if issued := binary.LittleEndian.Uint32(ticket[13:17]); time.Since(time.Unix(int64(issued), 0)) > 24*time.Hour {
-		deny(401, fmt.Sprintf("ticket issued at %d is too old", issued))
-		return
-	}
-	raw, err := os.ReadFile(filepath.Join(sessDir, fmt.Sprintf("id_%x.json", ticket[33:41])))
-	var id playerID
-	if err != nil || json.Unmarshal(raw, &id) != nil || id.PID == 0 {
-		deny(401, fmt.Sprintf("unknown account: %v", err))
+	id, ok := umbrellaTicketPlayer(ticket)
+	if !ok {
+		deny(401, "ticket not issued here, too old or without identity")
 		return
 	}
 	token := make([]byte, 32)
@@ -102,4 +82,16 @@ func handleCTRUmbrella(w http.ResponseWriter, r *http.Request, body []byte, n ui
 		Expires  int64  `json:"expires"`
 		Accounts []any  `json:"accounts"`
 	}{id.PID, base64.RawURLEncoding.EncodeToString(token), time.Now().Add(time.Hour).Unix(), []any{}})
+}
+
+// umbrellaTicketPlayer applies the platform's fresh issued-ticket admission;
+// otherwise it keeps the original rule: issued here within 24 hours.
+func umbrellaTicketPlayer(ticket []byte) (*playerID, bool) {
+	if activePolicy.IssuedTickets {
+		return issuedTicketPlayer(sessDir, ticket, time.Now(), activePolicy.TicketWindow)
+	}
+	if !ticketWasIssued(sessDir, ticket) || time.Since(time.Unix(int64(binary.LittleEndian.Uint32(ticket[13:17])), 0)) > 24*time.Hour {
+		return nil, false
+	}
+	return storedIdentity(sessDir, ticket)
 }

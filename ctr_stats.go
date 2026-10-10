@@ -214,7 +214,7 @@ func (l *lobbyConn) onCTRStats(task byte, r *bdReader) []byte {
 	onlineMu.Lock()
 	p := online[l.n]
 	name := ""
-	allowed := p != nil && p.Title == 5775 && pid != 0
+	allowed := p != nil && isCTRTitle(p.Title) && pid != 0
 	if allowed {
 		name = p.Username
 	}

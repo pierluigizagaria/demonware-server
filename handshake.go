@@ -149,7 +149,7 @@ func (l *lobbyConn) dump(tag string, b []byte) {
 func (l *lobbyConn) run() {
 	defer l.c.Close()
 	defer dropSessionsOf(l.n)
-	defer ctrMM.leave(l, 0)
+	defer func() { sendCTRNotices(ctrMM.leave(l, 0)) }()
 	defer dropOnline(l.n)
 	l.logf("==== CONNECT from=%s", l.c.RemoteAddr())
 
@@ -293,6 +293,15 @@ func (l *lobbyConn) candidates(raw []byte) []keyCand {
 			keyCand{name + "[97:121]", append([]byte{}, t[97:121]...)},
 			keyCand{name + "[33:57]", append([]byte{}, t[33:57]...)},
 		)
+	}
+	if activePolicy.IssuedTickets {
+		// Only a fresh ticket issued here may key the handshake.
+		if t := findTicket(raw); t != nil {
+			if _, ok := issuedTicketPlayer(l.sessDir, t, time.Now(), activePolicy.TicketWindow); ok {
+				add("issued-ticket", t)
+			}
+		}
+		return out
 	}
 	if t := findTicket(raw); t != nil {
 		add("ticket-0x82", t)

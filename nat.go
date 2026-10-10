@@ -31,6 +31,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 )
@@ -44,7 +45,7 @@ var (
 )
 
 func serveNAT(port int) {
-	pc, err := net.ListenPacket("udp", fmt.Sprintf(":%d", port))
+	pc, err := net.ListenPacket("udp", net.JoinHostPort(bindAddr, strconv.Itoa(port)))
 	if err != nil {
 		diagnosticLogf("[D3 NAT] udp %d unavailable: %v", port, err)
 		return

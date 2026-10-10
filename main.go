@@ -34,6 +34,8 @@ var (
 	natPort      = envOrInt("NAT_PORT", 3074)
 	certFile     = envOr("CERT_FILE", "cert.pem")
 	keyFile      = envOr("KEY_FILE", "key.pem")
+	// BIND_ADDR restricts the network listeners (default: all interfaces).
+	bindAddr = os.Getenv("BIND_ADDR")
 
 	// Tickets and player identities written by auth, read back by the lobby.
 	sessDir = envOr("D3_SESSIONS", "sessions")
@@ -92,6 +94,11 @@ func main() {
 		return
 	}
 
+	platform, err := selectPlatform()
+	if err != nil {
+		log.Fatalf("[D3] platform: %v", err)
+	}
+	activePolicy = platform.Policy()
 	if err := os.MkdirAll(sessDir, 0o755); err != nil {
 		log.Fatalf("[D3] sessions dir: %v", err)
 	}
@@ -102,13 +109,31 @@ func main() {
 	loadWallets()
 
 	go startDashboard()
-	startPresenceReporter()
+	if _, nintendo := platform.(nintendoPlatform); nintendo {
+		startPresenceReporter() // reports Nextendo account PIDs only
+	}
 	go serveNAT(natPort)
 	startCTRRelay(envOrInt("CTR_RELAY_PORT_LOW", 0), envOrInt("CTR_RELAY_PORT_HIGH", 0), nextendoHost)
 	go reapSessions()
 	startLobby()
 
-	if err := serveAuth(); err != nil {
+	if err := serveAuth(platform); err != nil {
 		log.Fatalf("[D3 Auth] stopped: %v", err)
 	}
+}
+
+// selectPlatform installs the PS4 identity adapter when CTR_AUTH_CONFIG names
+// a shadNet trust policy; otherwise the original Nintendo admission runs.
+// PS4 tickets live in a directory namespaced by issuer, application and title.
+func selectPlatform() (platformAuthenticator, error) {
+	path := os.Getenv("CTR_AUTH_CONFIG")
+	if path == "" {
+		return nintendoPlatform{}, nil
+	}
+	p, err := loadPSNPlatform(path)
+	if err != nil {
+		return nil, err
+	}
+	sessDir = filepath.Join(sessDir, p.ticketNamespace)
+	return p, nil
 }

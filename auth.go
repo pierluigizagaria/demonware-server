@@ -33,20 +33,23 @@ const ticketMagic uint32 = 0xEFBDADDE
 
 var authReqNum atomic.Uint64
 
-func serveAuth() error {
+func serveAuth(platform platformAuthenticator) error {
 	ctrSigner, err := loadCTRAuthSigner(os.Getenv("CTR_AUTH_SIGNING_KEY"))
 	if err != nil {
 		return err
+	}
+	if platform.Policy().SignedResponses && ctrSigner == nil {
+		return fmt.Errorf("this platform requires CTR_AUTH_SIGNING_KEY")
 	}
 	if ctrSigner != nil {
 		diagnosticLogf("[CTR Auth] signed replies enabled for title 5775 (client trust mod required)")
 	}
 	dumps := runDumpDir("auth")
 
-	h := newPlatformAuthHandler(nintendoPlatform{}, ctrSigner, sessDir, dumps)
+	h := newPlatformAuthHandler(platform, ctrSigner, sessDir, dumps)
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", authPort),
+		Addr:    net.JoinHostPort(bindAddr, strconv.Itoa(authPort)),
 		Handler: h,
 		// The client is an embedded 2018 curl: don't require TLS 1.2+.
 		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS10},
@@ -118,6 +121,12 @@ func newPlatformAuthHandler(platform platformAuthenticator, ctrSigner *ctrAuthSi
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
+		policy := platform.Policy()
+		if policy.SignedResponses && ctrSigner == nil {
+			diagnosticLogf("[D3 Auth] #%d refused: this platform requires signed responses", n)
+			http.Error(w, "authentication signing unavailable", http.StatusInternalServerError)
+			return
+		}
 
 		// The client reads the ticket's first 4 bytes and compares them to the
 		// magic 0xEFBDADDE (bytes DE AD BD EF), resolved via an
@@ -138,6 +147,9 @@ func newPlatformAuthHandler(platform platformAuthenticator, ctrSigner *ctrAuthSi
 		titleID := uint32(5745)
 		if v, err := strconv.ParseUint(req.TitleID, 10, 32); err == nil && v != 0 {
 			titleID = uint32(v)
+		}
+		if id.Title != 0 {
+			titleID = id.Title // verified by the platform, not just announced
 		}
 		binary.LittleEndian.PutUint32(clientTicket[5:], titleID)
 		binary.LittleEndian.PutUint32(clientTicket[9:], 0) // reserve
@@ -170,7 +182,13 @@ func newPlatformAuthHandler(platform platformAuthenticator, ctrSigner *ctrAuthSi
 		// The lobby recovers the session key by trying recently issued
 		// tickets: the 0x82's tag picks the right one. The player's identity
 		// (online friends, presence) is recovered from the 8-byte key.
-		if err := os.MkdirAll(sessDir, 0o755); err == nil {
+		if policy.IssuedTickets {
+			if err := persistTicket(sessDir, clientTicket, id); err != nil {
+				diagnosticLogf("[D3 Auth] #%d session persistence failed: %v", n, err)
+				http.Error(w, "session persistence failed", http.StatusInternalServerError)
+				return
+			}
+		} else if err := os.MkdirAll(sessDir, 0o755); err == nil {
 			name := fmt.Sprintf("%d_%x.tkt", time.Now().Unix(), clientTicket[33:37])
 			if err := os.WriteFile(filepath.Join(sessDir, name), clientTicket, 0o644); err != nil {
 				diagnosticLogf("[D3 Auth] session: %v", err)

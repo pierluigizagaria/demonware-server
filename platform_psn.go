@@ -55,6 +55,12 @@ func (psnPlatform) AuthData(id playerID) map[string]string {
 	return map[string]string{"extended_data": fmt.Sprintf("nextendo:shadnet:%d", id.PID)}
 }
 
+// PS4 credentials expire after 120 seconds, so a publisher ticket admits only
+// a fresh connection; established sessions are never cut off afterwards.
+func (psnPlatform) Policy() platformPolicy {
+	return platformPolicy{IssuedTickets: true, TicketWindow: 120 * time.Second, SignedResponses: true}
+}
+
 func loadPSNPlatform(configPath string) (psnPlatform, error) {
 	verifier, err := shadnet.Load(configPath)
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"sort"
 	"sync"
@@ -207,7 +208,7 @@ func buildGameStats(game string) apiStats {
 	onlineMu.Lock()
 	who := make(map[uint64]playerID, len(online))
 	for n, p := range online {
-		if (game == "ctr" && p.Title != 5775) || (game == "d3" && p.Title == 5775) {
+		if (game == "ctr" && !isCTRTitle(p.Title)) || (game == "d3" && isCTRTitle(p.Title)) {
 			continue
 		}
 		who[n] = *p
@@ -230,7 +231,7 @@ func buildGameStats(game string) apiStats {
 	gs := make([]apiGathering, 0, len(snaps))
 	for _, s := range snaps {
 		host, live := who[s.owner]
-		if !live || host.PID == 0 || host.Title == 5775 {
+		if !live || host.PID == 0 || isCTRTitle(host.Title) {
 			continue
 		}
 		state := "searching"
@@ -385,7 +386,7 @@ func startDashboard() {
 	mux.HandleFunc("/pubfiles/", pubfilesHandler)
 
 	diagnosticLogf("[D3 Dashboard] stats API on :%s (token=%v)", port, token != "")
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	if err := http.ListenAndServe(net.JoinHostPort(bindAddr, port), mux); err != nil {
 		diagnosticLogf("[D3 Dashboard] HTTP error: %v", err)
 	}
 }

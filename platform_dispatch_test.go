@@ -88,7 +88,7 @@ func TestSharedPS4AuthUsesInjectedVerifier(t *testing.T) {
 		return platform.Identity{AccountID: 17, Subject: "17", OnlineID: "fixture"}, nil
 	})}
 	dir := t.TempDir()
-	handler := newPlatformAuthHandler(p, nil, dir, "")
+	handler := newPlatformAuthHandler(p, testCTRSigner(t), dir, "")
 	call := func() *httptest.ResponseRecorder {
 		body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
 		w := httptest.NewRecorder()

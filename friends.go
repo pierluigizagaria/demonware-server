@@ -349,3 +349,64 @@ func pidOnline(id uint64) uint64 {
 	}
 	return 0
 }
+
+// onGetUserIDs answers bdTitleUtilities.getUserIDs (12/10): online IDs to
+// account IDs. Players connected now win; otherwise an identity this server
+// has already issued a ticket to still resolves, so a friend who logged in
+// first is found even before they connect to the lobby. Resolving an
+// identity does not make it joinable: only live sessions are advertised.
+func (l *lobbyConn) onGetUserIDs(task byte, r *bdReader) []byte {
+	count, err := r.u32()
+	if err != nil || count == 0 || count > 500 {
+		return taskReply(task, errUnhandled, nil)
+	}
+	names := make([]string, 0, count)
+	for i := uint32(0); i < count; i++ {
+		name, err := r.str()
+		if err != nil || name == "" || len(name) > 63 {
+			return taskReply(task, errUnhandled, nil)
+		}
+		names = append(names, name)
+	}
+	known := knownIdentities(l.sessDir)
+	onlineMu.Lock()
+	for _, p := range online {
+		known[strings.ToLower(p.Username)] = p
+	}
+	onlineMu.Unlock()
+	var found []*playerID
+	for _, name := range names {
+		if p := known[strings.ToLower(name)]; p != nil && p.PID != 0 {
+			found = append(found, p)
+		}
+	}
+	l.logf("friends getUserIDs %d request(s) -> %d resolved", len(names), len(found))
+	return taskReply(task, 0, func(w *bdWriter) uint32 {
+		for _, p := range found {
+			w.u64(p.PID)
+			w.str(p.Username)
+		}
+		return uint32(len(found))
+	})
+}
+
+// knownIdentities indexes the identities recorded at ticket issuance by
+// lower-case name, keeping the most recently written one per name.
+func knownIdentities(dir string) map[string]*playerID {
+	known := map[string]*playerID{}
+	newest := map[string]time.Time{}
+	files, _ := filepath.Glob(filepath.Join(dir, "id_*.json"))
+	for _, file := range files {
+		info, err := os.Stat(file)
+		raw, err2 := os.ReadFile(file)
+		var id playerID
+		if err != nil || err2 != nil || json.Unmarshal(raw, &id) != nil || id.PID == 0 || id.Username == "" {
+			continue
+		}
+		key := strings.ToLower(id.Username)
+		if info.ModTime().After(newest[key]) || known[key] == nil {
+			known[key], newest[key] = &id, info.ModTime()
+		}
+	}
+	return known
+}

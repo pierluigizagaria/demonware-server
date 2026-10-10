@@ -44,7 +44,8 @@ func keySet(key *rsa.PrivateKey) []byte {
 func tokenClaims() map[string]any {
 	return map[string]any{"iss": "https://issuer.example.test", "aud": "test-app", "sub": "17",
 		"iat": 1000, "exp": 1120, "jti": base64.RawURLEncoding.EncodeToString(make([]byte, 16)),
-		"online_id": "FixtureUser", "np_title_id": "CUSA00000", "scope": "openid:duid openid"}
+		"online_id": "FixtureUser", "np_title_id": "CUSA00000", "scope": "openid:duid openid",
+		"env_iss_id": 256, "duid": strings.Repeat("0123456789abcdef", 4)}
 }
 
 func signRaw(t *testing.T, key *rsa.PrivateKey, head, body []byte) string {
@@ -109,6 +110,9 @@ func TestVerifyRejectsWrongClaims(t *testing.T) {
 		{"fractional time", "iat", 1000.5}, {"null time", "iat", nil},
 		{"time overflow", "iat", json.Number("9223372036854775807")},
 		{"nonce", "jti", "short"}, {"unexpected nbf", "nbf", 1000}, {"legacy title", "title_id", "5760"},
+		{"other environment", "env_iss_id", 1}, {"string environment", "env_iss_id", "256"},
+		{"short duid", "duid", "0123456789abcdef"}, {"non-hex duid", "duid", strings.Repeat("z", 64)},
+		{"numeric duid", "duid", 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,6 +129,34 @@ func TestVerifyRejectsWrongClaims(t *testing.T) {
 		if _, err := v.Verify(signToken(t, key, claims), time.Unix(1001, 0)); err == nil {
 			t.Fatalf("missing %s accepted", field)
 		}
+	}
+}
+
+func TestVerifyDeviceClaimFollowsGrantedScope(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := New(Policy{"https://issuer.example.test", "test-app", "CUSA00000", []string{"openid"}}, keySet(key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := tokenClaims()
+	claims["scope"] = "openid"
+	delete(claims, "duid")
+	if _, err := v.Verify(signToken(t, key, claims), time.Unix(1001, 0)); err != nil {
+		t.Fatal("openid-only credential refused")
+	}
+	claims["duid"] = strings.Repeat("ab", 32)
+	if _, err := v.Verify(signToken(t, key, claims), time.Unix(1001, 0)); err == nil {
+		t.Fatal("device claim accepted without its granted scope")
+	}
+	// The original caller's hex parser accepts either letter case.
+	strict, strictKey, _, _ := issuerFixture(t)
+	upper := tokenClaims()
+	upper["duid"] = strings.Repeat("AB", 32)
+	if _, err := strict.Verify(signToken(t, strictKey, upper), time.Unix(1001, 0)); err != nil {
+		t.Fatal("upper-case device identifier refused")
 	}
 }
 

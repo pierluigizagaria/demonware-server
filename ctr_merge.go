@@ -12,6 +12,43 @@ func mergeOpen(r *ctrRoom) bool {
 	return open && r.connected() == r.occupancy() && r.occupancy() > 0
 }
 
+// Older host documents omit these fields. Preserve their existing behavior,
+// but honor each explicit capability independently when a client supplies it.
+func mergeEligible(r *ctrRoom, field string) bool {
+	rules, _ := r.hostDoc["ruleset_payload"].(map[string]any)
+	v, present := rules[field]
+	if !present {
+		return true
+	}
+	allowed, _ := v.(bool)
+	return allowed
+}
+
+func (m *ctrMatchmaker) cancelMerge(dst *ctrRoom) []ctrNotice {
+	src := dst.mergeSource
+	if src == nil {
+		return nil
+	}
+	dst.mergeSource = nil
+	src.mergeTarget = 0
+	dst.version++
+	dst.hostDoc["update_id"] = dst.version
+	dst.host.conn.logf("CTR merge cancelled source=%d destination=%d", src.id, dst.id)
+	return []ctrNotice{dst.notice(dst.host, ctrUpdateLobby)}
+}
+
+// Membership changes invalidate the reservation acknowledged by the host.
+// The adapter calls this under the matchmaker lock before a departure/retry.
+func (m *ctrMatchmaker) cancelRoomMerge(r *ctrRoom) []ctrNotice {
+	if r.mergeSource != nil {
+		return m.cancelMerge(r)
+	}
+	if dst := m.rooms[r.mergeTarget]; dst != nil && dst.mergeSource == r {
+		return m.cancelMerge(dst)
+	}
+	return nil
+}
+
 func disjointRooms(a, b *ctrRoom) bool {
 	seen := map[uint64]bool{}
 	for _, p := range a.players {
@@ -33,16 +70,17 @@ func (m *ctrMatchmaker) startMerge(dst *ctrRoom) []ctrNotice {
 	if dst.mergeTarget != 0 && m.rooms[dst.mergeTarget] == nil {
 		dst.mergeTarget = 0
 	}
-	if dst.mergeTarget != 0 || dst.mergeSource != nil || !mergeOpen(dst) {
+	if dst.mergeTarget != 0 || dst.mergeSource != nil || !mergeOpen(dst) || !mergeEligible(dst, "is_merge_dst") {
 		return nil
 	}
 	candidates := []*ctrRoom{}
 	for _, src := range m.rooms {
-		if src == dst || src.mergeTarget != 0 || src.mergeSource != nil || !mergeOpen(src) || src.host.filter != dst.host.filter {
+		if src == dst || src.mergeTarget != 0 || src.mergeSource != nil || !mergeOpen(src) || !mergeEligible(src, "is_merge_src") || src.host.filter != dst.host.filter {
 			continue
 		}
 		// A stable direction avoids reciprocal merges and moves fewer players.
-		if src.occupancy() > dst.occupancy() || (src.occupancy() == dst.occupancy() && src.id < dst.id) {
+		if mergeEligible(src, "is_merge_dst") && mergeEligible(dst, "is_merge_src") &&
+			(src.occupancy() > dst.occupancy() || (src.occupancy() == dst.occupancy() && src.id < dst.id)) {
 			continue
 		}
 		if src.occupancy()+dst.occupancy() > min(src.capacity, dst.capacity) || !disjointRooms(src, dst) {
@@ -81,7 +119,14 @@ func (m *ctrMatchmaker) finishMerge(dst *ctrRoom) []ctrNotice {
 		return nil
 	}
 	open, _ := dst.hostDoc["lobby_open"].(bool)
-	valid := m.rooms[src.id] == src && src.mergeTarget == dst.id && open && mergeOpen(src) && disjointRooms(dst, src)
+	seats := 0
+	for _, p := range dst.players {
+		seats += len(p.doc.Members)
+	}
+	valid := m.rooms[src.id] == src && src.mergeTarget == dst.id && open &&
+		dst.connected() == seats && mergeOpen(src) && disjointRooms(dst, src) &&
+		mergeEligible(dst, "is_merge_dst") && mergeEligible(src, "is_merge_src") &&
+		dst.occupancy() <= min(dst.capacity, src.capacity)
 	for _, p := range src.players {
 		for _, pid := range p.doc.Members {
 			if dst.state(pid) == 3 {
@@ -90,12 +135,7 @@ func (m *ctrMatchmaker) finishMerge(dst *ctrRoom) []ctrNotice {
 		}
 	}
 	if !valid {
-		dst.mergeSource = nil
-		src.mergeTarget = 0
-		dst.version++
-		dst.hostDoc["update_id"] = dst.version
-		dst.host.conn.logf("CTR merge cancelled source=%d destination=%d", src.id, dst.id)
-		return []ctrNotice{dst.notice(dst.host, ctrUpdateLobby)}
+		return m.cancelMerge(dst)
 	}
 	dst.mergeSource = nil
 	dst.capacity = min(dst.capacity, src.capacity)

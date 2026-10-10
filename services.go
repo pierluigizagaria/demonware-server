@@ -293,6 +293,9 @@ func (l *lobbyConn) onTask(payload []byte) {
 	case service == svcTitleUtilities && task == 9:
 		reply = l.onGetUserNames(task, r)
 
+	case service == svcTitleUtilities && task == 10:
+		reply = l.onGetUserIDs(task, r)
+
 	case service == 29 && (task == 1 || task == 4):
 		if reply = l.onUserData(task, r); reply == nil {
 			reply = taskReply(task, 0, nil)
@@ -374,7 +377,8 @@ func (l *lobbyConn) onTask(payload []byte) {
 	case service == svcAsyncMatchMaking && task == taskLobbyDisbanded:
 		id, err := r.u64()
 		if err == nil {
-			ctrMM.leave(l, id)
+			notices := ctrMM.leave(l, id)
+			l.afterReply = func() { sendCTRNotices(notices) }
 		}
 		reply = taskReply(task, 0, nil)
 

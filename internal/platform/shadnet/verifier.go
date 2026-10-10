@@ -25,6 +25,12 @@ import (
 
 const clockLeewaySeconds int64 = 60
 
+// The original CTR caller reads env_iss_id and a 64-character duid from the
+// platform ID-token payload; 256 is the retail NP issuer environment.
+const environmentIssuerID int64 = 256
+
+var deviceID = regexp.MustCompile(`^[0-9A-Fa-f]{64}$`)
+
 var errCredential = errors.New("shadNet credential refused")
 var scopeName = regexp.MustCompile(`^[A-Za-z0-9:_./-]{1,64}$`)
 
@@ -162,17 +168,24 @@ func (v *Verifier) Verify(token string, now time.Time) (platform.Identity, error
 		return refuse()
 	}
 	var claims struct {
-		Issuer    string `json:"iss"`
-		Subject   string `json:"sub"`
-		Audience  string `json:"aud"`
-		IssuedAt  int64  `json:"iat"`
-		Expiry    int64  `json:"exp"`
-		ID        string `json:"jti"`
-		OnlineID  string `json:"online_id"`
-		NPTitleID string `json:"np_title_id"`
-		Scope     string `json:"scope"`
+		Issuer      string `json:"iss"`
+		Subject     string `json:"sub"`
+		Audience    string `json:"aud"`
+		IssuedAt    int64  `json:"iat"`
+		Expiry      int64  `json:"exp"`
+		ID          string `json:"jti"`
+		Environment int64  `json:"env_iss_id"`
+		OnlineID    string `json:"online_id"`
+		NPTitleID   string `json:"np_title_id"`
+		Scope       string `json:"scope"`
+		DUID        string `json:"duid"`
 	}
-	if !decodeObject(body, &claims, "iss", "sub", "aud", "iat", "exp", "jti", "online_id", "np_title_id", "scope") ||
+	names := []string{"iss", "sub", "aud", "iat", "exp", "jti", "env_iss_id", "online_id", "np_title_id", "scope"}
+	if v.scopes["openid:duid"] {
+		names = append(names, "duid")
+	}
+	if !decodeObject(body, &claims, names...) || claims.Environment != environmentIssuerID ||
+		(v.scopes["openid:duid"] && !deviceID.MatchString(claims.DUID)) ||
 		claims.Issuer != v.policy.Issuer || claims.Audience != v.policy.ClientID || claims.NPTitleID != v.policy.NPTitleID ||
 		claims.IssuedAt <= 0 || claims.IssuedAt > math.MaxInt64-120-clockLeewaySeconds || claims.Expiry != claims.IssuedAt+120 ||
 		now.Unix() < claims.IssuedAt-clockLeewaySeconds || now.Unix() >= claims.Expiry+clockLeewaySeconds || !validText(claims.OnlineID, 128) {

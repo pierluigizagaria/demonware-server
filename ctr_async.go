@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,6 +53,21 @@ type ctrSearch struct {
 	// three in a single seat and overfill the lobby.
 	seats int
 }
+
+// Keep membership and its seat count together for host-reported failures and
+// platform-reported disconnects. The source search remains an immutable snapshot.
+func (s *ctrSearch) removeMembers(remove func(uint64) bool) *ctrSearch {
+	copy := *s
+	copy.doc.Members = make([]uint64, 0, len(s.doc.Members))
+	for _, pid := range s.doc.Members {
+		if !remove(pid) {
+			copy.doc.Members = append(copy.doc.Members, pid)
+		}
+	}
+	copy.seats = len(copy.doc.Members)
+	return &copy
+}
+
 type ctrRoom struct {
 	id, version uint64
 	created     int64
@@ -180,13 +196,18 @@ func (r *ctrRoom) connected() int {
 	return n
 }
 
-func (r *ctrRoom) documents() (string, string) {
-	expected := map[string]string{}
+// Includes seats reserved by the existing merge engine, before the handoff.
+func (r *ctrRoom) expectedSearches() []*ctrSearch {
 	players := append([]*ctrSearch(nil), r.players...)
 	if r.mergeSource != nil {
 		players = append(players, r.mergeSource.players...)
 	}
-	for _, p := range players {
+	return players
+}
+
+func (r *ctrRoom) documents() (string, string) {
+	expected := map[string]string{}
+	for _, p := range r.expectedSearches() {
 		// Every member of a party is expected, not just the leader who searched.
 		for _, pid := range p.doc.Members {
 			if r.failed(pid) {
@@ -343,29 +364,86 @@ func (m *ctrMatchmaker) cancel(conn *lobbyConn, id uint64) bool {
 	}
 	return false
 }
-func (m *ctrMatchmaker) leave(conn *lobbyConn, id uint64) {
+
+// leave handles a lobby disband (id != 0) or a disconnect (id == 0). The
+// engine tracks searches by their leader's connection; a party follower who
+// leaves loses only its own seat, and a surviving host is told the new
+// expected membership. Any merge reservation involving the room is released.
+func (m *ctrMatchmaker) leave(conn *lobbyConn, id uint64) []ctrNotice {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	pid := conn.pid()
+	follower := func(p *ctrSearch) bool {
+		return p.conn != conn && pid != 0 && slices.Contains(p.doc.Members, pid)
+	}
+	without := func(p *ctrSearch) *ctrSearch {
+		return p.removeMembers(func(member uint64) bool { return member == pid })
+	}
 	for i := len(m.waiting) - 1; i >= 0; i-- {
 		if m.waiting[i].conn == conn {
 			m.waiting = append(m.waiting[:i], m.waiting[i+1:]...)
+		} else if id == 0 && follower(m.waiting[i]) {
+			m.waiting[i] = without(m.waiting[i])
 		}
 	}
+	var notices []ctrNotice
 	for roomID, r := range m.rooms {
 		if id != 0 && roomID != id {
 			continue
 		}
+		involved := r.host.conn == conn
+		for _, p := range r.players {
+			involved = involved || p.conn == conn || follower(p)
+		}
+		if !involved {
+			continue
+		}
 		if r.host.conn == conn {
+			// A pending merge notices the missing room at its next sync.
 			delete(m.rooms, roomID)
 			continue
 		}
-		for i, p := range r.players {
-			if p.conn == conn {
-				r.players = append(r.players[:i], r.players[i+1:]...)
-				break
+		var departed []uint64
+		kept := r.players[:0]
+		for _, p := range r.players {
+			switch {
+			case p.conn == conn:
+				departed = append(departed, p.doc.Members...)
+				delete(r.notified, p.conn)
+			case follower(p):
+				q := without(p)
+				if r.host == p {
+					r.host = q
+				}
+				departed = append(departed, pid)
+				kept = append(kept, q)
+			default:
+				kept = append(kept, p)
 			}
 		}
+		r.players = kept
+		if len(departed) == 0 {
+			continue
+		}
+		if states, ok := r.hostDoc["player_state"].(map[string]any); ok {
+			for _, member := range departed {
+				delete(states, strconv.FormatUint(member, 10))
+			}
+		}
+		// The departure invalidates a merge reservation; cancelling one in
+		// which this room is the destination already bumps and notifies it.
+		destination := r.mergeSource != nil
+		cancelled := m.cancelRoomMerge(r)
+		notices = append(notices, cancelled...)
+		if destination && len(cancelled) > 0 {
+			continue
+		}
+		r.version++
+		r.hostDoc["update_id"] = r.version
+		r.hostDoc["update_time"] = time.Now().Unix()
+		notices = append(notices, r.notice(r.host, ctrUpdateLobby))
 	}
+	return notices
 }
 func (m *ctrMatchmaker) documents(conn *lobbyConn, id uint64) (string, string, bool) {
 	m.mu.Lock()
@@ -412,29 +490,27 @@ func (m *ctrMatchmaker) syncDoc(conn *lobbyConn, id, version uint64, raw string)
 	doc["update_time"] = time.Now().Unix()
 	r.hostDoc = doc
 	mergeNotices := m.finishMerge(r)
+	// A source may close or withdraw eligibility while the destination is
+	// preparing its acknowledgement. Release its reservation immediately.
+	if dst := m.rooms[r.mergeTarget]; dst != nil && dst.mergeSource == r &&
+		(!mergeOpen(r) || !mergeEligible(r, "is_merge_src")) {
+		mergeNotices = append(mergeNotices, m.cancelMerge(dst)...)
+	}
 	// Remove only members the host explicitly rejected. Keep connected party
 	// members, and do not expire a reservation merely because time passed here.
 	kept := r.players[:0]
 	released := 0
 	for _, p := range r.players {
-		members := make([]uint64, 0, len(p.doc.Members))
-		for _, pid := range p.doc.Members {
-			if r.failed(pid) {
-				released++
-				continue
-			}
-			members = append(members, pid)
-		}
-		if len(members) == 0 {
+		copy := p.removeMembers(r.failed)
+		released += len(p.doc.Members) - copy.seats
+		if copy.seats == 0 {
 			delete(r.notified, p.conn)
 			continue
 		}
-		copy := *p
-		copy.doc.Members, copy.seats = members, len(members)
 		if p == r.host {
-			r.host = &copy
+			r.host = copy
 		}
-		kept = append(kept, &copy)
+		kept = append(kept, copy)
 	}
 	r.players = kept
 	if released > 0 {
@@ -454,7 +530,9 @@ func (m *ctrMatchmaker) syncDoc(conn *lobbyConn, id, version uint64, raw string)
 	// A search already waiting must be reconsidered when the host opens its
 	// lobby or reports failed joins. Otherwise it waits for an unrelated new
 	// search even though this sync has made suitable seats available.
-	if open, _ := doc["lobby_open"].(bool); open && r.mergeTarget == 0 && r.mergeSource == nil {
+	// Do not advance the destination version in the same operation as 2008:
+	// its handoff documents must remain current when the adapter delivers them.
+	if open, _ := doc["lobby_open"].(bool); len(mergeNotices) == 0 && open && r.mergeTarget == 0 && r.mergeSource == nil {
 		remaining := m.waiting[:0]
 		added := 0
 		for _, p := range m.waiting {

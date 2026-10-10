@@ -22,7 +22,7 @@ func startLobby() {
 		if p == "" {
 			continue
 		}
-		ln, err := net.Listen("tcp", ":"+p)
+		ln, err := net.Listen("tcp", net.JoinHostPort(bindAddr, p))
 		if err != nil {
 			diagnosticLogf("[D3 Lobby] port %s unavailable: %v", p, err)
 			continue

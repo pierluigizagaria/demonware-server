@@ -16,4 +16,6 @@ func (nintendoPlatform) AuthData(id playerID) map[string]string {
 	return map[string]string{"nso_subscription_status": "1", "extended_data": fmt.Sprintf("nextendo:%d", id.PID)}
 }
 
+func (nintendoPlatform) Policy() platformPolicy { return platformPolicy{} }
+
 func isCTRTitle(title uint32) bool { return title == 5775 || title == 5760 }
