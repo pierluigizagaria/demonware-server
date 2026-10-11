@@ -195,6 +195,7 @@ func newPlatformAuthHandler(platform platformAuthenticator, ctrSigner *ctrAuthSi
 			}
 			if raw, err := json.Marshal(id); err == nil {
 				_ = os.WriteFile(filepath.Join(sessDir, fmt.Sprintf("id_%x.json", clientTicket[33:41])), raw, 0o644)
+				rememberIdentity(sessDir, id, time.Now())
 			}
 		}
 

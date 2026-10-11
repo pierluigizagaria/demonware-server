@@ -104,6 +104,9 @@ func main() {
 	if err := os.MkdirAll(sessDir, 0o755); err != nil {
 		log.Fatalf("[D3] sessions dir: %v", err)
 	}
+	if activePolicy.IssuedTickets {
+		go pruneIssuedTicketsEvery(sessDir, activePolicy.TicketWindow)
+	}
 	if err := writePubfiles(pubConfigPath, pubDir); err != nil {
 		diagnosticLogf("[D3 Pubfiles] %v", err)
 	}

@@ -368,7 +368,7 @@ func (l *lobbyConn) onGetUserIDs(task byte, r *bdReader) []byte {
 		}
 		names = append(names, name)
 	}
-	known := knownIdentities(l.sessDir)
+	known := knownIdentities(l.sessDir, names)
 	onlineMu.Lock()
 	for _, p := range online {
 		known[strings.ToLower(p.Username)] = p
@@ -388,25 +388,4 @@ func (l *lobbyConn) onGetUserIDs(task byte, r *bdReader) []byte {
 		}
 		return uint32(len(found))
 	})
-}
-
-// knownIdentities indexes the identities recorded at ticket issuance by
-// lower-case name, keeping the most recently written one per name.
-func knownIdentities(dir string) map[string]*playerID {
-	known := map[string]*playerID{}
-	newest := map[string]time.Time{}
-	files, _ := filepath.Glob(filepath.Join(dir, "id_*.json"))
-	for _, file := range files {
-		info, err := os.Stat(file)
-		raw, err2 := os.ReadFile(file)
-		var id playerID
-		if err != nil || err2 != nil || json.Unmarshal(raw, &id) != nil || id.PID == 0 || id.Username == "" {
-			continue
-		}
-		key := strings.ToLower(id.Username)
-		if info.ModTime().After(newest[key]) || known[key] == nil {
-			known[key], newest[key] = &id, info.ModTime()
-		}
-	}
-	return known
 }

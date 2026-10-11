@@ -239,7 +239,8 @@ func (l *lobbyConn) onClientAuth(raw []byte) bool {
 	t.Write(raw[:len(raw)-8])
 	transcript := t.Bytes()
 
-	for _, cand := range l.candidates(raw) {
+	candidates := l.candidates(raw)
+	for _, cand := range candidates {
 		for _, wrapped := range []bool{false, true} {
 			k24 := cand.key24
 			if wrapped {
@@ -274,7 +275,7 @@ func (l *lobbyConn) onClientAuth(raw []byte) bool {
 	// Failure: we do NOT close. A silent lobby connection leaves the game
 	// "friends only" online (P2P invites); a close or an invalid frame flips
 	// it offline after a few tries.
-	l.logf("0x82: no key reproduces tag %X (%d candidates) — connection kept silent\n%s", tag, len(l.candidates(raw)), hex.Dump(raw))
+	l.logf("0x82: no key reproduces tag %X (%d candidates) — connection kept silent\n%s", tag, len(candidates), hex.Dump(raw))
 	return true
 }
 
