@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"math"
 	"path/filepath"
 	"reflect"
@@ -9,55 +8,6 @@ import (
 	"testing"
 	"time"
 )
-
-func TestSQLiteMigratesVersion1(t *testing.T) {
-	path := filepath.Join(t.TempDir(), ctrDB)
-	raw, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, statement := range []string{
-		ctrSchema,
-		`INSERT INTO meta(key, value) VALUES ('unlock_all', '0')`,
-		`INSERT INTO accounts(pid, created_at) VALUES (42, 1)`,
-		`INSERT INTO balances(pid, currency, amount) VALUES (42, 10, 5)`,
-		`INSERT INTO race_receipts(pid, receipt) VALUES (42, 'r1')`,
-		`INSERT INTO online_seconds(pid, day, seconds) VALUES (42, '2026-10-11', 60)`,
-		`INSERT INTO leaderboard(board, pid, score, driver, name, updated) VALUES (1001, 42, 7, 0, 'A', 0)`,
-		`PRAGMA user_version = 1`,
-	} {
-		if _, err := raw.Exec(statement); err != nil {
-			t.Fatal(err)
-		}
-	}
-	raw.Close()
-	if db, err := openCTRSQLite(path, true); err == nil {
-		db.Close()
-		t.Fatal("mode mismatch accepted during migration")
-	}
-	db := openTestCTR(t, path, false)
-	var version, recorded, updated int64
-	if err := db.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != ctrSchemaVersion {
-		t.Fatalf("version %d, %v", version, err)
-	}
-	if err := db.db.QueryRow(`SELECT recorded_at FROM race_receipts`).Scan(&recorded); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.db.QueryRow(`SELECT updated_at FROM online_seconds`).Scan(&updated); err != nil {
-		t.Fatal(err)
-	}
-	if now := time.Now().Unix(); now-recorded > 60 || now-updated > 60 {
-		t.Fatal("migrated replay state not treated as recent")
-	}
-	s := &economyStore{dir: filepath.Dir(path), backend: db}
-	a, err := s.snapshot(42)
-	if err != nil || !a.RaceReceipts["r1"] || a.OnlineSeconds["2026-10-11"] != 60 || a.Balances[10] != 5 {
-		t.Fatalf("migrated account %+v, %v", a, err)
-	}
-	if rows, err := db.read(1001); err != nil || len(rows) != 1 {
-		t.Fatalf("migrated leaderboard %+v, %v", rows, err)
-	}
-}
 
 func TestSQLiteReplayStateRetention(t *testing.T) {
 	t.Setenv("CTR_START_BALANCE", "0")

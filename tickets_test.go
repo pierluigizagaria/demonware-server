@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -49,32 +48,6 @@ func TestPruneIssuedTicketsKeepsAccountsAndFreshTickets(t *testing.T) {
 	forgetKnownIdentities(dir) // restart
 	if got := knownIdentities(dir, []string{"fixture"})["fixture"]; got == nil || got.PID != 17 {
 		t.Fatal("authenticated player no longer resolves after pruning")
-	}
-}
-
-func TestPruneCarriesLegacyIdentityFiles(t *testing.T) {
-	dir := t.TempDir()
-	now := time.Now()
-	write := func(key string, id playerID, at time.Time) string {
-		raw, _ := json.Marshal(id)
-		p := filepath.Join(dir, "id_"+key+".json")
-		if err := os.WriteFile(p, raw, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		age(t, at, p)
-		return p
-	}
-	// Two logins of one account under different names, without account files.
-	write("0000000000000001", playerID{PID: 42, Username: "OldName"}, now.Add(-2*time.Hour))
-	write("0000000000000002", playerID{PID: 42, Username: "NewName"}, now.Add(-time.Hour))
-	pruneIssuedTickets(dir, 120*time.Second, now)
-	if files, _ := filepath.Glob(filepath.Join(dir, "id_*.json")); len(files) != 0 {
-		t.Fatalf("legacy identity files kept: %v", files)
-	}
-	forgetKnownIdentities(dir)
-	known := knownIdentities(dir, []string{"newname", "oldname"})
-	if known["newname"] == nil || known["newname"].PID != 42 || known["oldname"] != nil {
-		t.Fatalf("latest legacy identity not carried over: %+v", known)
 	}
 }
 

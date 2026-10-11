@@ -112,8 +112,7 @@ func storedIdentity(dir string, ticket []byte) (*playerID, bool) {
 }
 
 // pruneIssuedTickets removes ticket and per-ticket identity files that can no
-// longer admit anyone. An identity without a newer account file is first
-// carried over, so previously authenticated players stay resolvable.
+// longer admit anyone. Account files, which resolve known players, are kept.
 func pruneIssuedTickets(dir string, window time.Duration, now time.Time) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -122,36 +121,15 @@ func pruneIssuedTickets(dir string, window time.Duration, now time.Time) {
 	cutoff := now.Add(-window - time.Minute)
 	for _, e := range entries {
 		name := e.Name()
-		identity := strings.HasPrefix(name, "id_") && strings.HasSuffix(name, ".json")
-		if !identity && !strings.HasSuffix(name, ".tkt") {
+		if !strings.HasSuffix(name, ".tkt") && !(strings.HasPrefix(name, "id_") && strings.HasSuffix(name, ".json")) {
 			continue
 		}
 		info, err := e.Info()
 		if err != nil || !info.ModTime().Before(cutoff) {
 			continue
 		}
-		path := filepath.Join(dir, name)
-		if identity && !carryIdentity(dir, path, info.ModTime()) {
-			continue
-		}
-		_ = os.Remove(path)
+		_ = os.Remove(filepath.Join(dir, name))
 	}
-}
-
-func carryIdentity(dir, path string, modified time.Time) bool {
-	raw, err := os.ReadFile(path)
-	var id playerID
-	if err != nil || json.Unmarshal(raw, &id) != nil || id.PID == 0 || id.Username == "" {
-		return err == nil // unreadable now: retry later; unusable: nothing to keep
-	}
-	target := accountFile(dir, id.PID)
-	if info, err := os.Stat(target); err == nil && !info.ModTime().Before(modified) {
-		return true
-	}
-	if writeFileAtomic(target, raw) != nil || os.Chtimes(target, modified, modified) != nil {
-		return false
-	}
-	return true
 }
 
 func pruneIssuedTicketsEvery(dir string, window time.Duration) {
@@ -174,6 +152,8 @@ type knownIdentity struct {
 	at time.Time
 }
 
+// PS4 keeps account files; the original admission keeps one identity file per
+// ticket.
 func knownIndexLocked(dir string) map[string]knownIdentity {
 	if idx := knownDirs[dir]; idx != nil {
 		return idx

@@ -74,7 +74,7 @@ func readLeaderboard(store leaderboardStore, task byte, board uint32, start uint
 
 const ctrDB = "ctr.sqlite"
 
-const ctrSchemaVersion = 2
+const ctrSchemaVersion = 1
 
 // awardRaces accepts events from the last seven days, five minutes ahead at
 // most. A race receipt or a day's online seconds last written more than nine
@@ -131,56 +131,24 @@ func (s *ctrSQLite) initialize(unlockAll bool) error {
 		if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('unlock_all', ?)`, want); err != nil {
 			return err
 		}
-		fallthrough
-	case 1:
-		// Version 2 adds the leaderboard rank index and the write times that
-		// bound replay state. Existing rows count as written now.
-		if version == 1 {
-			if err := checkMode(tx, want); err != nil {
-				return err
-			}
-		}
-		now := time.Now().Unix()
-		for _, statement := range []string{
-			`ALTER TABLE race_receipts ADD COLUMN recorded_at INTEGER NOT NULL DEFAULT 0`,
-			`ALTER TABLE online_seconds ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`,
-			`CREATE INDEX leaderboard_rank ON leaderboard(board, score DESC, pid < 0, pid)`,
-		} {
-			if _, err := tx.Exec(statement); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.Exec(`UPDATE race_receipts SET recorded_at = ?`, now); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`UPDATE online_seconds SET updated_at = ?`, now); err != nil {
-			return err
-		}
 		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, ctrSchemaVersion)); err != nil {
 			return err
 		}
 	case ctrSchemaVersion:
-		if err := checkMode(tx, want); err != nil {
-			return err
+		var got string
+		if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'unlock_all'`).Scan(&got); err != nil {
+			return fmt.Errorf("read unlock-all mode: %w", err)
+		}
+		if got != "0" && got != "1" {
+			return fmt.Errorf("invalid unlock-all mode in CTR database")
+		}
+		if got != want {
+			return fmt.Errorf("CTR database unlock-all mode differs from CTR_UNLOCK_ALL")
 		}
 	default:
-		return fmt.Errorf("CTR schema %d is newer than this server", version)
+		return fmt.Errorf("CTR schema %d is not supported by this server", version)
 	}
 	return tx.Commit()
-}
-
-func checkMode(tx *sql.Tx, want string) error {
-	var got string
-	if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'unlock_all'`).Scan(&got); err != nil {
-		return fmt.Errorf("read unlock-all mode: %w", err)
-	}
-	if got != "0" && got != "1" {
-		return fmt.Errorf("invalid unlock-all mode in CTR database")
-	}
-	if got != want {
-		return fmt.Errorf("CTR database unlock-all mode differs from CTR_UNLOCK_ALL")
-	}
-	return nil
 }
 
 const ctrSchema = `
@@ -205,12 +173,14 @@ CREATE TABLE inventory (
 CREATE TABLE race_receipts (
 	pid INTEGER NOT NULL REFERENCES accounts(pid),
 	receipt TEXT NOT NULL,
+	recorded_at INTEGER NOT NULL,
 	PRIMARY KEY (pid, receipt)
 ) WITHOUT ROWID;
 CREATE TABLE online_seconds (
 	pid INTEGER NOT NULL REFERENCES accounts(pid),
 	day TEXT NOT NULL,
 	seconds INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL,
 	PRIMARY KEY (pid, day)
 ) WITHOUT ROWID;
 CREATE TABLE challenge_progress (
@@ -264,6 +234,7 @@ CREATE TABLE leaderboard (
 	updated INTEGER NOT NULL,
 	PRIMARY KEY (board, pid)
 ) WITHOUT ROWID;
+CREATE INDEX leaderboard_rank ON leaderboard(board, score DESC, pid < 0, pid);
 `
 
 func newSQLiteAccount() *economyAccount {
