@@ -102,7 +102,7 @@ func (s *economyStore) awardWindowShopping(pid uint64, events []achievementEvent
 		a.Challenges[fmt.Sprintf("%s:%d", state.Name, state.Start)] = challengeCompletion{Completed: completed}
 		credit = windowShopping.Reward
 		a.Balances[wumpaCurrency] += credit
-		if err := s.save(pid, a); err != nil {
+		if err := s.saveChange(pid, a, economyChange{source: "challenge reward"}); err != nil {
 			return 0, nil, err
 		}
 		state, _ = windowShoppingState(a, now)

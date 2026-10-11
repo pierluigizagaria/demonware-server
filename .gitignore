@@ -42,3 +42,7 @@ stdout.txt
 /sessions/
 /profiles/
 /*.economy-v2.json
+
+# Per-instance SQLite state, including WAL and shared-memory sidecars
+ctr.sqlite
+ctr.sqlite-*

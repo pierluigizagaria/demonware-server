@@ -174,7 +174,7 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 			l.logf("CTR pitstop purchase rejected: %v", err)
 			return taskReply(task, errUnhandled, nil)
 		}
-		l.logf("CTR pitstop purchase skus=%v debit=%d currency=10 economy=%s", skus, debit, economy.policy)
+		l.logf("CTR pitstop purchase skus=%v debit=%d currency=10", skus, debit)
 		l.afterReply = l.pushCurrentBalance
 		return taskReply(task, 0, nil)
 

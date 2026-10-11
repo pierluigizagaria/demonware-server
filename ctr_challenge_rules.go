@@ -208,7 +208,7 @@ func (s *economyStore) awardChallenges(pid uint64, events []achievementEvent, no
 		return 0, nil, nil
 	}
 	a.Balances[wumpaCurrency] += credit
-	if err := s.save(pid, a); err != nil {
+	if err := s.saveChange(pid, a, economyChange{source: "challenge reward"}); err != nil {
 		return 0, nil, err
 	}
 	return credit, updates, nil

@@ -226,7 +226,7 @@ func (s *economyStore) awardRaces(pid uint64, events []achievementEvent, now tim
 		total += amount
 	}
 	if total != 0 {
-		if err := s.save(pid, a); err != nil {
+		if err := s.saveChange(pid, a, economyChange{source: "race reward"}); err != nil {
 			return 0, err
 		}
 	}

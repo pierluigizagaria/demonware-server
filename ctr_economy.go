@@ -44,9 +44,10 @@ type economyAccount struct {
 }
 
 type economyStore struct {
-	mu     sync.Mutex
-	dir    string
-	policy economyPolicy
+	mu        sync.Mutex
+	dir       string
+	unlockAll bool
+	backend   economyBackend
 }
 
 var economy = &economyStore{}
@@ -64,6 +65,9 @@ func (s *economyStore) accountPath(pid uint64) string {
 }
 
 func (s *economyStore) load(pid uint64) (*economyAccount, error) {
+	if s.backend != nil {
+		return s.backend.load(pid, false)
+	}
 	a := &economyAccount{}
 	err := readEconomyJSON(s.accountPath(pid), a)
 	if err == nil {
@@ -106,6 +110,13 @@ func (s *economyStore) load(pid uint64) (*economyAccount, error) {
 }
 
 func (s *economyStore) save(pid uint64, a *economyAccount) error {
+	return s.saveChange(pid, a, economyChange{source: "account update"})
+}
+
+func (s *economyStore) saveChange(pid uint64, a *economyAccount, change economyChange) error {
+	if s.backend != nil {
+		return s.backend.save(pid, a, change)
+	}
 	b, err := json.Marshal(a)
 	if err != nil {
 		return err
@@ -132,6 +143,9 @@ func (s *economyStore) save(pid uint64, a *economyAccount) error {
 func (s *economyStore) snapshot(pid uint64) (*economyAccount, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.backend != nil {
+		return s.backend.load(pid, !s.unlockAll)
+	}
 	return s.load(pid)
 }
 
@@ -169,7 +183,7 @@ func skuPrice(a *economyAccount, sku economySKU) (int64, error) {
 }
 
 func (s *economyStore) purchase(pid uint64, skus []uint32) (int64, error) {
-	if s.policy == economyUnlockAll {
+	if s.unlockAll {
 		return purchaseUnlockAll(skus)
 	}
 	s.mu.Lock()
@@ -197,7 +211,7 @@ func (s *economyStore) purchase(pid uint64, skus []uint32) (int64, error) {
 			a.Items[item] = true
 		}
 	}
-	if err := s.save(pid, a); err != nil {
+	if err := s.saveChange(pid, a, economyChange{source: "purchase", skus: skus}); err != nil {
 		return 0, err
 	}
 	return total, nil

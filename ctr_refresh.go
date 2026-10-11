@@ -93,7 +93,7 @@ func (s *economyStore) reportPitStopRefresh(pid uint64, events []achievementEven
 	if !valid {
 		return nil, nil
 	}
-	if err := s.save(pid, a); err != nil {
+	if err := s.saveChange(pid, a, economyChange{source: "pit stop refresh"}); err != nil {
 		return nil, err
 	}
 	return pbBytesField(nil, 1, currentPitStopRefresh(a, now).encode()), nil

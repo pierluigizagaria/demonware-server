@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-func openTestLeaderboard(t *testing.T, path string) *sqliteLeaderboard {
+func openTestLeaderboard(t *testing.T, path string) *ctrSQLite {
 	t.Helper()
-	s, err := openSQLiteLeaderboard(path)
+	s, err := openCTRSQLite(path, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestLeaderboardStoresAgree(t *testing.T) {
 		{stat(89, 12, 25, 1, "tie")},
 	}
 	json := &ctrStatsStore{dir: t.TempDir()}
-	sqlite := openTestLeaderboard(t, filepath.Join(t.TempDir(), leaderboardDB))
+	sqlite := openTestLeaderboard(t, filepath.Join(t.TempDir(), ctrDB))
 	for _, b := range batches {
 		if err := json.write(b); err != nil {
 			t.Fatal(err)
@@ -51,7 +51,7 @@ func TestLeaderboardStoresAgree(t *testing.T) {
 }
 
 func TestSQLiteLeaderboardBatchIsAtomicAndDurable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), leaderboardDB)
+	path := filepath.Join(t.TempDir(), ctrDB)
 	s := openTestLeaderboard(t, path)
 	if err := s.write([]ctrStatWrite{{ctrStat: ctrStat{Board: 89, PID: 1, Score: math.MaxInt64 - 1}, Operation: 1}}); err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestSQLiteLeaderboardServesStatsTasks(t *testing.T) {
 	oldOnline, oldStore := online, ctrStats
 	defer func() { online = oldOnline; ctrStats = oldStore }()
 	online = map[uint64]*playerID{9: {PID: 12, Username: "test", Title: 5760}}
-	ctrStats = openTestLeaderboard(t, filepath.Join(t.TempDir(), leaderboardDB))
+	ctrStats = openTestLeaderboard(t, filepath.Join(t.TempDir(), ctrDB))
 	l := &lobbyConn{n: 9, player: online[9]}
 	if err := ctrStats.write([]ctrStatWrite{{ctrStat: ctrStat{Board: 1001, PID: 12, Score: 400, Name: "A"}, Operation: 4}, {ctrStat: ctrStat{Board: 1001, PID: 13, Score: 500, Name: "B"}, Operation: 4}}); err != nil {
 		t.Fatal(err)
