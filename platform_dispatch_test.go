@@ -7,10 +7,12 @@ import (
 	"errors"
 	"github.com/NextendoNetwork/nextendo-demonware/internal/platform"
 	"io"
+	"log"
 	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,5 +122,19 @@ func TestGlobalRedactionDefault(t *testing.T) {
 	}
 	if d := runDumpDir("platform-redaction-test"); d != "" {
 		t.Fatal("raw dumps enabled under global redaction")
+	}
+}
+
+func TestRedactedLogsKeepNumbersAndHideSecrets(t *testing.T) {
+	if !redactLogs {
+		t.Skip("explicit diagnostic opt-out")
+	}
+	var out bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&out)
+	defer log.SetOutput(old)
+	diagnosticLogf("task=%d ok=%t key=%X name=%q", 145, true, []byte{0xAB, 0xCD}, "player")
+	if got := out.String(); !strings.Contains(got, "task=145 ok=true key=<redacted> name=<redacted>") || strings.Contains(got, "ABCD") || strings.Contains(got, "player") {
+		t.Fatal("unexpected redaction: " + got)
 	}
 }
