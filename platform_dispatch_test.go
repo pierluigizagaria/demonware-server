@@ -138,3 +138,47 @@ func TestRedactedLogsKeepNumbersAndHideSecrets(t *testing.T) {
 		t.Fatal("unexpected redaction: " + got)
 	}
 }
+
+// clientFrame encrypts one client 0x85 frame carrying a task request.
+func clientFrame(t *testing.T, l *lobbyConn, seq uint32, task []byte) []byte {
+	t.Helper()
+	pt := binary.LittleEndian.AppendUint32(nil, uint32(len(task)))
+	pt = append(pt, 0x86)
+	pt = append(pt, task...)
+	for len(pt)%16 != 0 {
+		pt = append(pt, 0)
+	}
+	iv := make([]byte, 16)
+	ct, err := aesCBCEncrypt(l.keys.c2sAES, iv, pt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := append([]byte{msgEncrypted}, binary.LittleEndian.AppendUint32(nil, seq)...)
+	body = append(append(body, iv...), ct...)
+	out := binary.LittleEndian.AppendUint32(nil, uint32(1+len(body)+8))
+	out = append(append(out, frameFlag), body...)
+	return append(out, hmacSHA1(l.keys.c2sMAC, out)[:8]...)
+}
+
+func TestEncryptedFramesFollowClientSequence(t *testing.T) {
+	l, w := sharedPS4Lobby()
+	task := (&bdWriter{b: []byte{6, tagU8, 1}}).b // any request; the reply only needs to exist
+	replied := func(raw []byte) bool {
+		w.Reset()
+		l.onEncrypted(raw)
+		return w.Len() > 0
+	}
+	first := clientFrame(t, l, 1, task)
+	if !replied(first) {
+		t.Fatal("first frame not processed")
+	}
+	if replied(first) {
+		t.Fatal("replayed frame processed")
+	}
+	if replied(clientFrame(t, l, 3, task)) {
+		t.Fatal("frame ahead of the sequence processed")
+	}
+	if !replied(clientFrame(t, l, 2, task)) {
+		t.Fatal("next genuine frame refused after a dropped one")
+	}
+}

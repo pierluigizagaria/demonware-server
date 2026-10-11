@@ -86,6 +86,7 @@ type lobbyConn struct {
 	keys    *sessionKeys
 	player  *playerID
 	s2cSeq  uint32
+	c2sSeq  uint32 // last accepted client frame number
 	sendMu  sync.Mutex
 	msgSeen int
 
@@ -385,6 +386,18 @@ func (l *lobbyConn) onEncrypted(raw []byte) {
 	ct := body[21 : len(body)-8]
 	tag := raw[len(raw)-8:]
 	macOK := bytes.Equal(hmacSHA1(l.keys.c2sMAC, raw[:len(raw)-8])[:8], tag)
+	// The client numbers its encrypted frames from 1 and its own reader accepts
+	// only the next number (CTR PS4 1.21 eboot: send counter conn+0x260 set to 1
+	// at 0x1a3c0 and incremented at 0x19125; receive check at 0x1ac33). A
+	// different number is a replayed or injected frame: drop it without
+	// advancing, so the next genuine frame is still accepted.
+	if macOK {
+		if seq != l.c2sSeq+1 {
+			l.logf("msg 0x%02X seq=%d expected %d, ignored", typ, seq, l.c2sSeq+1)
+			return
+		}
+		l.c2sSeq = seq
+	}
 
 	pt, err := aesCBCDecrypt(l.keys.c2sAES, iv, ct)
 	if err != nil {
