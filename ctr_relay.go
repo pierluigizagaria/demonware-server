@@ -66,11 +66,11 @@ const (
 var emptySlot = [4]byte{0, 255, 0, 255}
 
 type relayPair struct {
-	port   int
-	host   *net.UDPAddr // the host's public endpoint, from its own hostAddr
-	joiner *net.UDPAddr // learned from the first packet that is not the host
-	conn   *net.UDPConn
-	last   time.Time
+	port               int
+	hostPID, joinerPID uint64
+	host               *net.UDPAddr // the host's public endpoint, from its own hostAddr
+	joiner             *net.UDPAddr // learned from the first packet that is not the host
+	conn               *net.UDPConn
 }
 
 type relayTable struct {
@@ -171,7 +171,7 @@ func (t *relayTable) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *rela
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if p, ok := t.pairs[key]; ok {
-		p.host, p.last = host, time.Now()
+		p.host = host
 		return p
 	}
 	for tries := 0; tries <= t.high-t.low; tries++ {
@@ -183,11 +183,11 @@ func (t *relayTable) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *rela
 		if _, busy := t.byPort[port]; busy {
 			continue
 		}
-		conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: port})
+		conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP(bindAddr), Port: port})
 		if err != nil {
 			continue
 		}
-		p := &relayPair{port: port, host: host, conn: conn, last: time.Now()}
+		p := &relayPair{port: port, hostPID: hostPID, joinerPID: joinerPID, host: host, conn: conn}
 		t.pairs[key], t.byPort[port] = p, p
 		go p.serve()
 		diagnosticLogf("[CTR Relay] pair %d<->%d on :%d (host %s)", hostPID, joinerPID, port, host)
@@ -214,7 +214,6 @@ func (p *relayPair) serve() {
 			diagnosticLogf("[CTR Relay] :%d FIRST PACKET from %s (%d bytes) — the game DOES use relay slots",
 				p.port, src, n)
 		}
-		p.last = time.Now()
 		relay.mu.Unlock()
 
 		var to *net.UDPAddr
@@ -230,19 +229,28 @@ func (p *relayPair) serve() {
 	}
 }
 
-// reap closes pairs that have gone quiet so their ports can be reused.
+// reap releases a pair's port once either player has no lobby connection.
+// A quiet pair between connected players is kept: races and menus may be
+// idle for any length of time.
 func (t *relayTable) reap() {
 	for range time.Tick(30 * time.Second) {
-		cutoff := time.Now().Add(-2 * time.Minute)
-		t.mu.Lock()
-		for key, p := range t.pairs {
-			if p.last.After(cutoff) {
-				continue
-			}
-			_ = p.conn.Close()
-			delete(t.pairs, key)
-			delete(t.byPort, p.port)
+		connected := map[uint64]bool{}
+		for _, pid := range onlinePIDs() {
+			connected[pid] = true
 		}
-		t.mu.Unlock()
+		t.reapOffline(connected)
+	}
+}
+
+func (t *relayTable) reapOffline(online map[uint64]bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for key, p := range t.pairs {
+		if online[p.hostPID] && online[p.joinerPID] {
+			continue
+		}
+		_ = p.conn.Close()
+		delete(t.pairs, key)
+		delete(t.byPort, p.port)
 	}
 }

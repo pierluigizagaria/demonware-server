@@ -122,3 +122,33 @@ func TestRelayReusesPortForSamePair(t *testing.T) {
 		t.Fatalf("%d pairs allocated for one pairing", len(relay.pairs))
 	}
 }
+
+// A quiet pair survives while both players keep their lobby connections and is
+// released as soon as either one leaves.
+func TestRelayReleasesPairsOnlyWhenAPlayerLeaves(t *testing.T) {
+	b := realAddr(t)
+	relay.low, relay.high, relay.next, relay.ip = 3150, 3159, 3150, net.IPv4(203, 0, 113, 9)
+	relay.pairs, relay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
+	defer func() {
+		for _, p := range relay.pairs {
+			_ = p.conn.Close()
+		}
+		relay.low, relay.high = 0, 0
+		relay.pairs, relay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
+	}()
+	t.Setenv("CTR_RELAY_PIDS", "*")
+	withRelay(b, 111, 222)
+	withRelay(b, 111, 333)
+	relay.reapOffline(map[uint64]bool{111: true, 222: true, 333: true})
+	if len(relay.pairs) != 2 {
+		t.Fatal("pair between connected players released")
+	}
+	relay.reapOffline(map[uint64]bool{111: true, 222: true})
+	if len(relay.pairs) != 1 || len(relay.byPort) != 1 || relay.pairs[pairKey(111, 222)] == nil {
+		t.Fatal("pair of a departed joiner kept or wrong pair released")
+	}
+	relay.reapOffline(map[uint64]bool{222: true})
+	if len(relay.pairs) != 0 || len(relay.byPort) != 0 {
+		t.Fatal("pair of a departed host kept")
+	}
+}
