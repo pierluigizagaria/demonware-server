@@ -55,6 +55,10 @@ func (psnPlatform) AuthData(id playerID) map[string]string {
 	return map[string]string{"extended_data": fmt.Sprintf("nextendo:shadnet:%d", id.PID)}
 }
 
+func (psnPlatform) Marketplace() marketplacePlatform {
+	return marketplacePlatform{context: "octane_psn", accountType: "psn", strict: true}
+}
+
 // PS4 credentials expire after 120 seconds, so a publisher ticket admits only
 // a fresh connection; established sessions are never cut off afterwards.
 func (psnPlatform) Policy() platformPolicy {

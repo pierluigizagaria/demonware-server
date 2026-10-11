@@ -8,6 +8,7 @@ type platformAuthenticator interface {
 	Authenticate(body []byte, remoteIP string) (playerID, error)
 	AuthData(id playerID) map[string]string
 	Policy() platformPolicy
+	Marketplace() marketplacePlatform
 }
 
 // platformPolicy holds the admission rules that differ between platforms.
@@ -25,3 +26,18 @@ type platformPolicy struct {
 
 // activePolicy is installed once at startup, before any listener starts.
 var activePolicy platformPolicy
+
+// Marketplace wire identity is selected from the admitted connection's title,
+// never from the client-supplied marketplace context.
+type marketplacePlatform struct {
+	context     string
+	accountType string
+	strict      bool // PS4 accepts only the recovered request contracts.
+}
+
+func (l *lobbyConn) marketplacePlatform() marketplacePlatform {
+	if l.player != nil && l.player.Title == 5760 {
+		return (psnPlatform{}).Marketplace()
+	}
+	return (nintendoPlatform{}).Marketplace()
+}

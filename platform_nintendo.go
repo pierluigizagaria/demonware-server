@@ -18,4 +18,8 @@ func (nintendoPlatform) AuthData(id playerID) map[string]string {
 
 func (nintendoPlatform) Policy() platformPolicy { return platformPolicy{} }
 
+func (nintendoPlatform) Marketplace() marketplacePlatform {
+	return marketplacePlatform{context: "octane_switch", accountType: "nintendo"}
+}
+
 func isCTRTitle(title uint32) bool { return title == 5775 || title == 5760 }

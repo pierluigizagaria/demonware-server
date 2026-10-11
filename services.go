@@ -251,6 +251,10 @@ func (l *lobbyConn) onTask(payload []byte) {
 		if len(payload) >= 3 {
 			task = payload[2]
 		}
+		if service == svcMarketplace && l.marketplacePlatform().strict {
+			_ = l.sendEncrypted(innerTaskReply, taskReply(task, errUnhandled, nil))
+			return
+		}
 		l.logf("task: service %d task id unreadable (%v), empty success task=%d: %X",
 			service, err, task, payload)
 		if err := l.sendEncrypted(innerTaskReply, taskReply(task, 0, nil)); err != nil {
@@ -420,7 +424,11 @@ func (l *lobbyConn) onTask(payload []byte) {
 
 	case service == svcMarketplace:
 		if reply = l.onMarketplace(task, payload); reply == nil {
-			reply = taskReply(task, 0, nil)
+			code := uint32(0) // Preserve Nintendo's upstream fallback.
+			if l.marketplacePlatform().strict {
+				code = errUnhandled
+			}
+			reply = taskReply(task, code, nil)
 			l.logf("task marketplace UNHANDLED task=%d args:\n%s", task, hex.Dump(payload))
 		}
 

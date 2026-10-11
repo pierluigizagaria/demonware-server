@@ -25,6 +25,7 @@ package main
 // game does not know is dropped. The catalog defines currency IDs 10 through 12.
 
 import (
+	"bytes"
 	"encoding/binary"
 	"os"
 	"strconv"
@@ -106,9 +107,13 @@ func structTaskReply(task byte, sb []byte) []byte {
 
 // onMarketplace handles Pit Stop requests; nil means an unsupported task.
 func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
+	p := l.marketplacePlatform()
 	switch task {
 	case taskGetBalancesV3:
 		ctx, max := parseBalancesRequest(payload)
+		if ctx != p.context || (p.strict && !validPS4BalancesRequest(payload, ctx, max)) {
+			return taskReply(task, errUnhandled, nil)
+		}
 		a, err := economy.snapshot(l.pid())
 		if err != nil {
 			l.logf("CTR economy read failed: %v", err)
@@ -120,6 +125,9 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 		return structTaskReply(task, sb)
 
 	case taskSwitchReconciliation:
+		if p.strict {
+			return taskReply(task, errUnhandled, nil)
+		}
 		// The request carries an eShop receipt. Nothing was bought with real money on a
 		// private server, so acknowledge with an empty response rather than failing the
 		// task, which would stall Pit Stop's startup.
@@ -129,7 +137,7 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 	case taskGetInventoryPaginated:
 		r := &bdReader{b: payload, off: 3}
 		ctx, err := r.str()
-		if err != nil || ctx != "octane_switch" {
+		if err != nil || ctx != p.context {
 			return taskReply(task, errUnhandled, nil)
 		}
 		page, err := r.u32()
@@ -149,12 +157,12 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 		l.logf("CTR pitstop inventory page=%d size=%d -> %d items", page, size, len(items))
 		return taskReply(task, 0, func(w *bdWriter) uint32 {
 			for _, item := range items {
-				writeInventoryItem(w, l.pid(), item)
+				p.writeInventoryItem(w, l.pid(), item)
 			}
 			return uint32(len(items))
 		})
 	case taskPurchaseSkus:
-		skus, ok := parsePurchaseSkus(payload)
+		skus, ok := p.parsePurchaseSkus(payload)
 		if !ok {
 			return taskReply(task, errUnhandled, nil)
 		}
@@ -169,6 +177,19 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 
 	}
 	return nil
+}
+
+// CUSA13795 01.21: game 0xac10f0 -> SDK 0x920d0 (80/245), request
+// vtable 0x240ca88 -> serializer 0xd3b70: field 1 context, field 2 max.
+// The captured PS4 request is 24 bytes including the task terminator, max 1..16.
+func validPS4BalancesRequest(payload []byte, ctx string, max int) bool {
+	if max < 1 || max > 16 {
+		return false
+	}
+	w := &bdWriter{b: []byte{svcMarketplace, tagU8, taskGetBalancesV3}}
+	sb := pbBytesField(nil, 1, []byte(ctx))
+	w.structv(pbVarintField(sb, 2, uint64(max)))
+	return bytes.Equal(payload, append(w.b, 0))
 }
 
 // parseBalancesRequest reads the bdGetPlayerBalancesRequest struct buffer that follows the
@@ -192,7 +213,7 @@ func parseBalancesRequest(payload []byte) (string, int) {
 			}
 		case 2:
 			ln, next, err := readVarint(sb, i)
-			if err != nil || next+int(ln) > len(sb) {
+			if err != nil || ln > uint64(len(sb)-next) {
 				return ctx, max
 			}
 			i = next
@@ -248,24 +269,32 @@ func (w *bdWriter) i64(v int64) {
 // is the item id CMarketplaceInventoryItem::populateItem matches against the game's own
 // catalog, so it carries the catalog ITEM id granted by the SKU.
 func writeInventoryItem(w *bdWriter, owner uint64, item uint32) {
-	w.u64(owner)       // bdUserAccountID owner
-	w.strv("nintendo") // bdUserAccountID account type
-	w.u32(item)        // catalog item ID, not SKU
-	w.u32(1)           // +0x4c quantity
-	w.u32(0)           // +0x50
-	w.blobv(nil)       // +0x54 item data
-	w.u32(0)           // +0x98
-	w.i64(0)           // +0xa0 expiry, 0 = never
-	w.u16(0)           // +0xa8
-	w.u32(0)           // +0xac
+	(nintendoPlatform{}).Marketplace().writeInventoryItem(w, owner, item)
+}
+
+func (p marketplacePlatform) writeInventoryItem(w *bdWriter, owner uint64, item uint32) {
+	w.u64(owner)          // bdUserAccountID owner
+	w.strv(p.accountType) // PS4 reader 0xb3790 allows at most 10 bytes.
+	w.u32(item)           // catalog item ID, not SKU
+	w.u32(1)              // +0x4c quantity
+	w.u32(0)              // +0x50
+	w.blobv(nil)          // +0x54 item data
+	w.u32(0)              // +0x98
+	w.i64(0)              // +0xa0 expiry, 0 = never
+	w.u16(0)              // +0xa8
+	w.u32(0)              // +0xac
 }
 
 // purchaseSkus encodes arrays as count followed by typed elements.
 // CTR cosmetics are non-consumable: quantities other than one are rejected.
 func parsePurchaseSkus(payload []byte) ([]uint32, bool) {
+	return (nintendoPlatform{}).Marketplace().parsePurchaseSkus(payload)
+}
+
+func (p marketplacePlatform) parsePurchaseSkus(payload []byte) ([]uint32, bool) {
 	r := &bdReader{b: payload, off: 3}
 	ctx, err := r.str()
-	if err != nil || ctx != "octane_switch" {
+	if err != nil || ctx != p.context {
 		return nil, false
 	}
 	n, err := r.u32()
@@ -289,7 +318,39 @@ func parsePurchaseSkus(payload []byte) ([]uint32, bool) {
 			return nil, false
 		}
 	}
+	if p.strict && !defaultPS4PurchaseOptions(r.b[r.off:], n) {
+		return nil, false
+	}
 	return skus, true
+}
+
+// CUSA13795 01.21 original eboot: game 0xac1e70 selects octane_psn at
+// 0xac1f68 and calls 0x97160 at 0xac1ff1 with SKU/quantity arrays (each qty=1).
+// 0x97160 zeros all optional arguments; 0x973c0 is the sibling overload that
+// preserves the boolean argument. Both call 0x971b0, selecting service 80/task
+// 154 at 0x971e5/0x971ea, then serializer 0x97410 at 0x972b0.
+// Wire order: context string; u32 SKU count + u32 SKUs (0x975f4..0x9769a);
+// u32 quantity count + u32 quantities (0x9769c..0x9773b); then these defaults:
+// bool(false) (0x9777a), u32 count + null account IDs (0x977bd/0x97836;
+// 0x897d0 writes u64(0), string("")), u32(0) (0x97874), u32(0) (0x978f5),
+// u8(0) (0x979d0), u32(0) (0x97a47). No buyer account precedes the arrays:
+// 0x975e5 skips it for the null account constructed by 0x971b0.
+// Task finalization 0x123570 -> 0x17ca00 appends a raw zero terminator.
+// Only this caller's exact defaults are supported; never ignore gifting,
+// coupon or other optional data. Nintendo retains its existing parser.
+func defaultPS4PurchaseOptions(tail []byte, count uint32) bool {
+	w := &bdWriter{}
+	w.boolv(false)
+	w.u32(count)
+	for i := uint32(0); i < count; i++ {
+		w.u64(0)
+		w.strv("")
+	}
+	w.u32(0)
+	w.u32(0)
+	w.u8(0)
+	w.u32(0)
+	return bytes.Equal(tail, append(w.b, 0))
 }
 func parsePurchaseSku(payload []byte) (uint32, bool) {
 	ids, ok := parsePurchaseSkus(payload)

@@ -34,9 +34,9 @@ type achievementEvent struct {
 	Values    map[string]uint64
 }
 
-func balanceUpdatePayload(pid uint64, amount int64) []byte {
+func (p marketplacePlatform) balanceUpdatePayload(pid uint64, amount int64) []byte {
 	owner := pbVarintField(nil, 1, pid)
-	owner = pbBytesField(owner, 2, []byte("nintendo"))
+	owner = pbBytesField(owner, 2, []byte(p.accountType))
 	entry := pbBytesField(nil, 1, owner)
 	entry = pbVarintField(entry, 2, wumpaCurrency)
 	entry = pbVarintField(entry, 3, 0xffffffff) // legacy 32-bit balance sentinel
@@ -50,7 +50,7 @@ func (l *lobbyConn) pushCurrentBalance() {
 		l.logf("CTR balance push read: %v", err)
 		return
 	}
-	if err := l.sendPush(76, func(w *bdWriter) { w.structv(balanceUpdatePayload(l.pid(), a.Balances[10])) }); err != nil {
+	if err := l.sendPush(76, func(w *bdWriter) { w.structv(l.marketplacePlatform().balanceUpdatePayload(l.pid(), a.Balances[10])) }); err != nil {
 		l.logf("CTR balance push: %v", err)
 	}
 }
