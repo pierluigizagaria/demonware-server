@@ -8,11 +8,13 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
+	"io"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/NextendoNetwork/nextendo-demonware/internal/platform"
@@ -212,5 +214,18 @@ func TestCTRFollowerLeaveKeepsPartyAndNotifiesHost(t *testing.T) {
 	}
 	if out := m.leave(leader.conn, 0); len(out) != 1 || len(r.players) != 1 {
 		t.Fatal("leader departure did not remove its search")
+	}
+}
+
+func TestAuthRefusesIncompleteBody(t *testing.T) {
+	dir := t.TempDir()
+	h := newPlatformAuthHandler(fixturePSNPlatform(), testCTRSigner(t), dir, "")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", iotest.ErrReader(io.ErrUnexpectedEOF)))
+	if w.Code != 400 {
+		t.Fatalf("incomplete body answered %d", w.Code)
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, "*.tkt")); len(files) != 0 {
+		t.Fatal("ticket issued for an incomplete request")
 	}
 }

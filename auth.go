@@ -54,6 +54,10 @@ func serveAuth(platform platformAuthenticator) error {
 		// The client is an embedded 2018 curl: don't require TLS 1.2+.
 		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS10},
 		ReadHeaderTimeout: 15 * time.Second,
+		// Bounds reading one request, body included. Idle keep-alive stays
+		// unlimited as before (a zero IdleTimeout would inherit ReadTimeout).
+		ReadTimeout: 30 * time.Second,
+		IdleTimeout: -1,
 	}
 	ln, err := net.Listen("tcp", srv.Addr)
 	if err != nil {
@@ -80,8 +84,13 @@ func clientIP(r *http.Request) string {
 func newPlatformAuthHandler(platform platformAuthenticator, ctrSigner *ctrAuthSigner, sessDir, dumps string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := authReqNum.Add(1)
-		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		r.Body.Close()
+		if err != nil {
+			diagnosticLogf("[D3 Auth] #%d body: %v", n, err)
+			http.Error(w, "incomplete request", http.StatusBadRequest)
+			return
+		}
 		if r.URL.Path == "/v1.0/tokens/lsg/" {
 			handleCTRUmbrella(w, r, body, n, dumps)
 			return
