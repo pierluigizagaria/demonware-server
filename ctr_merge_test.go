@@ -169,3 +169,21 @@ func TestCTRRequeueDuringMergeReleasesReservation(t *testing.T) {
 		t.Fatal("hosts not told about the changed membership")
 	}
 }
+
+// A destination host who leaves closes its room; the source is released
+// without a notice to the room that is gone.
+func TestCTRDestinationHostLeavingReleasesSource(t *testing.T) {
+	m, a, b := mergeTestRooms(t)
+	if len(m.startMerge(a)) != 1 {
+		t.Fatal("no reservation")
+	}
+	out := m.leave(a.host.conn, 0)
+	for _, n := range out {
+		if n.conn == a.host.conn {
+			t.Fatal("notice sent for a closed room")
+		}
+	}
+	if m.rooms[a.id] != nil || b.mergeTarget != 0 {
+		t.Fatal("source still reserved for a closed destination")
+	}
+}

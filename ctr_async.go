@@ -83,6 +83,9 @@ type ctrMatchmaker struct {
 	mu      sync.Mutex
 	waiting []*ctrSearch
 	rooms   map[uint64]*ctrRoom
+	// Searches accepted but not yet matched: their reply is still being sent.
+	// They hold their members' seats but are not offered to anyone.
+	pending []*ctrSearch
 }
 
 var ctrMM = ctrMatchmaker{rooms: make(map[uint64]*ctrRoom)}
@@ -235,22 +238,74 @@ func (r *ctrRoom) notice(p *ctrSearch, event uint32) ctrNotice {
 	}
 	return ctrNotice{p.conn, event, ids, h, b}
 }
+
+// Party members are the leader's claim: the server has no evidence of who
+// agreed to join. A claim therefore never displaces another player's seat.
+// claimConflict reports a claimed follower who already holds a seat in a
+// search not led by this leader (waiting, pending, or in a room).
+func (m *ctrMatchmaker) claimConflict(s *ctrSearch) bool {
+	claimed := func(p *ctrSearch) bool {
+		if p == s || p.pid == s.pid {
+			return false // the leader's own searches are replaced by this one
+		}
+		for _, pid := range s.doc.Members {
+			if pid != s.pid && slices.Contains(p.doc.Members, pid) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, list := range [][]*ctrSearch{m.waiting, m.pending} {
+		if slices.ContainsFunc(list, claimed) {
+			return true
+		}
+	}
+	for _, r := range m.rooms {
+		if claimed(r.host) || slices.ContainsFunc(r.players, claimed) {
+			return true
+		}
+	}
+	return false
+}
+
+// reserve accepts a search before its success reply is sent: the conflict
+// check and the seat reservation happen together, so two parties cannot both
+// be told they claimed the same player. enqueue activates it after the reply;
+// release drops it if the reply could not be sent.
+func (m *ctrMatchmaker) reserve(s *ctrSearch) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.claimConflict(s) {
+		return errors.New("a claimed party member already holds a seat")
+	}
+	m.pending = append(m.pending, s)
+	return nil
+}
+
+func (m *ctrMatchmaker) release(s *ctrSearch) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pending = slices.DeleteFunc(m.pending, func(p *ctrSearch) bool { return p == s })
+}
+
 func (m *ctrMatchmaker) enqueue(s *ctrSearch) []ctrNotice {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	reserved := slices.Contains(m.pending, s)
+	m.pending = slices.DeleteFunc(m.pending, func(p *ctrSearch) bool { return p == s })
+	if !reserved && m.claimConflict(s) {
+		s.conn.logf("CTR search id=%d dropped: a claimed party member already holds a seat", s.id)
+		return nil
+	}
 	// Retries must not match an account with itself or create duplicate searches.
 	// A player who searches again is NOT in a lobby any more, whatever this side
 	// still believes. Returning nil here left them stuck forever: they matched
 	// once, the client failed to actually join, and every later search was
 	// answered with silence because the server still counted them as a member of
 	// a room they were never in. Evict them and let them match normally.
-	// Every member of the new search holds exactly one seat: a search led by one
-	// of them is withdrawn, and a party they left keeps its other members.
-	members := map[uint64]bool{}
-	for _, pid := range s.doc.Members {
-		members[pid] = true
-	}
-	evicted := m.detach(0, func(p *ctrSearch) bool { return members[p.pid] }, members)
+	// The leader's own seat elsewhere (as another party's follower) is released
+	// too; the other members' seats were checked free by reserve.
+	evicted := m.detach(0, func(p *ctrSearch) bool { return p.pid == s.pid }, map[uint64]bool{s.pid: true})
 	rooms := make([]*ctrRoom, 0, len(m.rooms))
 	for _, r := range m.rooms {
 		rooms = append(rooms, r)
@@ -356,53 +411,75 @@ func (m *ctrMatchmaker) cancel(conn *lobbyConn, id uint64) bool {
 // engine tracks searches by their leader's connection; a party follower who
 // leaves loses only its own seat, and a surviving host is told the new
 // expected membership. Any merge reservation involving the room is released.
+// A disconnect while the same account is connected elsewhere releases no
+// follower seat: the newer connection may hold it.
 func (m *ctrMatchmaker) leave(conn *lobbyConn, id uint64) []ctrNotice {
+	pid := conn.pid()
+	stale := pid != 0 && slices.Contains(onlinePIDs(), pid)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	seats := map[uint64]bool{}
-	if pid := conn.pid(); pid != 0 {
+	if pid != 0 && !stale {
 		seats[pid] = true
 	}
 	return m.detach(id, func(p *ctrSearch) bool { return p.conn == conn }, seats)
 }
 
-// detach withdraws every search for which lead is true and removes the seats of
-// the other listed players from their parties. Waiting searches are always
-// checked, rooms only room id when id != 0, and waiting party seats only when
-// id == 0. A room whose host search is withdrawn closes; a room whose
+// detach withdraws every search for which lead is true and removes the seats
+// of the other listed players from their parties; a search's own leader is
+// never removed this way. With id == 0 it covers waiting and pending searches
+// and every room; with id != 0 only that room (a disband ends no search). A
+// room whose host search is withdrawn closes; a surviving room whose
 // membership changes releases any merge reservation and tells its host.
+// Closing rooms are settled first, so no notice targets a room that is gone.
 // The caller holds m.mu.
 func (m *ctrMatchmaker) detach(id uint64, lead func(*ctrSearch) bool, seats map[uint64]bool) []ctrNotice {
+	removable := func(p *ctrSearch, pid uint64) bool { return seats[pid] && pid != p.pid }
 	member := func(p *ctrSearch) bool {
-		return slices.ContainsFunc(p.doc.Members, func(pid uint64) bool { return seats[pid] })
+		return slices.ContainsFunc(p.doc.Members, func(pid uint64) bool { return removable(p, pid) })
 	}
 	without := func(p *ctrSearch) *ctrSearch {
-		return p.removeMembers(func(pid uint64) bool { return seats[pid] })
+		return p.removeMembers(func(pid uint64) bool { return removable(p, pid) })
 	}
-	waiting := m.waiting[:0]
-	for _, p := range m.waiting {
-		switch {
-		case lead(p):
-		case id == 0 && member(p):
-			waiting = append(waiting, without(p))
-		default:
-			waiting = append(waiting, p)
+	if id == 0 {
+		for _, list := range []*[]*ctrSearch{&m.waiting, &m.pending} {
+			kept := (*list)[:0]
+			for _, p := range *list {
+				switch {
+				case lead(p):
+				case member(p):
+					kept = append(kept, without(p))
+				default:
+					kept = append(kept, p)
+				}
+			}
+			*list = kept
 		}
 	}
-	m.waiting = waiting
 	var notices []ctrNotice
+	closing := map[*ctrRoom]bool{}
 	for roomID, r := range m.rooms {
-		if id != 0 && roomID != id {
-			continue
+		if (id == 0 || roomID == id) && lead(r.host) {
+			closing[r] = true
 		}
-		if lead(r.host) {
-			// Release the other side of a merge reservation before the room goes.
-			if r.mergeSource != nil {
-				r.mergeSource.mergeTarget = 0
-			} else if dst := m.rooms[r.mergeTarget]; dst != nil && dst.mergeSource == r {
+	}
+	for r := range closing {
+		// Release the other side of a merge reservation; only a surviving
+		// destination is told, with the version bump of a cancelled merge.
+		if src := r.mergeSource; src != nil {
+			src.mergeTarget = 0
+			r.mergeSource = nil
+		} else if dst := m.rooms[r.mergeTarget]; dst != nil && dst.mergeSource == r {
+			if closing[dst] {
+				dst.mergeSource, r.mergeTarget = nil, 0
+			} else {
 				notices = append(notices, m.cancelMerge(dst)...)
 			}
-			delete(m.rooms, roomID)
+		}
+		delete(m.rooms, r.id)
+	}
+	for roomID, r := range m.rooms {
+		if id != 0 && roomID != id {
 			continue
 		}
 		var departed []uint64
@@ -415,7 +492,7 @@ func (m *ctrMatchmaker) detach(id uint64, lead func(*ctrSearch) bool, seats map[
 			case member(p):
 				q := without(p)
 				for _, pid := range p.doc.Members {
-					if seats[pid] {
+					if removable(p, pid) {
 						departed = append(departed, pid)
 					}
 				}

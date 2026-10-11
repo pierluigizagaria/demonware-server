@@ -360,6 +360,9 @@ func (l *lobbyConn) onTask(payload []byte) {
 			break
 		}
 		search, err := parseCTRSearch(l, raw)
+		if err == nil {
+			err = ctrMM.reserve(search)
+		}
 		if err != nil {
 			l.logf("CTR search rejected: %v", err)
 			reply = taskReply(task, errUnhandled, nil)
@@ -368,6 +371,10 @@ func (l *lobbyConn) onTask(payload []byte) {
 		doc := "{\"mm_id\":" + strconv.FormatUint(search.id, 10) + "}"
 		reply = taskReply(task, 0, func(w *bdWriter) uint32 { w.strv(doc); return 1 })
 		l.afterReply = func() {
+			if l.replyErr != nil {
+				ctrMM.release(search) // the client never learned of this search
+				return
+			}
 			notices := ctrMM.enqueue(search)
 			l.logf("CTR search id=%d registered; seats=%d filter=%s notifications=%d",
 				search.id, search.seats, search.filterID, len(notices))
@@ -449,8 +456,9 @@ func (l *lobbyConn) onTask(payload []byte) {
 		l.afterReply = nil
 		defer pending()
 	}
-	if err := l.sendEncrypted(innerTaskReply, reply); err != nil {
-		l.logf("send reply: %v", err)
+	l.replyErr = l.sendEncrypted(innerTaskReply, reply)
+	if l.replyErr != nil {
+		l.logf("send reply: %v", l.replyErr)
 	}
 }
 

@@ -95,6 +95,7 @@ type lobbyConn struct {
 
 	// Sent after the in-flight task reply (pushed messages).
 	afterReply func()
+	replyErr   error // outcome of the last task reply, for afterReply
 }
 
 func (l *lobbyConn) logf(format string, a ...any) {

@@ -174,12 +174,93 @@ func TestCTRPartyMemberSearchingAloneHoldsOneSeat(t *testing.T) {
 	}
 }
 
-// Joining a party withdraws the member's own pending search.
-func TestCTRJoiningPartyWithdrawsOwnSearch(t *testing.T) {
+// Party members are only the leader's claim: a claim can never take a seat
+// another player holds, whether that player waits or hosts a room.
+func TestCTRPartyClaimCannotEvictAnotherPlayer(t *testing.T) {
 	m := &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
 	m.enqueue(testCTRSearch(t, 7201, 1))
-	m.enqueue(partySearch(t, 7200, 7201))
-	if seats := seatsHeld(m); seats[7200] != 1 || seats[7201] != 1 {
-		t.Fatalf("seats %v after joining a party", seats)
+	if err := m.reserve(partySearch(t, 7200, 7201)); err == nil {
+		t.Fatal("claim on a waiting player accepted")
+	}
+	if seats := seatsHeld(m); seats[7201] != 1 || len(m.waiting) != 1 || m.waiting[0].pid != 7201 || len(m.pending) != 0 {
+		t.Fatalf("waiting player's search changed: %v", seats)
+	}
+	r := fillTestRoom(t, m, 7300, 2)
+	if err := m.reserve(partySearch(t, 7310, r.host.pid)); err == nil {
+		t.Fatal("claim on a room host accepted")
+	}
+	if m.rooms[r.id] != r || r.occupancy() != 2 {
+		t.Fatal("claimed host's room changed")
+	}
+}
+
+// The conflict check and the reservation are one step, so two parties are
+// never both told they claimed the same free player.
+func TestCTRConcurrentPartyClaimsReserveAtomically(t *testing.T) {
+	m := &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	first, second := partySearch(t, 7400, 7402), partySearch(t, 7401, 7402)
+	first.doc.Slots.Min, second.doc.Slots.Min = 8, 8
+	if err := m.reserve(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.reserve(second); err == nil {
+		t.Fatal("second claim on a reserved player accepted")
+	}
+	m.release(first) // its reply could not be sent
+	if err := m.reserve(second); err != nil {
+		t.Fatal("released reservation still blocks:", err)
+	}
+	m.enqueue(second)
+	if seats := seatsHeld(m); seats[7402] != 1 || len(m.pending) != 0 {
+		t.Fatalf("seats %v after activation", seats)
+	}
+}
+
+// A leader who searches again with the same party replaces its own search.
+func TestCTRPartyRetryReplacesOwnSearch(t *testing.T) {
+	m := &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	for range 2 {
+		s := partySearch(t, 7500, 7501)
+		s.doc.Slots.Min = 8
+		if err := m.reserve(s); err != nil {
+			t.Fatal("retry refused:", err)
+		}
+		m.enqueue(s)
+	}
+	if seats := seatsHeld(m); len(m.waiting) != 1 || seats[7500] != 1 || seats[7501] != 1 {
+		t.Fatalf("seats %v after a retry", seats)
+	}
+}
+
+// A late disconnect of an account's old connection leaves the seats its
+// newer connection holds.
+func TestCTRStaleDisconnectKeepsReplacementSeats(t *testing.T) {
+	m := &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	party := partySearch(t, 7600, 7601)
+	party.doc.Slots.Min = 8
+	m.enqueue(party)
+	old := &lobbyConn{n: 7699, player: &playerID{PID: 7601}}
+	onlineMu.Lock()
+	online[7698] = &playerID{PID: 7601} // the replacement connection
+	onlineMu.Unlock()
+	defer dropOnline(7698)
+	m.leave(old, 0)
+	if seats := seatsHeld(m); seats[7601] != 1 {
+		t.Fatalf("stale disconnect removed the live seat: %v", seats)
+	}
+}
+
+// Disbanding an old lobby ends no search: a player who already searches again
+// keeps that search.
+func TestCTROldLobbyDisbandKeepsNewSearch(t *testing.T) {
+	m := &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	r := fillTestRoom(t, m, 7700, 3)
+	player := r.players[2]
+	again := testCTRSearch(t, player.pid, 1)
+	again.conn = player.conn
+	m.enqueue(again)
+	m.leave(player.conn, r.id)
+	if len(m.waiting) != 1 || m.waiting[0] != again {
+		t.Fatal("old lobby disband cancelled the new search")
 	}
 }
