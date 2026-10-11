@@ -157,3 +157,32 @@ func TestChallengePeriodAndExistingCompletion(t *testing.T) {
 		t.Fatal("stale event accepted")
 	}
 }
+
+func TestChallengeReceiptIgnoresFieldsOutsideTheRule(t *testing.T) {
+	s := &economyStore{dir: t.TempDir()}
+	r := ruleForTest(t, "use_juiced_up_powerups_T_times")
+	now := ruleTime(r)
+	if _, u, err := s.awardChallenges(42, []achievementEvent{ruleEvent(r, now)}, now); err != nil || len(u) == 0 {
+		t.Fatalf("first occurrence not counted: %v", err)
+	}
+	padded := ruleEvent(r, now)
+	padded.ID = 7
+	padded.Values["Ignored"] = 1
+	if _, u, err := s.awardChallenges(42, []achievementEvent{padded}, now); err != nil || len(u) != 0 {
+		t.Fatal("replay with fields the rule ignores advanced progress")
+	}
+}
+
+func TestInvalidBattleModeRecordsNothing(t *testing.T) {
+	s := &economyStore{dir: t.TempDir()}
+	r := ruleForTest(t, battleChallenge)
+	now := ruleTime(r)
+	e := ruleEvent(r, now)
+	e.Values["X"] = 5
+	if _, u, err := s.awardChallenges(42, []achievementEvent{e}, now); err != nil || len(u) != 0 {
+		t.Fatal("invalid battle mode counted")
+	}
+	if a, err := s.snapshot(42); err != nil || len(a.Challenges) != 0 {
+		t.Fatalf("invalid battle mode stored a receipt: %+v", a.Challenges)
+	}
+}

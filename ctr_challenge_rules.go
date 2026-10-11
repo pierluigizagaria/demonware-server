@@ -5,6 +5,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -122,6 +125,30 @@ func (r challengeRule) accepts(p challengePeriod, e achievementEvent) bool {
 	return true
 }
 
+const battleChallenge = "win_game_in_T_different_battles_TRACKNAME"
+
+// challengeReceipt identifies an occurrence by what its rule reads: the event
+// name and time, the effective increment, and the filter, X and Y values the
+// period checks (X is also the battle mode). An ID or other field the rule
+// ignores cannot make a replay a new occurrence. The values remain the
+// client's statement; identical events in one report still count separately.
+func challengeReceipt(p challengePeriod, e achievementEvent, increment uint64, battle bool) string {
+	keys := map[string]bool{}
+	for field := range p.Filters {
+		keys[field] = true
+	}
+	keys["X"] = p.X != 0 || battle
+	keys["Y"] = p.Y != 0
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s|%d|%d", e.Name, e.Timestamp, increment)
+	for _, k := range slices.Sorted(maps.Keys(keys)) {
+		if keys[k] {
+			fmt.Fprintf(&b, "|%s=%d", k, e.Values[k])
+		}
+	}
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(b.String())))
+}
+
 // Completion, partial progress, retry receipts and coins share one atomic
 // account save. Identical events in one report are separate occurrences;
 // replaying that report after reconnecting must not advance them again.
@@ -162,8 +189,14 @@ func (s *economyStore) awardChallenges(pid uint64, events []achievementEvent, no
 			if increment == 0 {
 				continue
 			}
-			b, _ := json.Marshal(e)
-			receipt := fmt.Sprintf("%x", sha256.Sum256(b))
+			// X is the client's battle-mode discriminator, not an additive win
+			// count; an invalid or already counted mode records nothing.
+			battle := r.Name == battleChallenge
+			mode, hasMode := e.Values["X"]
+			if battle && (!hasMode || mode < 9 || mode > 13 || c.Distinct[fmt.Sprint(mode)]) {
+				continue
+			}
+			receipt := challengeReceipt(period, e, increment, battle)
 			occurrences[receipt]++
 			if c.Receipts[receipt] >= occurrences[receipt] {
 				continue
@@ -171,20 +204,11 @@ func (s *economyStore) awardChallenges(pid uint64, events []achievementEvent, no
 			c.Receipts[receipt] = occurrences[receipt]
 			changed = true
 			recordChanged = true
-			if r.Name == "win_game_in_T_different_battles_TRACKNAME" {
-				// X is the client's battle-mode discriminator, not an additive win count.
-				mode, ok := e.Values["X"]
-				if !ok || mode < 9 || mode > 13 {
-					continue
-				}
+			if battle {
 				if c.Distinct == nil {
 					c.Distinct = map[string]bool{}
 				}
-				k := fmt.Sprint(mode)
-				if c.Distinct[k] {
-					continue
-				}
-				c.Distinct[k] = true
+				c.Distinct[fmt.Sprint(mode)] = true
 				increment = 1
 			}
 			if increment >= state.Target-c.Progress {
