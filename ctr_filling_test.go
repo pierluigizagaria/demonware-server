@@ -121,3 +121,65 @@ func TestCTRWaitingSearchBackfilledWhenHostOpens(t *testing.T) {
 		t.Fatal("waiter not released after host acknowledged membership")
 	}
 }
+
+func partySearch(t *testing.T, leader uint64, members ...uint64) *ctrSearch {
+	t.Helper()
+	s := testCTRSearch(t, leader, 0)
+	s.doc.Members = append([]uint64{leader}, members...)
+	s.seats = len(s.doc.Members)
+	return s
+}
+
+// seatsHeld counts, per player, the seats held across waiting searches and rooms.
+func seatsHeld(m *ctrMatchmaker) map[uint64]int {
+	seats := map[uint64]int{}
+	count := func(p *ctrSearch) {
+		for _, pid := range p.doc.Members {
+			seats[pid]++
+		}
+	}
+	for _, r := range m.rooms {
+		for _, p := range r.players {
+			count(p)
+		}
+	}
+	for _, p := range m.waiting {
+		count(p)
+	}
+	return seats
+}
+
+// A party member who searches alone leaves the party: two people never hold
+// three seats, whether the party is still waiting or already seated.
+func TestCTRPartyMemberSearchingAloneHoldsOneSeat(t *testing.T) {
+	m := &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	party := partySearch(t, 7000, 7001)
+	party.doc.Slots.Min = 8 // keeps waiting
+	m.enqueue(party)
+	m.enqueue(testCTRSearch(t, 7001, 1)) // another playlist: both stay waiting
+	if seats := seatsHeld(m); len(m.waiting) != 2 || seats[7000] != 1 || seats[7001] != 1 {
+		t.Fatalf("seats %v after a waiting party member searched alone", seats)
+	}
+
+	m = &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	r := fillTestRoom(t, m, 7100, 2)
+	m.enqueue(partySearch(t, 7110, 7111))
+	if r.occupancy() != 4 {
+		t.Fatalf("party not seated: %d", r.occupancy())
+	}
+	version := r.version
+	out := m.enqueue(testCTRSearch(t, 7111, 0))
+	if seats := seatsHeld(m); seats[7111] != 1 || seats[7110] != 1 || r.version <= version || len(out) == 0 || out[0].conn != r.host.conn {
+		t.Fatalf("seats %v after a seated party member searched alone", seats)
+	}
+}
+
+// Joining a party withdraws the member's own pending search.
+func TestCTRJoiningPartyWithdrawsOwnSearch(t *testing.T) {
+	m := &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	m.enqueue(testCTRSearch(t, 7201, 1))
+	m.enqueue(partySearch(t, 7200, 7201))
+	if seats := seatsHeld(m); seats[7200] != 1 || seats[7201] != 1 {
+		t.Fatalf("seats %v after joining a party", seats)
+	}
+}

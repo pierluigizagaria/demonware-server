@@ -82,7 +82,12 @@ func TestCTRMergeCancelsIfSourceClosesOrLeaves(t *testing.T) {
 		if closed {
 			b.hostDoc["lobby_open"] = false
 		} else {
-			m.leave(b.host.conn, b.id)
+			// The source host's departure releases the reservation at once.
+			out := m.leave(b.host.conn, b.id)
+			if len(out) != 1 || out[0].conn != a.host.conn || out[0].event != ctrUpdateLobby || a.mergeSource != nil || a.occupancy() != 3 {
+				t.Fatal("source departure did not cancel the merge")
+			}
+			continue
 		}
 		h, _ := a.documents()
 		ok, out := m.syncDoc(a.host.conn, a.id, a.version, h)
@@ -138,5 +143,29 @@ func TestCTRMergeKeepsPartyMembersTogether(t *testing.T) {
 		if backend.Players[pid] != "expected" {
 			t.Fatal("missing party member", pid)
 		}
+	}
+}
+
+// A member of the source room who searches again changes the membership the
+// destination reserved: the merge is released and both hosts learn it.
+func TestCTRRequeueDuringMergeReleasesReservation(t *testing.T) {
+	m, a, b := mergeTestRooms(t)
+	if len(m.startMerge(a)) != 1 || a.mergeSource != b {
+		t.Fatal("no reservation")
+	}
+	version := a.version
+	leaver := b.players[2]
+	out := m.enqueue(testCTRSearch(t, leaver.pid, 1))
+	if a.mergeSource != nil || b.mergeTarget != 0 || a.version != version+1 || b.occupancy() != 2 {
+		t.Fatal("reservation kept after the source membership changed")
+	}
+	hosts := map[*lobbyConn]bool{}
+	for _, n := range out {
+		if n.event == ctrUpdateLobby {
+			hosts[n.conn] = true
+		}
+	}
+	if !hosts[a.host.conn] || !hosts[b.host.conn] {
+		t.Fatal("hosts not told about the changed membership")
 	}
 }

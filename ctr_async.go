@@ -239,30 +239,18 @@ func (m *ctrMatchmaker) enqueue(s *ctrSearch) []ctrNotice {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	// Retries must not match an account with itself or create duplicate searches.
-	for i := len(m.waiting) - 1; i >= 0; i-- {
-		if m.waiting[i].pid == s.pid {
-			m.waiting = append(m.waiting[:i], m.waiting[i+1:]...)
-		}
-	}
 	// A player who searches again is NOT in a lobby any more, whatever this side
 	// still believes. Returning nil here left them stuck forever: they matched
 	// once, the client failed to actually join, and every later search was
 	// answered with silence because the server still counted them as a member of
 	// a room they were never in. Evict them and let them match normally.
-	for roomID, r := range m.rooms {
-		if r.host.pid == s.pid {
-			// The host re-queueing means that lobby is gone.
-			delete(m.rooms, roomID)
-			continue
-		}
-		for i, p := range r.players {
-			if p.pid == s.pid {
-				r.players = append(r.players[:i], r.players[i+1:]...)
-				delete(r.notified, p.conn)
-				break
-			}
-		}
+	// Every member of the new search holds exactly one seat: a search led by one
+	// of them is withdrawn, and a party they left keeps its other members.
+	members := map[uint64]bool{}
+	for _, pid := range s.doc.Members {
+		members[pid] = true
 	}
+	evicted := m.detach(0, func(p *ctrSearch) bool { return members[p.pid] }, members)
 	rooms := make([]*ctrRoom, 0, len(m.rooms))
 	for _, r := range m.rooms {
 		rooms = append(rooms, r)
@@ -305,8 +293,7 @@ func (m *ctrMatchmaker) enqueue(s *ctrSearch) []ctrNotice {
 			r.version++
 			r.hostDoc["update_id"] = r.version
 			r.hostDoc["update_time"] = time.Now().Unix()
-			out := []ctrNotice{r.notice(r.host, ctrUpdateLobby)}
-			return out
+			return append(evicted, r.notice(r.host, ctrUpdateLobby))
 		}
 	}
 	m.waiting = append(m.waiting, s)
@@ -326,7 +313,7 @@ func (m *ctrMatchmaker) enqueue(s *ctrSearch) []ctrNotice {
 		minimum, maximum = nextMin, nextMax
 	}
 	if seats < minimum {
-		return nil
+		return evicted
 	}
 	h := group[0]
 	r := &ctrRoom{id: ctrIDs.Add(1), version: 1, created: time.Now().Unix(), host: h, players: group, capacity: maximum, notified: map[*lobbyConn]bool{h.conn: true}}
@@ -350,7 +337,7 @@ func (m *ctrMatchmaker) enqueue(s *ctrSearch) []ctrNotice {
 		}
 	}
 	m.waiting = remaining
-	return out
+	return append(evicted, out...)
 }
 
 func (m *ctrMatchmaker) cancel(conn *lobbyConn, id uint64) bool {
@@ -372,34 +359,49 @@ func (m *ctrMatchmaker) cancel(conn *lobbyConn, id uint64) bool {
 func (m *ctrMatchmaker) leave(conn *lobbyConn, id uint64) []ctrNotice {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	pid := conn.pid()
-	follower := func(p *ctrSearch) bool {
-		return p.conn != conn && pid != 0 && slices.Contains(p.doc.Members, pid)
+	seats := map[uint64]bool{}
+	if pid := conn.pid(); pid != 0 {
+		seats[pid] = true
+	}
+	return m.detach(id, func(p *ctrSearch) bool { return p.conn == conn }, seats)
+}
+
+// detach withdraws every search for which lead is true and removes the seats of
+// the other listed players from their parties. Waiting searches are always
+// checked, rooms only room id when id != 0, and waiting party seats only when
+// id == 0. A room whose host search is withdrawn closes; a room whose
+// membership changes releases any merge reservation and tells its host.
+// The caller holds m.mu.
+func (m *ctrMatchmaker) detach(id uint64, lead func(*ctrSearch) bool, seats map[uint64]bool) []ctrNotice {
+	member := func(p *ctrSearch) bool {
+		return slices.ContainsFunc(p.doc.Members, func(pid uint64) bool { return seats[pid] })
 	}
 	without := func(p *ctrSearch) *ctrSearch {
-		return p.removeMembers(func(member uint64) bool { return member == pid })
+		return p.removeMembers(func(pid uint64) bool { return seats[pid] })
 	}
-	for i := len(m.waiting) - 1; i >= 0; i-- {
-		if m.waiting[i].conn == conn {
-			m.waiting = append(m.waiting[:i], m.waiting[i+1:]...)
-		} else if id == 0 && follower(m.waiting[i]) {
-			m.waiting[i] = without(m.waiting[i])
+	waiting := m.waiting[:0]
+	for _, p := range m.waiting {
+		switch {
+		case lead(p):
+		case id == 0 && member(p):
+			waiting = append(waiting, without(p))
+		default:
+			waiting = append(waiting, p)
 		}
 	}
+	m.waiting = waiting
 	var notices []ctrNotice
 	for roomID, r := range m.rooms {
 		if id != 0 && roomID != id {
 			continue
 		}
-		involved := r.host.conn == conn
-		for _, p := range r.players {
-			involved = involved || p.conn == conn || follower(p)
-		}
-		if !involved {
-			continue
-		}
-		if r.host.conn == conn {
-			// A pending merge notices the missing room at its next sync.
+		if lead(r.host) {
+			// Release the other side of a merge reservation before the room goes.
+			if r.mergeSource != nil {
+				r.mergeSource.mergeTarget = 0
+			} else if dst := m.rooms[r.mergeTarget]; dst != nil && dst.mergeSource == r {
+				notices = append(notices, m.cancelMerge(dst)...)
+			}
 			delete(m.rooms, roomID)
 			continue
 		}
@@ -407,15 +409,19 @@ func (m *ctrMatchmaker) leave(conn *lobbyConn, id uint64) []ctrNotice {
 		kept := r.players[:0]
 		for _, p := range r.players {
 			switch {
-			case p.conn == conn:
+			case lead(p):
 				departed = append(departed, p.doc.Members...)
 				delete(r.notified, p.conn)
-			case follower(p):
+			case member(p):
 				q := without(p)
+				for _, pid := range p.doc.Members {
+					if seats[pid] {
+						departed = append(departed, pid)
+					}
+				}
 				if r.host == p {
 					r.host = q
 				}
-				departed = append(departed, pid)
 				kept = append(kept, q)
 			default:
 				kept = append(kept, p)
@@ -426,8 +432,8 @@ func (m *ctrMatchmaker) leave(conn *lobbyConn, id uint64) []ctrNotice {
 			continue
 		}
 		if states, ok := r.hostDoc["player_state"].(map[string]any); ok {
-			for _, member := range departed {
-				delete(states, strconv.FormatUint(member, 10))
+			for _, pid := range departed {
+				delete(states, strconv.FormatUint(pid, 10))
 			}
 		}
 		// The departure invalidates a merge reservation; cancelling one in
