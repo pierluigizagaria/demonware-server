@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -83,10 +84,31 @@ const replayRetention = 9 * 24 * time.Hour
 
 // ctrSQLite owns the only connection pool for this instance's economy and stats.
 type ctrSQLite struct {
-	db *sql.DB
+	db   *sql.DB
+	lock *os.File
+}
+
+// Economy saves read and write in separate transactions under a process mutex,
+// so a second process on the same database could lose updates. An OS lock on
+// a sibling file, released when the process exits, refuses a second instance.
+// Read-only tools can still open the database itself.
+func lockCTRInstance(path string) (*os.File, error) {
+	f, err := os.OpenFile(path+".lock", os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := lockExclusive(f); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("%s is in use by another Nextendo instance", path)
+	}
+	return f, nil
 }
 
 func openCTRSQLite(path string, unlockAll bool) (*ctrSQLite, error) {
+	lock, err := lockCTRInstance(path)
+	if err != nil {
+		return nil, err
+	}
 	q := url.Values{}
 	q.Add("_pragma", "busy_timeout(5000)")
 	q.Add("_pragma", "journal_mode(WAL)")
@@ -95,18 +117,23 @@ func openCTRSQLite(path string, unlockAll bool) (*ctrSQLite, error) {
 	q.Add("_pragma", "recursive_triggers(ON)")
 	db, err := sql.Open("sqlite", path+"?"+q.Encode())
 	if err != nil {
+		lock.Close()
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s := &ctrSQLite{db: db}
+	s := &ctrSQLite{db: db, lock: lock}
 	if err := s.initialize(unlockAll); err != nil {
-		db.Close()
+		s.Close()
 		return nil, err
 	}
 	return s, nil
 }
 
-func (s *ctrSQLite) Close() error { return s.db.Close() }
+func (s *ctrSQLite) Close() error {
+	err := s.db.Close()
+	s.lock.Close() // releases the instance lock; repeated closes are harmless
+	return err
+}
 
 func (s *ctrSQLite) initialize(unlockAll bool) error {
 	tx, err := s.db.Begin()

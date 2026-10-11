@@ -573,3 +573,15 @@ func TestSQLiteStartsFreshAndFixesStartingBalance(t *testing.T) {
 		}
 	}
 }
+
+func TestSQLiteRefusesSecondInstance(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ctrDB)
+	db := openTestCTR(t, path, false)
+	if other, err := openCTRSQLite(path, false); err == nil {
+		other.Close()
+		t.Fatal("second instance opened the same database")
+	}
+	db.Close()
+	reopened := openTestCTR(t, path, false)
+	reopened.Close()
+}
