@@ -219,3 +219,59 @@ func TestRemoteKeysRefreshTimeoutAndHeaderValidation(t *testing.T) {
 		t.Fatal("timed-out refresh prevented cached verification")
 	}
 }
+
+func TestRemoteKeysRefreshAheadDoesNotBlockAdmission(t *testing.T) {
+	_, key, policy, jwks := issuerFixture(t)
+	var requests atomic.Int64
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) > 1 {
+			<-release
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(jwks)
+	}))
+	defer server.Close()
+	v, err := newRemoteVerifier(policy, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := v.remote.expires.Add(-keyRefreshAhead / 2)
+	v.remote.clock = func() time.Time { return now }
+	token := signToken(t, key, tokenClaims())
+	done := make(chan error, 1)
+	go func() {
+		_, err := v.Verify(token, time.Unix(1001, 0))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal("cached key refused during background refresh")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("admission waited for the key endpoint")
+	}
+	for range 5 {
+		if _, err := v.Verify(token, time.Unix(1001, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		v.remote.mu.Lock()
+		renewed := v.remote.loading == nil && v.remote.expires.Equal(now.Add(keyCacheLifetime))
+		v.remote.mu.Unlock()
+		if renewed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background refresh did not renew the key set")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("refresh-ahead made %d requests", requests.Load())
+	}
+}

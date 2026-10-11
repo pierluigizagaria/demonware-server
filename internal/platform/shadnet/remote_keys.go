@@ -14,6 +14,7 @@ import (
 
 const keyCacheLifetime = 5 * time.Minute
 const keyRefreshInterval = 30 * time.Second
+const keyRefreshAhead = time.Minute
 
 // Only the backend's configured endpoint supplies keys. Concurrent refreshes
 // share one request; unknown key IDs cannot trigger an unbounded request stream.
@@ -84,6 +85,12 @@ func (r *remoteKeys) key(id string) *rsa.PublicKey {
 		r.mu.Lock()
 		now := r.clock()
 		if key := r.keys[id]; key != nil && now.Before(r.expires) {
+			// Renew shortly before expiry in the background, so admission never
+			// waits for the endpoint while the cached keys are still valid.
+			if r.loading == nil && !now.Before(r.expires.Add(-keyRefreshAhead)) && !now.Before(r.retryAt) {
+				r.beginRefresh(now)
+				go r.refresh(now)
+			}
 			r.mu.Unlock()
 			return key
 		}
@@ -96,20 +103,30 @@ func (r *remoteKeys) key(id string) *rsa.PublicKey {
 			r.mu.Unlock()
 			return nil
 		}
-		r.loading = make(chan struct{})
-		r.retryAt = now.Add(keyRefreshInterval)
+		r.beginRefresh(now)
 		r.mu.Unlock()
-
-		keys, err := r.fetch()
-		r.mu.Lock()
-		if err == nil {
-			r.keys, r.expires = keys, r.clock().Add(keyCacheLifetime)
-		}
-		close(r.loading)
-		r.loading = nil
-		r.mu.Unlock()
-		if err != nil {
+		if !r.refresh(now) {
 			return nil
 		}
 	}
+}
+
+// beginRefresh claims the single refresh; r.mu must be held.
+func (r *remoteKeys) beginRefresh(now time.Time) {
+	r.loading = make(chan struct{})
+	r.retryAt = now.Add(keyRefreshInterval)
+}
+
+// refresh downloads the key set and releases waiting admissions. A failure
+// keeps the current keys until they expire; the lifetime counts from started.
+func (r *remoteKeys) refresh(started time.Time) bool {
+	keys, err := r.fetch()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err == nil {
+		r.keys, r.expires = keys, started.Add(keyCacheLifetime)
+	}
+	close(r.loading)
+	r.loading = nil
+	return err == nil
 }
