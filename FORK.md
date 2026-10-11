@@ -16,13 +16,13 @@ through the same dispatcher, matchmaking engine and CTR services as Switch.
 | --- | --- | --- |
 | Platform boundary | `platform.go` | `platformAuthenticator` (identity, auth extra data, policy); one installed at startup |
 | Nintendo | `platform_nintendo.go` | Original identity/gates; zero policy keeps original admission |
-| PS4 | `platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL, issuer/audience/title/scopes, 60 s clock leeway) |
-| Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | PS4 policy: lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their stored identity; failed persistence or a missing response signer fails closed |
+| PS4 | `platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL and cached for 5 minutes, renewed in the background during the last minute, issuer/audience/title/scopes, 60 s clock leeway) |
+| Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | PS4 policy: lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their stored identity; failed persistence or a missing response signer fails closed. Ticket and identity files are named by the ticket's session tag and read directly; a pruner deletes them once expired, keeping the latest identity per account in `account_<pid>.json`. 12/10 name lookups use an in-memory index |
 | PS4 tasks | `platform_tasks.go`, `services.go` | 38/6 identity report; raw bandwidth completion; 12/10 getUserIDs (shared: online players, then identities already issued a ticket) |
 | PS4 marketplace | `ctr_marketplace.go`, `ctr_rewards.go`, platform boundary | Shared 80/245,165,154 use `octane_psn` and owner `psn`; purchases accept only original PS4 SDK defaults. 80/246 and unknown PS4 tasks fail without ledger writes. Nintendo keeps `octane_switch`/`nintendo` and its upstream fallback. |
 | Unlock-all option | `ctr_economy_policy.go`, `main.go` | Opt-in full catalog ownership is computed at read time. Known-SKU purchases debit nothing and write nothing; unknown SKUs fail. `meta.unlock_all` fixes the mode for the database, independently of platform or admission. Startup logs `unlock-all: on` or `unlock-all: off`. |
-| Economy storage | `ctr_sqlite.go`, `ctr_economy.go` | One `ctr.sqlite` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction. |
-| Leaderboards | `ctr_sqlite.go`, `ctr_stats.go`, `main.go` | bdStats shares `ctr.sqlite` with the economy, keeping the original table, batch transactions and ranking. The upstream JSON store remains the reference for the contract test. |
+| Economy storage | `ctr_sqlite.go`, `ctr_economy.go` | One `ctr.sqlite` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction and writes only changed rows. Race receipts and online seconds older than nine days, beyond the seven-day reward window, are neither loaded nor kept. |
+| Leaderboards | `ctr_sqlite.go`, `ctr_stats.go`, `main.go` | bdStats shares `ctr.sqlite` with the economy, keeping the original table, batch transactions and ranking. Rank pages and entity reads run in SQL on an index matching the ranking order. The upstream JSON store remains the reference for the contract test. |
 | Engine | `ctr_async.go`, `ctr_merge.go` | Party followers who leave lose only their seat and the host gets the new membership; explicit merge-eligibility flags; merges cancelled when a source closes or membership changes; handoff before backfill |
 | Diagnostics | `diagnostic_redaction.go` | `NEXTENDO_REDACT_LOGS` (default on) redacts log arguments and disables raw dumps |
 
@@ -47,9 +47,11 @@ exact granted scopes and the trusted `jwks_url` of the shadNet instance.
 | `LOBBY_PORTS`, `NAT_PORT` | Lobby TCP ports and NAT UDP port |
 | `BIND_ADDR` | Optional listener address (for example `127.0.0.1`) |
 
-`CTR_RELAY_PORT_LOW/HIGH` enable the optional UDP relay inherited from upstream;
-its two-minute quiet-pair reaper applies, so leave it disabled when sessions may
-be idle. `openssl` must be on `PATH` for response signing.
+`CTR_RELAY_PORT_LOW/HIGH` enable the optional UDP relay inherited from upstream
+(`CTR_RELAY_PIDS` selects the joiners). Its sockets honor `BIND_ADDR`. A pair is
+released when either player has no lobby connection, never because it was
+quiet. The relay is not qualified for the PS4 race transport. `openssl` must be
+on `PATH` for response signing.
 
 ## Two publisher servers
 
@@ -62,7 +64,7 @@ inventory in the save, so give each server its own profile and save.
 The database starts fresh: no old wallet JSON, leaderboard database or policy
 marker is imported, read, moved or deleted at runtime. The JSON implementations
 remain only as references for upstream tests. Schema version 1 is recorded with
-`PRAGMA user_version`; newer versions are refused. Schema creation and the
+`PRAGMA user_version`; other versions are refused (no migrations: nothing has been published). Schema creation and the
 `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` row `unlock_all=0|1` commit
 together. A missing, invalid or conflicting mode fails closed on reopen.
 
