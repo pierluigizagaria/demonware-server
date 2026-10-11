@@ -279,23 +279,9 @@ func (l *lobbyConn) onCTRStats(task byte, r *bdReader) []byte {
 	if e != nil || cols != 0 || !statsEnd(r) {
 		return fail(fmt.Errorf("unsupported column selection"))
 	}
-	all, err := ctrStats.read(board)
+	rows, total, err := readLeaderboard(ctrStats, task, board, start, limit, ids)
 	if err != nil {
 		return fail(err)
-	}
-	rows := []ctrStat{}
-	for _, row := range all {
-		if task == 4 {
-			if row.Rank >= start && uint32(len(rows)) < limit {
-				rows = append(rows, row)
-			}
-		} else if ids[row.PID] {
-			rows = append(rows, row)
-		}
-	}
-	total := uint32(len(all))
-	if task == 13 {
-		total = uint32(len(rows))
 	}
 	l.logf("CTR stats read task=%d board=%d rows=%d total=%d", task, board, len(rows), total)
 	return statsReply(task, rows, total)

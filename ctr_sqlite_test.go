@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -506,7 +507,7 @@ func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 			if err := db.db.QueryRow("PRAGMA busy_timeout").Scan(&timeout); err != nil {
 				t.Fatal(err)
 			}
-			if version != 1 || journal != "wal" || synchronous != 2 || timeout != 5000 || db.db.Stats().MaxOpenConnections != 1 {
+			if version != ctrSchemaVersion || journal != "wal" || synchronous != 2 || timeout != 5000 || db.db.Stats().MaxOpenConnections != 1 {
 				t.Fatalf("settings: %d %s %d %d", version, journal, synchronous, timeout)
 			}
 			db.Close()
@@ -517,7 +518,7 @@ func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 				t.Fatal("mode mismatch accepted")
 			}
 			db = openTestCTR(t, path, unlockAll)
-			sqliteExec(t, db, "PRAGMA user_version = 2")
+			sqliteExec(t, db, fmt.Sprintf("PRAGMA user_version = %d", ctrSchemaVersion+1))
 			db.Close()
 			if newer, err := openCTRSQLite(path, unlockAll); err == nil {
 				newer.Close()

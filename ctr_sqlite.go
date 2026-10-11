@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go driver "sqlite", no cgo
@@ -29,7 +31,55 @@ type leaderboardStore interface {
 	read(board uint32) ([]ctrStat, error)
 }
 
+// rankedLeaderboard answers stats reads without loading a whole board.
+type rankedLeaderboard interface {
+	readRanks(board uint32, start uint64, limit uint32) ([]ctrStat, uint64, error)
+	readEntities(board uint32, pids []uint64) ([]ctrStat, error)
+}
+
+// readLeaderboard returns the rows for stats task 4 (ranks from start) or 13
+// (the given entities) and the total the reply reports.
+func readLeaderboard(store leaderboardStore, task byte, board uint32, start uint64, limit uint32, ids map[uint64]bool) ([]ctrStat, uint32, error) {
+	if ranked, ok := store.(rankedLeaderboard); ok {
+		if task == 4 {
+			rows, total, err := ranked.readRanks(board, start, limit)
+			return rows, uint32(total), err
+		}
+		pids := make([]uint64, 0, len(ids))
+		for pid := range ids {
+			pids = append(pids, pid)
+		}
+		rows, err := ranked.readEntities(board, pids)
+		return rows, uint32(len(rows)), err
+	}
+	all, err := store.read(board)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows := []ctrStat{}
+	for _, row := range all {
+		if task == 4 {
+			if row.Rank >= start && uint32(len(rows)) < limit {
+				rows = append(rows, row)
+			}
+		} else if ids[row.PID] {
+			rows = append(rows, row)
+		}
+	}
+	if task == 13 {
+		return rows, uint32(len(rows)), nil
+	}
+	return rows, uint32(len(all)), nil
+}
+
 const ctrDB = "ctr.sqlite"
+
+const ctrSchemaVersion = 2
+
+// awardRaces accepts events from the last seven days, five minutes ahead at
+// most. A race receipt or a day's online seconds last written more than nine
+// days ago can no longer affect a reward, so it is neither loaded nor kept.
+const replayRetention = 9 * 24 * time.Hour
 
 // ctrSQLite owns the only connection pool for this instance's economy and stats.
 type ctrSQLite struct {
@@ -81,24 +131,56 @@ func (s *ctrSQLite) initialize(unlockAll bool) error {
 		if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('unlock_all', ?)`, want); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`PRAGMA user_version = 1`); err != nil {
+		fallthrough
+	case 1:
+		// Version 2 adds the leaderboard rank index and the write times that
+		// bound replay state. Existing rows count as written now.
+		if version == 1 {
+			if err := checkMode(tx, want); err != nil {
+				return err
+			}
+		}
+		now := time.Now().Unix()
+		for _, statement := range []string{
+			`ALTER TABLE race_receipts ADD COLUMN recorded_at INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE online_seconds ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`,
+			`CREATE INDEX leaderboard_rank ON leaderboard(board, score DESC, pid < 0, pid)`,
+		} {
+			if _, err := tx.Exec(statement); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(`UPDATE race_receipts SET recorded_at = ?`, now); err != nil {
 			return err
 		}
-	case 1:
-		var got string
-		if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'unlock_all'`).Scan(&got); err != nil {
-			return fmt.Errorf("read unlock-all mode: %w", err)
+		if _, err := tx.Exec(`UPDATE online_seconds SET updated_at = ?`, now); err != nil {
+			return err
 		}
-		if got != "0" && got != "1" {
-			return fmt.Errorf("invalid unlock-all mode in CTR database")
+		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, ctrSchemaVersion)); err != nil {
+			return err
 		}
-		if got != want {
-			return fmt.Errorf("CTR database unlock-all mode differs from CTR_UNLOCK_ALL")
+	case ctrSchemaVersion:
+		if err := checkMode(tx, want); err != nil {
+			return err
 		}
 	default:
 		return fmt.Errorf("CTR schema %d is newer than this server", version)
 	}
 	return tx.Commit()
+}
+
+func checkMode(tx *sql.Tx, want string) error {
+	var got string
+	if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'unlock_all'`).Scan(&got); err != nil {
+		return fmt.Errorf("read unlock-all mode: %w", err)
+	}
+	if got != "0" && got != "1" {
+		return fmt.Errorf("invalid unlock-all mode in CTR database")
+	}
+	if got != want {
+		return fmt.Errorf("CTR database unlock-all mode differs from CTR_UNLOCK_ALL")
+	}
+	return nil
 }
 
 const ctrSchema = `
@@ -212,8 +294,8 @@ func (s *ctrSQLite) load(pid uint64, create bool) (*economyAccount, error) {
 	return a, nil
 }
 
-func accountRows(tx *sql.Tx, query string, pid uint64, scan func(*sql.Rows) error) error {
-	rows, err := tx.Query(query, int64(pid))
+func accountRows(tx *sql.Tx, query string, scan func(*sql.Rows) error, args ...any) error {
+	rows, err := tx.Query(query, args...)
 	if err != nil {
 		return err
 	}
@@ -256,7 +338,7 @@ func readSQLiteAccount(tx *sql.Tx, pid uint64) (*economyAccount, bool, error) {
 			a.Items[item] = true
 			return nil
 		}},
-		{`SELECT receipt FROM race_receipts WHERE pid = ?`, func(r *sql.Rows) error {
+		{`SELECT receipt FROM race_receipts WHERE pid = ? AND recorded_at >= ?`, func(r *sql.Rows) error {
 			var receipt string
 			if err := r.Scan(&receipt); err != nil {
 				return err
@@ -267,7 +349,7 @@ func readSQLiteAccount(tx *sql.Tx, pid uint64) (*economyAccount, bool, error) {
 			a.RaceReceipts[receipt] = true
 			return nil
 		}},
-		{`SELECT day, seconds FROM online_seconds WHERE pid = ?`, func(r *sql.Rows) error {
+		{`SELECT day, seconds FROM online_seconds WHERE pid = ? AND updated_at >= ?`, func(r *sql.Rows) error {
 			var day string
 			var seconds int64
 			if err := r.Scan(&day, &seconds); err != nil {
@@ -313,8 +395,11 @@ func readSQLiteAccount(tx *sql.Tx, pid uint64) (*economyAccount, bool, error) {
 			return nil
 		}},
 	}
+	retained := time.Now().Add(-replayRetention).Unix()
 	for _, q := range queries {
-		if err := accountRows(tx, q.query, pid, q.scan); err != nil {
+		// Replay-state queries take the retention cutoff as a second parameter.
+		args := []any{int64(pid), retained}[:strings.Count(q.query, "?")]
+		if err := accountRows(tx, q.query, q.scan, args...); err != nil {
 			return nil, false, err
 		}
 	}
@@ -366,10 +451,23 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *economyAccount, ex
 			}
 		}
 	}
-	var receipts []string
+	// Rows written before this account existed are not stored state.
+	stored := before
+	if !exists {
+		stored = &economyAccount{}
+	}
+	var receipts, newReceipts []string
 	for key, paid := range after.RaceReceipts {
-		if paid && !before.RaceReceipts[key] {
-			receipts = append(receipts, key)
+		if !paid || before.RaceReceipts[key] {
+			continue
+		}
+		// A receipt that just left the retention window is not new.
+		var found int
+		err := tx.QueryRow(`SELECT 1 FROM race_receipts WHERE pid = ? AND receipt = ?`, int64(pid), key).Scan(&found)
+		if err == sql.ErrNoRows {
+			receipts, newReceipts = append(receipts, key), append(newReceipts, key)
+		} else if err != nil {
+			return err
 		}
 	}
 	for key, c := range after.Challenges {
@@ -429,41 +527,87 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *economyAccount, ex
 			return err
 		}
 	}
-	// Replace only mutable account state. Inventory and ledger are never rewritten.
-	for _, table := range []string{"balances", "race_receipts", "online_seconds", "challenge_progress", "pit_stop_refresh"} {
-		if _, err := tx.Exec("DELETE FROM "+table+" WHERE pid = ?", int64(pid)); err != nil {
+	// Write only changed mutable rows. Inventory and ledger are never rewritten.
+	exec := func(query string, args ...any) error {
+		_, err := tx.Exec(query, append([]any{int64(pid)}, args...)...)
+		return err
+	}
+	for currency := range currencies {
+		old, had := stored.Balances[currency]
+		next, has := after.Balances[currency]
+		var err error
+		switch {
+		case !has:
+			err = exec(`DELETE FROM balances WHERE pid = ? AND currency = ?`, int64(currency))
+		case !had || old != next:
+			err = exec(`INSERT INTO balances(pid, currency, amount) VALUES (?, ?, ?)
+				ON CONFLICT(pid, currency) DO UPDATE SET amount = excluded.amount`, int64(currency), next)
+		}
+		if err != nil {
 			return err
 		}
 	}
-	for currency, amount := range after.Balances {
-		if _, err := tx.Exec(`INSERT INTO balances(pid, currency, amount) VALUES (?, ?, ?)`, int64(pid), int64(currency), amount); err != nil {
+	for _, key := range newReceipts {
+		if err := exec(`INSERT INTO race_receipts(pid, receipt, recorded_at) VALUES (?, ?, ?)`, key, now); err != nil {
 			return err
 		}
 	}
-	for receipt, paid := range after.RaceReceipts {
-		if !paid {
-			continue
-		}
-		if _, err := tx.Exec(`INSERT INTO race_receipts(pid, receipt) VALUES (?, ?)`, int64(pid), receipt); err != nil {
-			return err
+	for key, paid := range stored.RaceReceipts {
+		if paid && !after.RaceReceipts[key] {
+			if err := exec(`DELETE FROM race_receipts WHERE pid = ? AND receipt = ?`, key); err != nil {
+				return err
+			}
 		}
 	}
 	for day, seconds := range after.OnlineSeconds {
-		if _, err := tx.Exec(`INSERT INTO online_seconds(pid, day, seconds) VALUES (?, ?, ?)`, int64(pid), day, int64(seconds)); err != nil {
-			return err
+		if old, had := stored.OnlineSeconds[day]; !had || old != seconds {
+			if err := exec(`INSERT INTO online_seconds(pid, day, seconds, updated_at) VALUES (?, ?, ?, ?)
+				ON CONFLICT(pid, day) DO UPDATE SET seconds = excluded.seconds, updated_at = excluded.updated_at`, day, int64(seconds), now); err != nil {
+				return err
+			}
+		}
+	}
+	for day := range stored.OnlineSeconds {
+		if _, has := after.OnlineSeconds[day]; !has {
+			if err := exec(`DELETE FROM online_seconds WHERE pid = ? AND day = ?`, day); err != nil {
+				return err
+			}
 		}
 	}
 	for key, c := range after.Challenges {
-		if _, err := tx.Exec(`INSERT INTO challenge_progress(pid, challenge, completed, progress, receipts, distinct_values) VALUES (?, ?, ?, ?, ?, ?)`, int64(pid), key, int64(c.Completed), int64(c.Progress), jsonColumn(c.Receipts), jsonColumn(c.Distinct)); err != nil {
+		if old, had := stored.Challenges[key]; !had || !reflect.DeepEqual(old, c) {
+			if err := exec(`INSERT INTO challenge_progress(pid, challenge, completed, progress, receipts, distinct_values) VALUES (?, ?, ?, ?, ?, ?)
+				ON CONFLICT(pid, challenge) DO UPDATE SET completed = excluded.completed, progress = excluded.progress,
+				receipts = excluded.receipts, distinct_values = excluded.distinct_values`,
+				key, int64(c.Completed), int64(c.Progress), jsonColumn(c.Receipts), jsonColumn(c.Distinct)); err != nil {
+				return err
+			}
+		}
+	}
+	for key := range stored.Challenges {
+		if _, has := after.Challenges[key]; !has {
+			if err := exec(`DELETE FROM challenge_progress WHERE pid = ? AND challenge = ?`, key); err != nil {
+				return err
+			}
+		}
+	}
+	if p := after.PitStopRefresh; p == nil && stored.PitStopRefresh != nil {
+		if err := exec(`DELETE FROM pit_stop_refresh WHERE pid = ?`); err != nil {
+			return err
+		}
+	} else if p != nil && !reflect.DeepEqual(p, stored.PitStopRefresh) {
+		if err := exec(`INSERT INTO pit_stop_refresh(pid, day, count, receipts) VALUES (?, ?, ?, ?)
+			ON CONFLICT(pid) DO UPDATE SET day = excluded.day, count = excluded.count, receipts = excluded.receipts`,
+			p.Day, int64(p.Count), jsonColumn(p.Receipts)); err != nil {
 			return err
 		}
 	}
-	if p := after.PitStopRefresh; p != nil {
-		if _, err := tx.Exec(`INSERT INTO pit_stop_refresh(pid, day, count, receipts) VALUES (?, ?, ?, ?)`, int64(pid), p.Day, int64(p.Count), jsonColumn(p.Receipts)); err != nil {
-			return err
-		}
+	// Drop replay state that can no longer affect a reward.
+	expired := time.Now().Add(-replayRetention).Unix()
+	if err := exec(`DELETE FROM race_receipts WHERE pid = ? AND recorded_at < ?`, expired); err != nil {
+		return err
 	}
-	return nil
+	return exec(`DELETE FROM online_seconds WHERE pid = ? AND updated_at < ?`, expired)
 }
 
 func (s *ctrSQLite) write(writes []ctrStatWrite) error {
@@ -529,5 +673,80 @@ func (s *ctrSQLite) read(board uint32) ([]ctrStat, error) {
 	for i := range rows {
 		rows[i].Rank = uint64(i + 1)
 	}
+	return rows, nil
+}
+
+// Ranking order shared with read: score descending, then the unsigned account
+// ID. A signed PID column orders unsigned IDs by (pid < 0, pid); the
+// leaderboard_rank index has the same expression, so pages are index scans.
+const leaderboardOrder = `score DESC, pid < 0, pid`
+
+func (s *ctrSQLite) readRanks(board uint32, start uint64, limit uint32) ([]ctrStat, uint64, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback()
+	var total uint64
+	if err := tx.QueryRow(`SELECT count(*) FROM leaderboard WHERE board = ?`, board).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	if start == 0 {
+		start = 1
+	}
+	rows := []ctrStat{}
+	if start-1 >= total || limit == 0 {
+		return rows, total, nil
+	}
+	rs, err := tx.Query(`SELECT pid, score, driver, name, updated FROM leaderboard WHERE board = ?
+		ORDER BY `+leaderboardOrder+` LIMIT ? OFFSET ?`, board, limit, int64(start-1))
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rs.Close()
+	for rs.Next() {
+		r := ctrStat{Board: board, Rank: start + uint64(len(rows))}
+		var pid int64
+		if err := rs.Scan(&pid, &r.Score, &r.Driver, &r.Name, &r.Updated); err != nil {
+			return nil, 0, err
+		}
+		r.PID = uint64(pid)
+		rows = append(rows, r)
+	}
+	return rows, total, rs.Err()
+}
+
+// readEntities returns the given accounts' rows in rank order; each rank
+// counts the rows ordered before it.
+func (s *ctrSQLite) readEntities(board uint32, pids []uint64) ([]ctrStat, error) {
+	rows := []ctrStat{}
+	if len(pids) == 0 {
+		return rows, nil
+	}
+	args := []any{board}
+	for _, pid := range pids {
+		args = append(args, int64(pid))
+	}
+	rs, err := s.db.Query(`SELECT l.pid, l.score, l.driver, l.name, l.updated,
+		1 + (SELECT count(*) FROM leaderboard o WHERE o.board = l.board AND (o.score > l.score
+			OR (o.score = l.score AND ((o.pid < 0) < (l.pid < 0) OR ((o.pid < 0) = (l.pid < 0) AND o.pid < l.pid)))))
+		FROM leaderboard l WHERE l.board = ? AND l.pid IN (?`+strings.Repeat(", ?", len(pids)-1)+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rs.Close()
+	for rs.Next() {
+		r := ctrStat{Board: board}
+		var pid int64
+		if err := rs.Scan(&pid, &r.Score, &r.Driver, &r.Name, &r.Updated, &r.Rank); err != nil {
+			return nil, err
+		}
+		r.PID = uint64(pid)
+		rows = append(rows, r)
+	}
+	if err := rs.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Rank < rows[j].Rank })
 	return rows, nil
 }
