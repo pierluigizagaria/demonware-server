@@ -271,7 +271,7 @@ func TestTrustConfigurationAndRotation(t *testing.T) {
 func TestLoadRemoteTrustConfiguration(t *testing.T) {
 	_, _, policy, jwks := issuerFixture(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/npauth/jwks" || r.Method != http.MethodGet {
+		if r.URL.Path != "/.well-known/jwks.json" || r.Method != http.MethodGet {
 			t.Error("unexpected key request")
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -279,7 +279,7 @@ func TestLoadRemoteTrustConfiguration(t *testing.T) {
 	}))
 	defer server.Close()
 	dir := t.TempDir()
-	config := map[string]any{"issuer": policy.Issuer, "client_id": policy.ClientID, "np_title_id": policy.NPTitleID, "scopes": policy.Scopes, "jwks_url": server.URL + "/v1/npauth/jwks"}
+	config := map[string]any{"issuer": policy.Issuer, "client_id": policy.ClientID, "np_title_id": policy.NPTitleID, "scopes": policy.Scopes, "jwks_url": server.URL + "/.well-known/jwks.json"}
 	path := filepath.Join(dir, "trust.json")
 	write := func(c map[string]any) {
 		t.Helper()
