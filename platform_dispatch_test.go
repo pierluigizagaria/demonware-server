@@ -137,6 +137,17 @@ func TestRedactedLogsKeepNumbersAndHideSecrets(t *testing.T) {
 	if got := out.String(); !strings.Contains(got, "task=145 ok=true key=<redacted> name=<redacted>") || strings.Contains(got, "ABCD") || strings.Contains(got, "player") {
 		t.Fatal("unexpected redaction: " + got)
 	}
+	out.Reset()
+	type hit struct {
+		id   uint64
+		name string
+	}
+	addr := &net.TCPAddr{IP: net.IPv4(203, 0, 113, 7), Port: 3074}
+	err := &net.OpError{Op: "read", Net: "tcp", Addr: addr, Err: errors.New("reset")}
+	diagnosticLogf("hits=%v map=%v from=%s err=%v", []hit{{1, "player"}}, map[string]int{"player": 1}, addr, err)
+	if got := out.String(); strings.Contains(got, "player") || strings.Contains(got, "203.0.113.7") || !strings.Contains(got, "err=<*net.OpError>") {
+		t.Fatal("structured values or error text leaked: " + got)
+	}
 }
 
 // clientFrame encrypts one client 0x85 frame carrying a task request.
