@@ -7,7 +7,9 @@ import (
 
 // Switch 1.0.15 AchievementMetadata, pitstop_daily_refresh parameters:
 // daily periods begin at 15:00 UTC, progressTarget is 2. The callback copies
-// achievement progress into the marketplace's rotation counter.
+// achievement progress into the marketplace's rotation counter. PS4 01.21
+// AchievementGrandPrixConfig (update2.pak) has the same 84 daily periods from
+// 2020-03-26 15:00 with target 2 (the data has no time zone; UTC is assumed).
 type pitStopRefreshRecord struct {
 	Day      string          `json:"day"`
 	Count    uint64          `json:"count"`

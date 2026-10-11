@@ -10,6 +10,8 @@ import (
 
 // Extracted from the Switch 1.0.15 CSystemData::gpMapData table, not a
 // replacement flat rate. Keys use the client's seed-4 FNV track-name hash.
+// PS4 01.21 systemData (update2.pak) has identical payouts for all 39 tracks
+// and adds the PS4-only t155_sony_stadium, taken from that data.
 //
 //go:embed ctr-race-rates.json
 var raceRatesJSON []byte

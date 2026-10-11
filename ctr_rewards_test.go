@@ -113,3 +113,12 @@ func TestRaceReceiptIgnoresFieldsOutsideThePayout(t *testing.T) {
 		t.Fatalf("a different race was not paid: %d, %v", amount, err)
 	}
 }
+
+// PS4 01.21 systemData (update2.pak) holds the same gpMapData payouts as the
+// Switch table for all 39 shared tracks, plus the PS4-only Sony Stadium.
+func TestPS4OnlyTrackHasOriginalPayout(t *testing.T) {
+	rate, ok := raceRates[challengeNameHash("t155_sony_stadium")]
+	if !ok || rate.Positions != [4]int64{45, 41, 38, 34} {
+		t.Fatalf("Sony Stadium payout %+v", rate)
+	}
+}
