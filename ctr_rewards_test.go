@@ -90,3 +90,26 @@ func TestRewardEventWireRoundTrip(t *testing.T) {
 		t.Fatal("truncated event accepted")
 	}
 }
+
+func TestRaceReceiptIgnoresFieldsOutsideThePayout(t *testing.T) {
+	t.Setenv("CTR_START_BALANCE", "0")
+	s := &economyStore{dir: t.TempDir()}
+	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
+	e := capturedRace(now)
+	if amount, err := s.awardRaces(42, []achievementEvent{e}, now); err != nil || amount != 27 {
+		t.Fatalf("first payout %d, %v", amount, err)
+	}
+	padded := capturedRace(now)
+	padded.ID = 99
+	padded.Values["Ignored"] = 1
+	padded.Values["RaceMode"] = 2 // pays like mode 1
+	padded.Values["Rank"] = 2
+	padded.Values["Time"] = 115 // offline: time does not change the payout
+	if amount, err := s.awardRaces(42, []achievementEvent{padded}, now); err != nil || amount != 0 {
+		t.Fatalf("same claim with ignored fields paid again: %d, %v", amount, err)
+	}
+	other := capturedRace(now.Add(-time.Minute))
+	if amount, err := s.awardRaces(42, []achievementEvent{other}, now); err != nil || amount != 27 {
+		t.Fatalf("a different race was not paid: %d, %v", amount, err)
+	}
+}

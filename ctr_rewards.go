@@ -154,6 +154,25 @@ func parseRewardEvents(payload []byte) ([]achievementEvent, error) {
 	return out, nil
 }
 
+// raceReceipt identifies a race reward claim by exactly the values the payout
+// uses, so an ID or extra field the reward ignores cannot make a retry a new
+// claim. Those values are the client's own statement: a different time, rank
+// or mode is a different claim, and nothing here proves the race took place.
+func raceReceipt(e achievementEvent) string {
+	v := e.Values
+	mode15, online := v["RaceMode"] == 15, v["Online"] != 0
+	var laps, seconds uint64
+	if mode15 {
+		laps = min(v["CompletedLap"], 8)
+	}
+	if online {
+		seconds = v["Time"]
+	}
+	claim := fmt.Sprintf("end_race|%d|%d|%d|%t|%d|%t|%d|%t", e.Timestamp, v["Track"], min(v["Rank"], 4),
+		mode15, laps, online, seconds, v["RewardGoldenWumpa"] == 1)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(claim)))
+}
+
 func (s *economyStore) awardRaces(pid uint64, events []achievementEvent, now time.Time) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -184,10 +203,8 @@ func (s *economyStore) awardRaces(pid uint64, events []achievementEvent, now tim
 		if tm.After(now.Add(5*time.Minute)) || tm.Before(now.Add(-7*24*time.Hour)) {
 			continue
 		}
-		// Normalize key ordering before hashing; retries and re-ordered event fields
-		// must not grant the same race twice, including across server restarts.
-		b, _ := json.Marshal(e)
-		receipt := fmt.Sprintf("%x", sha256.Sum256(b))
+		// Retries must not grant the same race twice, including across restarts.
+		receipt := raceReceipt(e)
 		if a.RaceReceipts[receipt] {
 			continue
 		}
