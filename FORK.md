@@ -2,7 +2,9 @@
 
 Base: `c3400c312a739cf7598204a981156959910ed874` from
 [NextendoNetwork/nextendo-demonware](https://github.com/NextendoNetwork/nextendo-demonware).
-License unchanged: PolyForm Shield. Nintendo code, behavior and tests are kept.
+License unchanged: PolyForm Shield. Nintendo admission, gates and tests are kept.
+Protocol, matchmaking and storage changes (encrypted frame sequence, seat
+handling, SQLite economy and leaderboards) apply to both platforms.
 
 Crash Team Racing Nitro-Fueled on PS4 (CUSA13795, Demonware title 5760) speaks
 the same Demonware protocol as the Switch version: handshake, 128-byte ticket and
@@ -23,8 +25,8 @@ through the same dispatcher, matchmaking engine and CTR services as Switch.
 | Unlock-all option | `ctr_economy_policy.go`, `main.go` | Opt-in full catalog ownership is computed at read time. Known-SKU purchases debit nothing and write nothing; unknown SKUs fail. `meta.unlock_all` fixes the mode for the database, independently of platform or admission. Startup logs `unlock-all: on` or `unlock-all: off`. |
 | Economy storage | `ctr_sqlite.go`, `ctr_economy.go` | One `ctr.sqlite` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction and writes only changed rows. Race receipts and online seconds older than nine days, beyond the seven-day reward window, are neither loaded nor kept. |
 | Leaderboards | `ctr_sqlite.go`, `ctr_stats.go`, `main.go` | bdStats shares `ctr.sqlite` with the economy, keeping the original table, batch transactions and ranking. Rank pages and entity reads run in SQL on an index matching the ranking order. The upstream JSON store remains the reference for the contract test. |
-| Engine | `ctr_async.go`, `ctr_merge.go` | Every player holds one seat: a new search withdraws searches led by its members and takes them out of other parties (`detach`, shared with disconnects). Party followers who leave lose only their seat and the host gets the new membership; explicit merge-eligibility flags; merges cancelled when a source closes or membership changes; handoff before backfill |
-| Diagnostics | `diagnostic_redaction.go` | `NEXTENDO_REDACT_LOGS` (default on) redacts log arguments and disables raw dumps |
+| Engine | `ctr_async.go`, `ctr_merge.go` | Every player holds one seat. Party members are the leader's unverified claim, so a search whose claimed followers already hold a seat is refused; the check and the reservation are atomic before the success reply. A leader's new search replaces only its own searches and seat (`detach`, shared with disconnects); a stale connection's disconnect releases no seat the account's newer connection may hold; disbanding an old lobby ends no search. Party followers who leave lose only their seat and the host gets the new membership; explicit merge-eligibility flags; merges cancelled when a source closes or membership changes; handoff before backfill |
+| Diagnostics | `diagnostic_redaction.go` | `NEXTENDO_REDACT_LOGS` (default on) keeps only numeric and boolean log arguments (errors show their type) and disables raw dumps |
 
 Established lobby connections have no idle or elapsed-time cutoff; only the
 handshake and individual network operations are bounded. Encrypted client
@@ -34,8 +36,11 @@ from the CTR PS4 1.21 eboot: send counter `conn+0x260`, receive check at
 
 Race rewards are deduplicated by the values the payout uses (timestamp, track,
 rank band, mode, laps, online time, Golden Wumpa), so fields the reward ignores
-cannot repeat a payment. These values are the client's statement: the server
-prevents duplicate claims, not invented races.
+cannot repeat a payment. Challenge occurrences are identified the same way by
+what their rule reads (name, time, increment, filter, X and Y values). These
+values are the client's statement: the server prevents duplicate claims, not
+invented races or occurrences. The auth listener bounds reading each request
+(headers 15 s, whole request 30 s) and refuses incomplete bodies.
 
 ## Running the PS4 server
 

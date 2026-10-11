@@ -1,7 +1,31 @@
 # diablo-3
 
-> Crash Team Racing Nitro-Fueled on PS4 is supported through a platform adapter;
-> see [FORK.md](FORK.md). The instructions below are the original documentation.
+## This fork: Crash Team Racing Nitro-Fueled on PS4 (experimental)
+
+This is an unofficial fork that adds a PS4 platform adapter for Crash Team
+Racing Nitro-Fueled (CUSA13795, Demonware title 5760) running in the
+[shadPS4](https://github.com/shadps4-emu/shadPS4) emulator. Players sign in to a
+separate [shadNet](https://github.com/shadps4-emu/shadNet) service; this server
+verifies its ID tokens against shadNet's public keys and then serves the same
+Demonware protocol, matchmaking and CTR services as for Switch. It is not
+affiliated with Sony, Activision, Demonware, Nintendo, Nextendo Network or the
+shadPS4 project.
+
+**Status: experimental research code.** Validated only on one local machine:
+sign-in through shadNet and the publisher, and one complete two-player race
+with an earlier build.
+Not validated: the Pit Stop in game, parties, rejoining and lobby merges after
+the latest changes, LAN/WAN play, capacity, and running a public server.
+Race rewards rely on what the client reports.
+
+Architecture, configuration (`CTR_AUTH_CONFIG`, `CTR_AUTH_SIGNING_KEY`,
+`CTR_WALLETS`, `CTR_UNLOCK_ALL`, ...) and the changes to the original code are
+in [FORK.md](FORK.md). Build with Go 1.25 or newer: `go build -o server .` and
+`go test ./...`. The license is unchanged (PolyForm Shield 1.0.0, see
+[License](#license)); read its Noncompete section before running a service.
+
+The rest of this file is the original documentation for Diablo III and
+Crash Team Racing on Switch.
 
 Game server for **Diablo III** nxmod [creator of the original Diablo-3 repo](https://github.com/nx-mod/nextendo-demonware) & the original developer of the backend for Demonware support for [Nextendo Network](https://nextendo.network), and also with **Crash Team Racing Nitro-Fueled** support contributed by [CollectingW](https://github.com/CollectingW) (see [Crash Team Racing](#crash-team-racing)). Source only, no binaries, no certs, no game assets. Not affiliated with Blizzard, Activision, Demonware or Nintendo.
 
@@ -54,14 +78,14 @@ Diablo III must reach these names on your stack and never on the real Demonware.
 
 These steps follow the generic [deployment guide](https://github.com/NextendoNetwork/nextendo-docs/blob/main/DEPLOYMENT.md); every value is a placeholder for your own.
 
-1. **Prerequisites.** Go 1.23 or newer, and a running nextendo-account and sni-router.
+1. **Prerequisites.** Go 1.25 or newer, and a running nextendo-account and sni-router.
 2. **Build.**
 
        git clone https://github.com/NextendoNetwork/diablo-3.git
        cd diablo-3
        go build -o server .
 
-   The standard library only. `go test ./...` runs the tests.
+   One external module, `modernc.org/sqlite` (pure Go, no cgo), stores the CTR economy and leaderboards. `go test ./...` runs the tests.
 3. **Configure.** `cp example.env .env` and edit it; every variable is documented in that file. At minimum:
    - `NEXTENDO_HOST`: the IPv4 address players reach this server on;
    - `NEXTENDO_ACCOUNT_URL`: your nextendo-account;
