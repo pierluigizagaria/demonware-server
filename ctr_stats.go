@@ -32,7 +32,7 @@ type ctrStatsStore struct {
 	dir string
 }
 
-var ctrStats = &ctrStatsStore{}
+var ctrStats leaderboardStore = &ctrStatsStore{}
 
 func timeBoard(board uint32) bool { return board > 1000 && board < 1159 }
 

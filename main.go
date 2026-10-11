@@ -117,6 +117,14 @@ func main() {
 		log.Fatalf("[D3] economy: %v", err)
 	}
 	log.Printf("[D3] economy policy: %s", economy.policy)
+	boards, err := openSQLiteLeaderboard(filepath.Join(economy.dir, leaderboardDB))
+	if err != nil {
+		log.Fatalf("[D3] leaderboards: %v", err)
+	}
+	ctrStats = boards
+	if _, err := os.Stat((&ctrStatsStore{dir: economy.dir}).path()); err == nil {
+		log.Printf("[D3] leaderboards: the JSON leaderboard file is ignored; %s is used", leaderboardDB)
+	}
 	if root := envOr("CTR_WALLETS", "wallets"); walletNamespace != "" {
 		if n := unscopedWalletFiles(root); n > 0 {
 			log.Printf("[D3] economy: %d unscoped ledger files in the wallet root are ignored", n)
