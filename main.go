@@ -39,6 +39,8 @@ var (
 
 	// Tickets and player identities written by auth, read back by the lobby.
 	sessDir = envOr("D3_SESSIONS", "sessions")
+	// Subdirectory of CTR_WALLETS for the selected platform's account IDs.
+	walletNamespace = ""
 	// pubfiles.json drives the three files written to D3_PUBFILES.
 	pubConfigPath = envOr("D3_PUBFILES_CONFIG", "pubfiles.json")
 	pubDir        = envOr("D3_PUBFILES", "pubfiles")
@@ -107,6 +109,19 @@ func main() {
 	}
 	loadGates()
 	loadWallets()
+	policy, err := parseEconomyPolicy(os.Getenv("CTR_ECONOMY"))
+	if err == nil {
+		err = economy.bindPolicy(policy)
+	}
+	if err != nil {
+		log.Fatalf("[D3] economy: %v", err)
+	}
+	log.Printf("[D3] economy policy: %s", economy.policy)
+	if root := envOr("CTR_WALLETS", "wallets"); walletNamespace != "" {
+		if n := unscopedWalletFiles(root); n > 0 {
+			log.Printf("[D3] economy: %d unscoped ledger files in the wallet root are ignored", n)
+		}
+	}
 
 	go startDashboard()
 	if _, nintendo := platform.(nintendoPlatform); nintendo {
@@ -124,7 +139,8 @@ func main() {
 
 // selectPlatform installs the PS4 identity adapter when CTR_AUTH_CONFIG names
 // a shadNet trust policy; otherwise the original Nintendo admission runs.
-// PS4 tickets live in a directory namespaced by issuer, application and title.
+// PS4 tickets, wallets and leaderboards live in directories namespaced by
+// issuer, application and title.
 func selectPlatform() (platformAuthenticator, error) {
 	path := os.Getenv("CTR_AUTH_CONFIG")
 	if path == "" {
@@ -135,5 +151,6 @@ func selectPlatform() (platformAuthenticator, error) {
 		return nil, err
 	}
 	sessDir = filepath.Join(sessDir, p.ticketNamespace)
+	walletNamespace = p.ticketNamespace
 	return p, nil
 }

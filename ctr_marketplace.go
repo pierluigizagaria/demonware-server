@@ -28,6 +28,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
@@ -49,8 +50,10 @@ func startingBalance() int64 {
 	return 0
 }
 
+// PS4 wallets and leaderboards are keyed by shadNet account ID, so they live in
+// the same issuer-scoped namespace as the tickets. Nintendo keeps the root.
 func loadWallets() {
-	economy.dir = envOr("CTR_WALLETS", "wallets")
+	economy.dir = filepath.Join(envOr("CTR_WALLETS", "wallets"), walletNamespace)
 	if err := os.MkdirAll(economy.dir, 0755); err != nil {
 		panic(err)
 	}
@@ -148,7 +151,7 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 		if err != nil || size == 0 || size > 4096 {
 			return taskReply(task, errUnhandled, nil)
 		}
-		a, err := economy.snapshot(l.pid())
+		a, err := economy.inventory(l.pid())
 		if err != nil {
 			l.logf("CTR economy inventory failed: %v", err)
 			return taskReply(task, errUnhandled, nil)
@@ -171,7 +174,7 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 			l.logf("CTR pitstop purchase rejected: %v", err)
 			return taskReply(task, errUnhandled, nil)
 		}
-		l.logf("CTR pitstop purchase skus=%v debit=%d currency=10 persisted", skus, debit)
+		l.logf("CTR pitstop purchase skus=%v debit=%d currency=10 economy=%s", skus, debit, economy.policy)
 		l.afterReply = l.pushCurrentBalance
 		return taskReply(task, 0, nil)
 

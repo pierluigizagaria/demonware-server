@@ -44,8 +44,9 @@ type economyAccount struct {
 }
 
 type economyStore struct {
-	mu  sync.Mutex
-	dir string
+	mu     sync.Mutex
+	dir    string
+	policy economyPolicy
 }
 
 var economy = &economyStore{}
@@ -168,6 +169,9 @@ func skuPrice(a *economyAccount, sku economySKU) (int64, error) {
 }
 
 func (s *economyStore) purchase(pid uint64, skus []uint32) (int64, error) {
+	if s.policy == economyUnlockAll {
+		return purchaseUnlockAll(skus)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	a, err := s.load(pid)
