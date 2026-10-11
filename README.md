@@ -20,8 +20,10 @@ Race rewards rely on what the client reports.
 
 Architecture, configuration (`CTR_AUTH_CONFIG`, `CTR_AUTH_SIGNING_KEY`,
 `CTR_WALLETS`, `CTR_UNLOCK_ALL`, ...) and the changes to the original code are
-in [FORK.md](FORK.md). Build with Go 1.25 or newer: `go build -o server .` and
-`go test ./...`. The license is unchanged (PolyForm Shield 1.0.0, see
+in [FORK.md](FORK.md). The PS4 code is on the `feat/ps4-platform` branch of
+this fork; build it with Go 1.25 or newer: `go build -o server .` and
+`go test ./...`. (The clone URL in [Install](#install) is the original Diablo III
+repository.) The license is unchanged (PolyForm Shield 1.0.0, see
 [License](#license)); read its Noncompete section before running a service.
 
 The rest of this file is the original documentation for Diablo III and
@@ -85,7 +87,7 @@ These steps follow the generic [deployment guide](https://github.com/NextendoNet
        cd diablo-3
        go build -o server .
 
-   One external module, `modernc.org/sqlite` (pure Go, no cgo), stores the CTR economy and leaderboards. `go test ./...` runs the tests.
+   Two external modules: `modernc.org/sqlite` (pure Go, no cgo) stores the CTR economy and leaderboards, and `golang.org/x/sys` provides the per-database instance lock. `go test ./...` runs the tests.
 3. **Configure.** `cp example.env .env` and edit it; every variable is documented in that file. At minimum:
    - `NEXTENDO_HOST`: the IPv4 address players reach this server on;
    - `NEXTENDO_ACCOUNT_URL`: your nextendo-account;
