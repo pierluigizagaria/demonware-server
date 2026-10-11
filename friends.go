@@ -196,6 +196,9 @@ func refreshAliases() {
 // baas-proxy log, or by asking nextendo-account).
 func onlinePlayerFor(id uint64) *playerID {
 	retryPending()
+	if activePolicy.AccountFriendIDs {
+		return onlineUser(id, "")
+	}
 	refreshAliases()
 	aliasMu.Lock()
 	name := aliases[id]

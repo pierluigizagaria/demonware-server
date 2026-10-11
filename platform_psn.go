@@ -62,7 +62,7 @@ func (psnPlatform) Marketplace() marketplacePlatform {
 // PS4 credentials expire after 120 seconds, so a publisher ticket admits only
 // a fresh connection; established sessions are never cut off afterwards.
 func (psnPlatform) Policy() platformPolicy {
-	return platformPolicy{IssuedTickets: true, TicketWindow: 120 * time.Second, SignedResponses: true}
+	return platformPolicy{IssuedTickets: true, TicketWindow: 120 * time.Second, SignedResponses: true, AccountFriendIDs: true}
 }
 
 func loadPSNPlatform(configPath string) (psnPlatform, error) {

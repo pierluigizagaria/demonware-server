@@ -106,3 +106,23 @@ func TestNicknameOnlineUsesTheAccountService(t *testing.T) {
 		t.Error("a PID lookup called the account service")
 	}
 }
+
+// PS4 friend IDs are shadNet account IDs: no Nintendo console resolution.
+func TestAccountFriendIDsSkipConsoleResolution(t *testing.T) {
+	var hits atomic.Int32
+	srv := fakeAccount(t, &hits)
+	defer srv.Close()
+	withAccount(t, srv.URL)
+	withPolicy(t, platformPolicy{AccountFriendIDs: true})
+	t.Setenv("BAASPROXY_LOG", "")
+	onlineMu.Lock()
+	online[880001] = &playerID{PID: 42, Username: "friend"}
+	onlineMu.Unlock()
+	defer dropOnline(880001)
+	if p := onlinePlayerFor(42); p == nil || p.Username != "friend" {
+		t.Fatal("online account ID not resolved")
+	}
+	if p := onlinePlayerFor(0xb6181eb6d6b908fe); p != nil || hits.Load() != 0 {
+		t.Fatal("console ID resolved through nextendo-account on an account-ID platform")
+	}
+}

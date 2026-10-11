@@ -22,6 +22,9 @@ type platformPolicy struct {
 	// SignedResponses refuses authentication when no response signer is
 	// configured, instead of returning an unsigned success.
 	SignedResponses bool
+	// AccountFriendIDs means friend identifiers are already this platform's
+	// account IDs: no console aliases or nextendo-account lookups.
+	AccountFriendIDs bool
 }
 
 // activePolicy is installed once at startup, before any listener starts.
