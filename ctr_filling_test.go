@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"slices"
 	"strconv"
 	"testing"
 )
@@ -210,9 +211,52 @@ func TestCTRConcurrentPartyClaimsReserveAtomically(t *testing.T) {
 	if err := m.reserve(second); err != nil {
 		t.Fatal("released reservation still blocks:", err)
 	}
-	m.enqueue(second)
+	m.activate(second)
 	if seats := seatsHeld(m); seats[7402] != 1 || len(m.pending) != 0 {
 		t.Fatalf("seats %v after activation", seats)
+	}
+}
+
+// A follower who searches alone while the leader's reply is in flight leaves
+// the reserved party; the leader's acknowledged search is still activated,
+// and a failed reply still releases the reduced reservation.
+func TestCTRReservedPartyShrinksBeforeActivation(t *testing.T) {
+	for _, replySent := range []bool{true, false} {
+		m := &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+		leader := partySearch(t, 7450, 7451)
+		leader.doc.Slots.Min = 8
+		if err := m.reserve(leader); err != nil {
+			t.Fatal(err)
+		}
+		m.enqueue(testCTRSearch(t, 7451, 1))
+		if replySent {
+			m.activate(leader)
+			if len(m.waiting) != 2 || len(m.pending) != 0 || !slices.ContainsFunc(m.waiting, func(p *ctrSearch) bool { return p.id == leader.id && p.seats == 1 }) {
+				t.Fatal("acknowledged leader search dropped or kept the departed follower")
+			}
+		} else {
+			m.release(leader)
+			if len(m.pending) != 0 || len(m.waiting) != 1 {
+				t.Fatal("reduced reservation not released")
+			}
+		}
+	}
+}
+
+// A connected follower who disbands its lobby gives its seat back.
+func TestCTRFollowerDisbandReleasesSeat(t *testing.T) {
+	m := &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	r := fillTestRoom(t, m, 7800, 2)
+	m.enqueue(partySearch(t, 7810, 7811))
+	follower := &lobbyConn{n: 7811, player: &playerID{PID: 7811}}
+	onlineMu.Lock()
+	online[follower.n] = follower.player
+	onlineMu.Unlock()
+	defer dropOnline(follower.n)
+	version := r.version
+	out := m.leave(follower, r.id)
+	if seats := seatsHeld(m); seats[7811] != 0 || r.version != version+1 || len(out) != 1 || out[0].conn != r.host.conn {
+		t.Fatalf("seats %v after a connected follower disbanded", seats)
 	}
 }
 

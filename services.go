@@ -375,7 +375,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 				ctrMM.release(search) // the client never learned of this search
 				return
 			}
-			notices := ctrMM.enqueue(search)
+			notices := ctrMM.activate(search)
 			l.logf("CTR search id=%d registered; seats=%d filter=%s notifications=%d",
 				search.id, search.seats, search.filterID, len(notices))
 			sendCTRNotices(notices)

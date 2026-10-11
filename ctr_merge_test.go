@@ -170,6 +170,22 @@ func TestCTRRequeueDuringMergeReleasesReservation(t *testing.T) {
 	}
 }
 
+// Both merge partners closing in one departure release each other without
+// a notice to either room.
+func TestCTRBothMergePartnersClosing(t *testing.T) {
+	m, a, b := mergeTestRooms(t)
+	if len(m.startMerge(a)) != 1 {
+		t.Fatal("no reservation")
+	}
+	b.host.conn = a.host.conn // one connection hosts both rooms
+	if out := m.leave(a.host.conn, 0); len(out) != 0 || len(m.rooms) != 0 {
+		t.Fatalf("closing both partners sent %d notices, %d rooms left", len(out), len(m.rooms))
+	}
+	if a.mergeSource != nil || b.mergeTarget != 0 {
+		t.Fatal("closed rooms still linked")
+	}
+}
+
 // A destination host who leaves closes its room; the source is released
 // without a notice to the room that is gone.
 func TestCTRDestinationHostLeavingReleasesSource(t *testing.T) {
