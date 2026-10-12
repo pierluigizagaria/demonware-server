@@ -104,7 +104,7 @@ func noteTask(l *lobbyConn, service, task byte) {
 var serviceNames = map[byte]string{
 	4: "bdStats", 6: "bdMessaging", 10: "bdStorage", 12: "bdTitleUtilities",
 	21: "bdMatchMaking", 23: "bdCounter", 27: "bdDML", 29: "UserData",
-	67: "bdEventLog", 68: "bdRichPresence",
+	67: "bdEventLog", 68: "bdRichPresence", 104: "bdMarketingComms",
 }
 
 var taskNames = map[[2]byte]string{
@@ -114,6 +114,7 @@ var taskNames = map[[2]byte]string{
 	{21, 1}: "createSession", {21, 2}: "updateSession", {21, 3}: "deleteSession",
 	{21, 5}: "findSessions", {21, 12}: "updateSessionPlayers",
 	{29, 1}: "set", {29, 4}: "get", {29, 11}: "query",
+	{104, 4}: "reportMessagesViewed", {104, 5}: "getMessagesForLocations",
 }
 
 func taskName(service, task byte) string {

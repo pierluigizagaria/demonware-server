@@ -26,6 +26,7 @@ as the service 21 public matchmaking.
 | Economy storage | `ctr_sqlite.go`, `ctr_economy.go` | One `<DATA_DIR>/ctrnf.db` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction and writes only changed rows. Race receipts and online seconds older than nine days, beyond the seven-day reward window, are never loaded and are deleted when that account next saves (an inactive account keeps its expired rows). |
 | Leaderboards | `ctr_sqlite.go`, `ctr_stats.go`, `main.go` | bdStats shares `ctrnf.db` with the economy, keeping the original table, batch transactions and ranking. Rank pages and entity reads run in SQL on an index matching the ranking order. The upstream JSON store remains the reference for the contract test. |
 | Engine | `ctr_async.go`, `ctr_merge.go` | Every player holds one seat. Party members are the leader's unverified claim, so a search whose claimed followers already hold a seat is refused; the check and the reservation are atomic before the success reply. A leader's new search replaces only its own searches and seat (`detach`, shared with disconnects); a stale connection's disconnect releases no seat the account's newer connection may hold; disbanding an old lobby ends no search. Party followers who leave lose only their seat and the host gets the new membership; explicit merge-eligibility flags; merges cancelled when a source closes or membership changes; handoff before backfill |
+| Main-menu news | `ctr_news.go`, `config.go` | 104/5 returns per-instance text for location 1 with exact-language overrides; 104/4 acknowledges views without persistence. No identity, economy or statistics changes. |
 | Diagnostics | `diagnostic_redaction.go` | `NEXTENDO_REDACT_LOGS` (default on) keeps only numeric and boolean log arguments (errors show their type) and disables raw dumps |
 
 Established lobby connections have no idle or elapsed-time cutoff; only the
@@ -64,6 +65,7 @@ Keys and certificates stay in their own files, named by path.
 | `DATA_DIR` | Persistent state directory (default `data`): `ctrnf.db` holds the economy, ledger, mode, leaderboards and player names. |
 | `CTR_UNLOCK_ALL` | Optional instance-wide unlock-all: unset, `0`, `false` = off; `1`, `true` = on. The database records the mode and refuses a different one. |
 | `CTR_START_BALANCE` | Initial Wumpa Coins for new accounts (default `0`); existing balances are preserved. |
+| `CTR_NEWS`, `CTR_NEWS_<CODE>` | Optional main-menu ticker text and the 28 exact-language overrides listed in `example.env`; empty overrides fall back to `CTR_NEWS`. See [Main-menu news](#main-menu-news). |
 | `AUTH_PORT`, `CERT_FILE`, `KEY_FILE` | HTTPS auth listener |
 | `LOBBY_PORTS`, `NAT_PORT` | Lobby TCP ports and NAT UDP port |
 | `BIND_ADDR` | Optional listener address (for example `127.0.0.1`) |
@@ -73,6 +75,43 @@ Keys and certificates stay in their own files, named by path.
 released when either player has no lobby connection, never because it was
 quiet. The relay is not qualified for the PS4 race transport. `openssl` must be
 on `PATH` for response signing.
+
+## Main-menu news
+
+Service 104 (`bdMarketingComms`) serves the PS4 main-menu ticker through
+104/5 and accepts viewed reports through 104/4. `CTR_NEWS` supplies the default
+text. The 28 optional `CTR_NEWS_<CODE>` settings in `example.env` override
+the exact game language (uppercase the code and replace `-` with `_` for
+the variable name). For example, `CTR_NEWS_IT=Benvenuti!` serves `it` and
+`CTR_NEWS_PT_BR=Bem-vindos!` serves `pt-BR`. An unset or empty override falls
+back to `CTR_NEWS`, with no English or base-language fallback. An empty default
+and no matching override produce no message. Values are read once at startup;
+restart the instance to change them. The normal and unlock-all processes may
+use different text, independently of their economy mode or players.
+
+Text must be valid UTF-8, fit in 2047 bytes and contain no control characters
+(including NUL, newline, carriage return and tab) or Unicode line/paragraph
+separators. The JSON encoded by `encoding/json` must be shorter than 4096 bytes;
+escaping can reach this limit before the text limit. Invalid settings and
+unlisted override names stop startup with the other configuration errors.
+
+The wire contract was recovered statically from the original CUSA13795 01.21
+executable (C): fetch builder `0x90e90`, location/message readers `0x90170`
+and `0x91700`, content consumer `0xcda540`, viewed builder `0x91270`.
+The instance text, exact-language fallback, SHA-256-derived nonzero message ID,
+eight-entry request bound and stateless viewed acknowledgement are replacement
+policy (I), not recovered Activision behavior. No third-party service code was
+copied. Only location 1 receives one message when capacity allows; all other
+locations receive zero. Replies echo the location and request language, encode
+only `content_long` in the content blob and send `{}` metadata. Requests need
+an admitted PS4 player, bounded typed fields and the exact terminator. Viewed
+reports log only counts and message IDs, without changing identity, economy,
+statistics or database state.
+
+Use clearly unofficial operator text. This is text only: URLs cannot be opened
+from the ticker. Go tests cover the wire contract and configuration, but in-game
+appearance, scrolling, repetition, character rendering and the client's 104/4
+report still need a human-operated check. This change was not installed in the lab.
 
 ## Client side
 
@@ -156,7 +195,10 @@ keeps the upstream layout:
 
 - New components live in files the fork owns: `config.go`, `platform_psn.go`,
   `platform_tasks.go`, `tickets.go`, `ctr_sqlite.go`, `ctr_economy_policy.go`,
-  `diagnostic_redaction.go`, `instance_lock_*.go`, `internal/` and their tests.
+  `ctr_news.go`, `diagnostic_redaction.go`, `instance_lock_*.go`, `internal/`
+  and their tests.
+  Service 104 adds only a dispatch hook and malformed-task refusal in `services.go`,
+  plus names in `dashboard.go`; parsing and replies stay in `ctr_news.go`.
 - Upstream code reads the package variables `config.go` sets, never the
   environment. An upstream change that adds a variable must add it to
   `config.go` and `example.env`; a test fails when `example.env` misses one.

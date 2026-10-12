@@ -251,7 +251,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 		if len(payload) >= 3 {
 			task = payload[2]
 		}
-		if service == svcMarketplace {
+		if service == svcMarketplace || service == svcMarketingComms {
 			_ = l.sendEncrypted(innerTaskReply, taskReply(task, errUnhandled, nil))
 			return
 		}
@@ -425,6 +425,9 @@ func (l *lobbyConn) onTask(payload []byte) {
 		body := []byte(`{"expiresIn":3600,"ABToken":"nextendo","enrollments":[]}`)
 		reply = httpProxyReply(task, 200, body)
 		l.logf("task bdABTesting.enroll -> 200 (%d bytes)", len(body))
+
+	case service == svcMarketingComms:
+		reply = l.onMarketingComms(task, r)
 
 	case service == svcAchievements:
 		reply = l.onAchievements(task, payload)

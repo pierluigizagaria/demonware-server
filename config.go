@@ -56,6 +56,7 @@ type serverConfig struct {
 	startBalance                       int64
 	relayLow, relayHigh                int
 	relayPIDs                          string
+	news                               ctrNewsConfig
 }
 
 // readConfig loads envFile, if any, and reads the configuration. serving
@@ -130,6 +131,7 @@ func loadConfig(lookup func(string) string, check []string, serving bool) (serve
 		relayHigh:    r.integer("CTR_RELAY_PORT_HIGH", 0, 0, 65535),
 		relayPIDs:    r.pids("CTR_RELAY_PIDS"),
 		redactLogs:   r.flag("NEXTENDO_REDACT_LOGS", redactLogs),
+		news:         r.news(),
 	}
 	if serving && c.shadnet.Issuer != "" && c.shadnet.ClientID != "" && c.shadnet.NPTitleID != "" &&
 		len(c.shadnet.Scopes) != 0 && c.jwksURL != "" {
@@ -156,6 +158,7 @@ func applyConfig(c serverConfig) {
 	pubConfigPath, pubDir, dumpRoot, verbose, riftDir = c.pubfilesConfig, c.pubfilesDir, c.dumps, c.verbose, c.riftData
 	signingKeyFile, dataDir, startBalance, migrateEnabled = c.signingKey, c.dataDir, c.startBalance, c.migrate
 	relayPIDs, redactLogs = c.relayPIDs, c.redactLogs
+	ctrNews = c.news
 }
 
 type envReader struct {
@@ -171,6 +174,31 @@ func (r *envReader) fail(format string, args ...any) {
 func (r *envReader) value(name string) string {
 	r.known[name] = true
 	return r.lookup(name)
+}
+
+// Game language codes, including the two regional variants (CUSA13795 01.21).
+var newsLanguages = []string{
+	"ar", "bg", "zh", "cs", "da", "nl", "en", "fi", "fr", "de", "el", "he", "hi", "hu",
+	"it", "ja", "ko", "no", "pl", "pt", "ru", "es", "mx", "sv", "ta", "tr", "pt-BR", "es-MX",
+}
+
+func (r *envReader) news() ctrNewsConfig {
+	c := ctrNewsConfig{fallback: r.newsMessage("CTR_NEWS"), languages: map[string]ctrNewsMessage{}}
+	for _, language := range newsLanguages {
+		name := "CTR_NEWS_" + strings.ReplaceAll(strings.ToUpper(language), "-", "_")
+		if msg := r.newsMessage(name); len(msg.content) != 0 {
+			c.languages[language] = msg
+		}
+	}
+	return c
+}
+
+func (r *envReader) newsMessage(name string) ctrNewsMessage {
+	msg, err := newCTRNewsMessage(r.value(name))
+	if err != nil {
+		r.fail("%s: %v", name, err)
+	}
+	return msg
 }
 
 func (r *envReader) text(name, def string) string {
