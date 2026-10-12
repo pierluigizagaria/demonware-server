@@ -106,6 +106,16 @@ and no matching override produce no message. Values are read once at startup;
 restart the instance to change them. The normal and unlock-all processes may
 use different text, independently of their economy mode or players.
 
+Updated or removed text takes effect on the game's next news download, not
+immediately in an active ticker. The original client checks for news when the
+news widget attaches; its detach path closes the message and clears its cache.
+While active it keeps the current text, and a cached inactive message is reused.
+No server command to recall an already displayed message has been established.
+An empty reply supplies no new message; it does not erase the client's cache.
+To withdraw all translations, clear the default and every override, then restart
+the instance with players disconnected. Which menu transitions recreate the
+widget has not been verified in game.
+
 End each translation with a visible separator such as `   ***` because the
 game scrolls consecutive copies without inserting a gap. Optional spaces after
 the separator are preserved by the env-file reader and message encoder. Do not
