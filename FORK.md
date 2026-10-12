@@ -19,7 +19,7 @@ through the same dispatcher, matchmaking engine and CTR services as Switch.
 | Platform boundary | `platform.go` | `platformAuthenticator` (identity, auth extra data, policy); one installed at startup |
 | Nintendo | `platform_nintendo.go` | Original identity/gates; zero policy keeps original admission |
 | PS4 | `platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL and cached for 5 minutes, renewed in the background during the last minute, issuer/audience/title/scopes, 60 s clock leeway) |
-| Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | PS4 policy: lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity; a missing response signer fails closed. PS4 tickets live in memory by session tag (issuer, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. The original admission keeps its `sessions/` files |
+| Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | PS4 policy: lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity; a missing response signer fails closed. PS4 tickets live in memory by session tag (the auth handler, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. The original admission keeps its `sessions/` files |
 | PS4 tasks | `platform_tasks.go`, `services.go` | 38/6 identity report; raw bandwidth completion; 12/10 getUserIDs (shared: online players, then the name each player was last issued a ticket under, from `player_names` in `ctr.sqlite`; never used for admission). Friend IDs are shadNet account IDs: no baas-proxy aliases or nextendo-account lookups |
 | PS4 marketplace | `ctr_marketplace.go`, `ctr_rewards.go`, platform boundary | Shared 80/245,165,154 use `octane_psn` and owner `psn`; purchases accept only original PS4 SDK defaults. 80/246 and unknown PS4 tasks fail without ledger writes. Nintendo keeps `octane_switch`/`nintendo` and its upstream fallback. |
 | Unlock-all option | `ctr_economy_policy.go`, `main.go` | Opt-in full catalog ownership is computed at read time. Known-SKU purchases debit nothing and write nothing; unknown SKUs fail. `meta.unlock_all` fixes the mode for the database, independently of platform or admission. Startup logs `unlock-all: on` or `unlock-all: off`. |
@@ -69,7 +69,7 @@ on `PATH` for response signing.
 ## Two publisher servers
 
 An unlock-all server and a normal economy server are two processes with their own
-`CTR_WALLETS`, `D3_SESSIONS`, listeners and matchmaking pools. Both may trust the
+`CTR_WALLETS`, listeners and matchmaking pools. Both may trust the
 same shadNet issuer. Nothing is shared between them. Unlock-all covers Pit Stop
 content only; save-owned unlocks stay with the save. The game caches marketplace
 inventory in the save, so give each server its own profile and save.
@@ -77,9 +77,8 @@ inventory in the save, so give each server its own profile and save.
 The database starts fresh: no old wallet JSON, leaderboard database or policy
 marker is imported, read, moved or deleted at runtime. The JSON implementations
 remain only as references for upstream tests. Schema version 2 is recorded with
-`PRAGMA user_version`. Version 1, which the lab databases already hold, only
-gains `player_names` in the same transaction that checks the mode; other versions
-are refused. Schema creation and the
+`PRAGMA user_version`. A version 1 database only gains `player_names`, in the
+same transaction that checks the mode; other versions are refused. Schema creation and the
 `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` row `unlock_all=0|1` commit
 together. A missing, invalid or conflicting mode fails closed on reopen.
 
@@ -101,7 +100,7 @@ reward operations can still create accounts and record earned currency.
 
 ## Dependencies
 
-SQLite uses the fork's existing external module,
+SQLite uses one external module,
 `modernc.org/sqlite` v1.59.0 (BSD-3-Clause, pure Go, no cgo), pinned in `go.sum`,
 and raises the `go` directive to 1.25. The other modules compiled into the
 server are `modernc.org/libc`, `mathutil` and `memory`, `golang.org/x/sys` and

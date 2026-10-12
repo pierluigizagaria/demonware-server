@@ -92,7 +92,7 @@ func readLeaderboard(store leaderboardStore, task byte, board uint32, start uint
 
 const ctrDB = "ctr.sqlite"
 
-// Version 2 adds player_names; the lab databases already hold version 1.
+// Version 2 adds player_names to version 1.
 const ctrSchemaVersion = 2
 
 // awardRaces accepts events from the last seven days, five minutes ahead at
