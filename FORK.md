@@ -10,7 +10,9 @@ speaks the same Demonware protocol as the Switch version (handshake, 128-byte
 ticket, the service 145/138/12 tasks), so it runs through the original
 dispatcher, matchmaking engine and CTR services. The Nintendo sign-in, account
 gates, presence reporting and console friend lookups were removed. The Diablo
-III code is kept unchanged but is unreachable: only CTR PS4 tickets are issued.
+III code is kept and no Diablo III ticket is issued, but its services stay in
+the shared dispatcher: authenticated PS4 clients can still reach handlers such
+as the service 21 public matchmaking.
 
 ## Design
 
@@ -152,7 +154,7 @@ checks verification, the signed response, ticket issuance and lobby admission.
 Fixes from the original repository are merged with `git merge`, so the fork
 keeps the upstream layout:
 
-- New behavior lives in files the fork owns: `config.go`, `platform_psn.go`,
+- New components live in files the fork owns: `config.go`, `platform_psn.go`,
   `platform_tasks.go`, `tickets.go`, `ctr_sqlite.go`, `ctr_economy_policy.go`,
   `diagnostic_redaction.go`, `instance_lock_*.go`, `internal/` and their tests.
 - Upstream code reads the package variables `config.go` sets, never the
@@ -161,7 +163,12 @@ keeps the upstream layout:
 - Nintendo-only upstream files are deleted: `identity.go`, `gates.go`,
   `accountlookup.go`, `presence.go` and their tests. An upstream change to one
   of them is a modify/delete conflict; keep the deletion.
-- Shared upstream files keep their functions and signatures; only the Nintendo
-  branches and values were removed or replaced (for example `octane_switch`
-  and `nintendo` became the PS4 constants in `platform_psn.go`).
-- Diablo III files are unchanged, so their upstream fixes apply as they are.
+- Shared upstream files keep their structure, but expect conflicts there.
+  Nintendo branches and values were removed or replaced (for example
+  `octane_switch` and `nintendo` became the PS4 constants in `platform_psn.go`),
+  the engine fixes above changed `ctr_async.go`, `ctr_merge.go`, `handshake.go`
+  and `ctr_relay.go`, and a few signatures changed for the PS4 path (`serveAuth`
+  takes the platform adapter, `ctrMatchmaker.leave` returns the notices to send).
+- Diablo III-only files changed only their logging calls (`pubfiles.go`,
+  `seasons.go`) and, in `riftdata.go`, how `D3_RIFTDATA` is read;
+  `matchmaking.go` and `lobbydoc.go` are unchanged.
