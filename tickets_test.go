@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -78,24 +79,33 @@ func TestPlayerNamesSurviveRestart(t *testing.T) {
 	}
 }
 
-func TestCTRSchemaOneGainsPlayerNamesAndTrust(t *testing.T) {
-	path := filepath.Join(t.TempDir(), ctrDB)
-	db := openTestCTR(t, path, false)
-	sqliteExec(t, db, "DROP TABLE player_names")
-	sqliteExec(t, db, "DELETE FROM meta WHERE key = 'trust_id'")
-	sqliteExec(t, db, "PRAGMA user_version = 1")
-	db.Close()
-	if other, err := openCTRSQLite(path, true, testTrustID); err == nil {
-		other.Close()
-		t.Fatal("mode mismatch accepted during the upgrade")
-	}
-	db = openTestCTR(t, path, false)
-	var version int
-	if err := db.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != ctrSchemaVersion {
-		t.Fatalf("version %d, %v", version, err)
-	}
-	if err := db.rememberName(9, "Fixture", time.Now()); err != nil {
-		t.Fatal(err)
+func TestCTRSchemaUpgradeAdoptsTrust(t *testing.T) {
+	for _, old := range []int{1, 2} {
+		path := filepath.Join(t.TempDir(), ctrDB)
+		db := openTestCTR(t, path, false)
+		if old == 1 {
+			sqliteExec(t, db, "DROP TABLE player_names")
+		}
+		sqliteExec(t, db, "DELETE FROM meta WHERE key = 'trust_id'")
+		sqliteExec(t, db, fmt.Sprintf("PRAGMA user_version = %d", old))
+		db.Close()
+		if other, err := openCTRSQLite(path, true, testTrustID); err == nil {
+			other.Close()
+			t.Fatalf("version %d: mode mismatch accepted during the upgrade", old)
+		}
+		db = openTestCTR(t, path, false)
+		var version int
+		if err := db.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != ctrSchemaVersion {
+			t.Fatalf("version %d upgraded to %d, %v", old, version, err)
+		}
+		if err := db.rememberName(9, "Fixture", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		db.Close()
+		if other, err := openCTRSQLite(path, false, "another-issuer"); err == nil {
+			other.Close()
+			t.Fatalf("version %d: upgraded database did not keep the adopted trust ID", old)
+		}
 	}
 }
 

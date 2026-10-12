@@ -92,8 +92,8 @@ func readLeaderboard(store leaderboardStore, task byte, board uint32, start uint
 
 const ctrDB = "ctr.sqlite"
 
-// Version 2 adds player_names and the trust ID to version 1.
-const ctrSchemaVersion = 2
+// Version 2 added player_names; version 3 binds the database to a trust ID.
+const ctrSchemaVersion = 3
 
 // awardRaces accepts events from the last seven days, five minutes ahead at
 // most. A race receipt or a day's online seconds last written more than nine
@@ -185,12 +185,14 @@ func (s *ctrSQLite) initialize(unlockAll bool, trustID string) error {
 		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, ctrSchemaVersion)); err != nil {
 			return err
 		}
-	case 1, ctrSchemaVersion:
+	case 1, 2, ctrSchemaVersion:
 		if version == 1 {
-			// Version 1 predates the binding: it adopts the configured trust ID.
 			if _, err := tx.Exec(playerNamesSchema); err != nil {
 				return err
 			}
+		}
+		if version < ctrSchemaVersion {
+			// Earlier versions predate the binding: they adopt the configured trust ID.
 			if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('trust_id', ?)`, trustID); err != nil {
 				return err
 			}
