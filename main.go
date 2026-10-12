@@ -37,7 +37,7 @@ var (
 	// BIND_ADDR restricts the network listeners (default: all interfaces).
 	bindAddr = os.Getenv("BIND_ADDR")
 
-	// Persistent state: ctr.sqlite (economy, leaderboards, player names).
+	// Persistent state: ctrnf.db (economy, leaderboards, player names).
 	dataDir = envOr("DATA_DIR", "data")
 	// pubfiles.json drives the three files written to D3_PUBFILES.
 	pubConfigPath = envOr("D3_PUBFILES_CONFIG", "pubfiles.json")

@@ -126,7 +126,7 @@ func TestSQLiteUsesDataDir(t *testing.T) {
 			if err := db.write([]ctrStatWrite{{ctrStat: ctrStat{Board: 89, PID: 7, Score: 2}}}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := os.Stat(filepath.Join(root, ns, "ctr.sqlite")); err != nil {
+			if _, err := os.Stat(filepath.Join(root, ns, "ctrnf.db")); err != nil {
 				t.Fatal(err)
 			}
 			if sqliteCount(t, db, "accounts") != 1 || sqliteCount(t, db, "leaderboard") != 1 {

@@ -18,11 +18,11 @@ III code is kept unchanged but is unreachable: only CTR PS4 tickets are issued.
 | --- | --- | --- |
 | PS4 identity | `platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL and cached for 5 minutes, renewed in the background during the last minute, issuer/audience/title/scopes, 60 s clock leeway) |
 | Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | Lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity; a missing response signer fails closed. Tickets live in memory by session tag (the auth handler, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. No session files and no all-zero handshake key |
-| PS4 tasks | `platform_tasks.go`, `services.go` | 38/6 identity report; raw bandwidth completion; 12/10 getUserIDs (online players, then the name each player was last issued a ticket under, from `player_names` in `ctr.sqlite`; never used for admission). Friend IDs are shadNet account IDs |
+| PS4 tasks | `platform_tasks.go`, `services.go` | 38/6 identity report; raw bandwidth completion; 12/10 getUserIDs (online players, then the name each player was last issued a ticket under, from `player_names` in `ctrnf.db`; never used for admission). Friend IDs are shadNet account IDs |
 | Marketplace | `ctr_marketplace.go`, `ctr_rewards.go` | 80/245,165,154 use `octane_psn` and owner `psn`; purchases accept only original PS4 SDK defaults. 80/246 (Switch only) and unknown tasks fail without ledger writes |
 | Unlock-all option | `ctr_economy_policy.go`, `main.go` | Opt-in full catalog ownership is computed at read time. Known-SKU purchases debit nothing and write nothing; unknown SKUs fail. `meta.unlock_all` fixes the mode for the database, independently of admission. Startup logs `unlock-all: on` or `unlock-all: off`. |
-| Economy storage | `ctr_sqlite.go`, `ctr_economy.go` | One `<DATA_DIR>/ctr.sqlite` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction and writes only changed rows. Race receipts and online seconds older than nine days, beyond the seven-day reward window, are never loaded and are deleted when that account next saves (an inactive account keeps its expired rows). |
-| Leaderboards | `ctr_sqlite.go`, `ctr_stats.go`, `main.go` | bdStats shares `ctr.sqlite` with the economy, keeping the original table, batch transactions and ranking. Rank pages and entity reads run in SQL on an index matching the ranking order. The upstream JSON store remains the reference for the contract test. |
+| Economy storage | `ctr_sqlite.go`, `ctr_economy.go` | One `<DATA_DIR>/ctrnf.db` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction and writes only changed rows. Race receipts and online seconds older than nine days, beyond the seven-day reward window, are never loaded and are deleted when that account next saves (an inactive account keeps its expired rows). |
+| Leaderboards | `ctr_sqlite.go`, `ctr_stats.go`, `main.go` | bdStats shares `ctrnf.db` with the economy, keeping the original table, batch transactions and ranking. Rank pages and entity reads run in SQL on an index matching the ranking order. The upstream JSON store remains the reference for the contract test. |
 | Engine | `ctr_async.go`, `ctr_merge.go` | Every player holds one seat. Party members are the leader's unverified claim, so a search whose claimed followers already hold a seat is refused; the check and the reservation are atomic before the success reply. A leader's new search replaces only its own searches and seat (`detach`, shared with disconnects); a stale connection's disconnect releases no seat the account's newer connection may hold; disbanding an old lobby ends no search. Party followers who leave lose only their seat and the host gets the new membership; explicit merge-eligibility flags; merges cancelled when a source closes or membership changes; handoff before backfill |
 | Diagnostics | `diagnostic_redaction.go` | `NEXTENDO_REDACT_LOGS` (default on) keeps only numeric and boolean log arguments (errors show their type) and disables raw dumps |
 
@@ -50,7 +50,7 @@ the registered client/title, the exact granted scopes and the trusted
 | --- | --- |
 | `CTR_AUTH_CONFIG` | Required shadNet trust policy |
 | `CTR_AUTH_SIGNING_KEY` | Required RSA key for the CTR response signature (the client must trust its public key) |
-| `DATA_DIR` | Persistent state directory (default `data`): `ctr.sqlite` holds the economy, ledger, mode, leaderboards and player names. |
+| `DATA_DIR` | Persistent state directory (default `data`): `ctrnf.db` holds the economy, ledger, mode, leaderboards and player names. |
 | `CTR_UNLOCK_ALL` | Optional instance-wide unlock-all: unset, `0`, `false` = off; `1`, `true` = on. Any other value fails startup. The database records the mode and refuses a different one. |
 | `CTR_START_BALANCE` | Initial Wumpa Coins for new accounts (default `0`); existing balances are preserved. |
 | `AUTH_PORT`, `CERT_FILE`, `KEY_FILE` | HTTPS auth listener |
@@ -92,8 +92,8 @@ retain SKU IDs; reward rows retain race receipt hashes or completed challenge
 keys (JSON arrays for batches). Starting credits are logged separately. Updates
 with no balance or item change add no ledger rows. Inventory and ledger triggers
 reject updates and deletions. The instance mutex serializes load/mutate/save;
-an exclusive OS lock on `ctr.sqlite.lock` refuses a second process on the same
-database. Read-only tools may still open `ctr.sqlite`.
+an exclusive OS lock on `ctrnf.db.lock` refuses a second process on the same
+database. Read-only tools may still open `ctrnf.db`.
 
 Normal account reads initialize the starting balance atomically. Unlock-all
 inventory and balance reads, including purchase balance pushes, write nothing;

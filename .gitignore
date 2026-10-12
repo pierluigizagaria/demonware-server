@@ -44,5 +44,6 @@ stdout.txt
 
 # Per-instance SQLite state, including WAL and shared-memory sidecars
 /data/
-ctr.sqlite
-ctr.sqlite-*
+ctrnf.db
+ctrnf.db-*
+ctrnf.db.lock

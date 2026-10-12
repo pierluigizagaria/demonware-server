@@ -90,7 +90,7 @@ func readLeaderboard(store leaderboardStore, task byte, board uint32, start uint
 	return rows, uint32(len(all)), nil
 }
 
-const ctrDB = "ctr.sqlite"
+const ctrDB = "ctrnf.db"
 
 // Version 2 added player_names; version 3 binds the database to a trust ID.
 const ctrSchemaVersion = 3

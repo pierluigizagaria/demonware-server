@@ -230,7 +230,7 @@ func pidOnline(id uint64) uint64 {
 
 // onGetUserIDs answers bdTitleUtilities.getUserIDs (12/10): online IDs to
 // account IDs. Players connected now win; otherwise the name a player was
-// last issued a ticket under still resolves (player_names in ctr.sqlite), so
+// last issued a ticket under still resolves (player_names in ctrnf.db), so
 // a friend is found even before they connect to the lobby. Resolving an
 // identity does not make it joinable: only live sessions are advertised.
 func (l *lobbyConn) onGetUserIDs(task byte, r *bdReader) []byte {
