@@ -192,11 +192,7 @@ func newPlatformAuthHandler(platform platformAuthenticator, ctrSigner *ctrAuthSi
 		// tickets: the 0x82's tag picks the right one. The player's identity
 		// (online friends, presence) is recovered from the 8-byte key.
 		if policy.IssuedTickets {
-			if err := persistTicket(sessDir, clientTicket, id); err != nil {
-				diagnosticLogf("[D3 Auth] #%d session persistence failed: %v", n, err)
-				http.Error(w, "session persistence failed", http.StatusInternalServerError)
-				return
-			}
+			rememberTicket(clientTicket, id, time.Now(), policy.TicketWindow)
 		} else if err := os.MkdirAll(sessDir, 0o755); err == nil {
 			name := fmt.Sprintf("%d_%x.tkt", time.Now().Unix(), clientTicket[33:37])
 			if err := os.WriteFile(filepath.Join(sessDir, name), clientTicket, 0o644); err != nil {
@@ -204,8 +200,11 @@ func newPlatformAuthHandler(platform platformAuthenticator, ctrSigner *ctrAuthSi
 			}
 			if raw, err := json.Marshal(id); err == nil {
 				_ = os.WriteFile(filepath.Join(sessDir, fmt.Sprintf("id_%x.json", clientTicket[33:41])), raw, 0o644)
-				rememberIdentity(sessDir, id, time.Now())
 			}
+		}
+		// 12/10 resolves friends by the names they were issued a ticket under.
+		if err := rememberPlayerName(id, time.Now()); err != nil {
+			diagnosticLogf("[D3 Auth] #%d player name not recorded: %v", n, err)
 		}
 
 		ivSeed := req.IVSeed

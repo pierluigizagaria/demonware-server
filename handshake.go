@@ -300,7 +300,7 @@ func (l *lobbyConn) candidates(raw []byte) []keyCand {
 	if activePolicy.IssuedTickets {
 		// Only a fresh ticket issued here may key the handshake.
 		if t := findTicket(raw); t != nil {
-			if _, ok := issuedTicketPlayer(l.sessDir, t, time.Now(), activePolicy.TicketWindow); ok {
+			if _, ok := issuedTicketPlayer(t, time.Now(), activePolicy.TicketWindow); ok {
 				add("issued-ticket", t)
 			}
 		}

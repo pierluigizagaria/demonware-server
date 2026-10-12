@@ -16,8 +16,8 @@ import (
 // psnPlatform adapts the observed CTR PS4 request envelope to platform identity.
 // The supplied verifier determines trust; failed verification has no fallback.
 type psnPlatform struct {
-	verifier        platform.Verifier
-	ticketNamespace string
+	verifier       platform.Verifier
+	stateNamespace string
 }
 
 func (p psnPlatform) Authenticate(body []byte, _ string) (playerID, error) {
@@ -70,7 +70,7 @@ func loadPSNPlatform(configPath string) (psnPlatform, error) {
 	if err != nil {
 		return psnPlatform{}, err
 	}
-	return psnPlatform{verifier: verifier, ticketNamespace: "npauth-" + verifier.TrustID()}, nil
+	return psnPlatform{verifier: verifier, stateNamespace: "npauth-" + verifier.TrustID()}, nil
 }
 
 // Preserve extra game fields but reject duplicate/case-aliased required fields

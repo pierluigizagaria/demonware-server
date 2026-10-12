@@ -97,25 +97,19 @@ func TestPS4LobbyAdmitsOnlyFreshIssuedTickets(t *testing.T) {
 		t.Fatal("unissued self-supplied ticket established encrypted session")
 	}
 	fresh := psnTicket(time.Now())
-	if err := persistTicket(dir, fresh, playerID{PID: 17, Username: "fixture", Sub: "shadnet:17", Kind: "shadnet", Title: 5760}); err != nil {
-		t.Fatal(err)
-	}
+	issueTestTicket(fresh, playerID{PID: 17, Username: "fixture", Sub: "shadnet:17", Kind: "shadnet", Title: 5760})
 	l := handshake(t, dir, fresh)
 	defer dropOnline(l.n)
 	if l.keys == nil || l.player == nil || l.player.PID != 17 || l.player.Title != 5760 {
 		t.Fatal("fresh issued ticket refused or identity lost")
 	}
 	stale := psnTicket(time.Now().Add(-121 * time.Second))
-	if err := persistTicket(dir, stale, playerID{PID: 17, Username: "fixture"}); err != nil {
-		t.Fatal(err)
-	}
+	issueTestTicket(stale, playerID{PID: 17, Username: "fixture"})
 	if l := handshake(t, dir, stale); l.keys != nil {
 		t.Fatal("expired publisher ticket admitted")
 	}
 	foreign := psnTicket(time.Now())
-	if err := persistTicket(dir, foreign, playerID{PID: 18, Username: "other"}); err != nil {
-		t.Fatal(err)
-	}
+	issueTestTicket(foreign, playerID{PID: 18, Username: "other"})
 	if l := handshake(t, dir, foreign); l.keys != nil {
 		t.Fatal("ticket bound to another account admitted")
 	}
@@ -125,35 +119,22 @@ func TestPS4AuthRequiresResponseSigner(t *testing.T) {
 	dir := t.TempDir()
 	h := newPlatformAuthHandler(fixturePSNPlatform(), nil, dir, "")
 	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
+	before := issuedTicketCount()
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", bytes.NewReader(body)))
 	if w.Code == 200 {
 		t.Fatal("PS4 auth succeeded without required response signature")
 	}
-	if files, _ := filepath.Glob(filepath.Join(dir, "*.tkt")); len(files) != 0 {
+	if issuedTicketCount() != before {
 		t.Fatal("ticket issued without a signed response")
 	}
-}
-
-func TestPS4AuthFailsClosedWithoutPersistence(t *testing.T) {
-	blocked := filepath.Join(t.TempDir(), "file")
-	if err := os.WriteFile(blocked, nil, 0600); err != nil {
-		t.Fatal(err)
-	}
-	h := newPlatformAuthHandler(fixturePSNPlatform(), testCTRSigner(t), blocked, "")
-	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", bytes.NewReader(body)))
-	if w.Code == 200 {
-		t.Fatal("ticket returned although it could not be persisted")
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatal("PS4 auth wrote session files")
 	}
 }
 
 func TestPS4UmbrellaUsesFreshIssuedTicket(t *testing.T) {
 	withPolicy(t, fixturePSNPlatform().Policy())
-	old := sessDir
-	sessDir = t.TempDir()
-	defer func() { sessDir = old }()
 	call := func(ticket []byte) int {
 		body, _ := json.Marshal(map[string]any{"ticket": ticket, "titleID": "5760"})
 		w := httptest.NewRecorder()
@@ -162,9 +143,7 @@ func TestPS4UmbrellaUsesFreshIssuedTicket(t *testing.T) {
 	}
 	fresh, stale := psnTicket(time.Now()), psnTicket(time.Now().Add(-121*time.Second))
 	for _, ticket := range [][]byte{fresh, stale} {
-		if err := persistTicket(sessDir, ticket, playerID{PID: 17, Username: "fixture"}); err != nil {
-			t.Fatal(err)
-		}
+		issueTestTicket(ticket, playerID{PID: 17, Username: "fixture"})
 	}
 	if call(fresh) != 200 || call(stale) != 401 || call(psnTicket(time.Now())) != 401 {
 		t.Fatal("Umbrella did not apply fresh issued-ticket admission")
@@ -173,13 +152,12 @@ func TestPS4UmbrellaUsesFreshIssuedTicket(t *testing.T) {
 
 func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
 	l, w := sharedPS4Lobby()
-	l.sessDir = t.TempDir()
+	withTestPlayerNames(t)
 	onlineMu.Lock()
 	online[l.n] = l.player
 	onlineMu.Unlock()
 	defer dropOnline(l.n)
-	known := psnTicket(time.Now().Add(-time.Hour))
-	if err := persistTicket(l.sessDir, known, playerID{PID: 42, Username: "OfflineFriend", Kind: "shadnet"}); err != nil {
+	if err := rememberPlayerName(playerID{PID: 42, Username: "OfflineFriend", Kind: "shadnet"}, time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	req := &bdWriter{b: []byte{12, tagU8, 10}}

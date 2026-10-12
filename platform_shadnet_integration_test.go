@@ -98,7 +98,7 @@ func TestShadNetPublisherInterop(t *testing.T) {
 		if err != nil || response.AuthTask != "47" {
 			t.Fatal("unexpected publisher response")
 		}
-		id, ok := issuedTicketPlayer(dir, ticket, time.Now(), p.Policy().TicketWindow)
+		id, ok := issuedTicketPlayer(ticket, time.Now(), p.Policy().TicketWindow)
 		if !ok || id.PID != user.ID || id.Username != user.Name || id.Title != 5760 {
 			t.Fatal("issued ticket does not carry the verified identity")
 		}

@@ -19,8 +19,8 @@ through the same dispatcher, matchmaking engine and CTR services as Switch.
 | Platform boundary | `platform.go` | `platformAuthenticator` (identity, auth extra data, policy); one installed at startup |
 | Nintendo | `platform_nintendo.go` | Original identity/gates; zero policy keeps original admission |
 | PS4 | `platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL and cached for 5 minutes, renewed in the background during the last minute, issuer/audience/title/scopes, 60 s clock leeway) |
-| Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | PS4 policy: lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their stored identity; failed persistence or a missing response signer fails closed. Ticket and identity files are named by the ticket's session tag and read directly; a pruner deletes them once expired, keeping the latest identity per account in `account_<pid>.json`. 12/10 name lookups use an in-memory index |
-| PS4 tasks | `platform_tasks.go`, `services.go` | 38/6 identity report; raw bandwidth completion; 12/10 getUserIDs (shared: online players, then identities already issued a ticket). Friend IDs are shadNet account IDs: no baas-proxy aliases or nextendo-account lookups |
+| Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | PS4 policy: lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity; a missing response signer fails closed. PS4 tickets live in memory by session tag (issuer, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. The original admission keeps its `sessions/` files |
+| PS4 tasks | `platform_tasks.go`, `services.go` | 38/6 identity report; raw bandwidth completion; 12/10 getUserIDs (shared: online players, then the name each player was last issued a ticket under, from `player_names` in `ctr.sqlite`; never used for admission). Friend IDs are shadNet account IDs: no baas-proxy aliases or nextendo-account lookups |
 | PS4 marketplace | `ctr_marketplace.go`, `ctr_rewards.go`, platform boundary | Shared 80/245,165,154 use `octane_psn` and owner `psn`; purchases accept only original PS4 SDK defaults. 80/246 and unknown PS4 tasks fail without ledger writes. Nintendo keeps `octane_switch`/`nintendo` and its upstream fallback. |
 | Unlock-all option | `ctr_economy_policy.go`, `main.go` | Opt-in full catalog ownership is computed at read time. Known-SKU purchases debit nothing and write nothing; unknown SKUs fail. `meta.unlock_all` fixes the mode for the database, independently of platform or admission. Startup logs `unlock-all: on` or `unlock-all: off`. |
 | Economy storage | `ctr_sqlite.go`, `ctr_economy.go` | One `ctr.sqlite` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction and writes only changed rows. Race receipts and online seconds older than nine days, beyond the seven-day reward window, are never loaded and are deleted when that account next saves (an inactive account keeps its expired rows). |
@@ -52,8 +52,8 @@ exact granted scopes and the trusted `jwks_url` of the shadNet instance.
 | --- | --- |
 | `CTR_AUTH_CONFIG` | shadNet trust policy (selects the PS4 platform) |
 | `CTR_AUTH_SIGNING_KEY` | Required RSA key for the CTR response signature (the client must trust its public key) |
-| `D3_SESSIONS` | Ticket store; PS4 uses a subdirectory namespaced by issuer, client and title |
-| `CTR_WALLETS` | Instance state directory (default `wallets`): `ctr.sqlite` contains the economy, ledger, mode and leaderboards. PS4 uses `<CTR_WALLETS>/<issuer namespace>/ctr.sqlite`; Nintendo uses `<CTR_WALLETS>/ctr.sqlite`. |
+| `D3_SESSIONS` | Ticket files of the original admission; PS4 writes none |
+| `CTR_WALLETS` | Instance state directory (default `wallets`): `ctr.sqlite` contains the economy, ledger, mode, leaderboards and player names. PS4 uses `<CTR_WALLETS>/<issuer namespace>/ctr.sqlite`; Nintendo uses `<CTR_WALLETS>/ctr.sqlite`. |
 | `CTR_UNLOCK_ALL` | Optional instance-wide unlock-all: unset, `0`, `false` = off; `1`, `true` = on. Any other value fails startup. The database records the mode and refuses a different one. |
 | `CTR_START_BALANCE` | Initial Wumpa Coins for new accounts (default `0`); existing balances are preserved. |
 | `AUTH_PORT`, `CERT_FILE`, `KEY_FILE` | HTTPS auth listener |
@@ -76,8 +76,10 @@ inventory in the save, so give each server its own profile and save.
 
 The database starts fresh: no old wallet JSON, leaderboard database or policy
 marker is imported, read, moved or deleted at runtime. The JSON implementations
-remain only as references for upstream tests. Schema version 1 is recorded with
-`PRAGMA user_version`; other versions are refused (no migrations: nothing has been published). Schema creation and the
+remain only as references for upstream tests. Schema version 2 is recorded with
+`PRAGMA user_version`. Version 1, which the lab databases already hold, only
+gains `player_names` in the same transaction that checks the mode; other versions
+are refused. Schema creation and the
 `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` row `unlock_all=0|1` commit
 together. A missing, invalid or conflicting mode fails closed on reopen.
 

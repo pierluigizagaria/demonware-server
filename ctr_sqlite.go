@@ -32,6 +32,23 @@ type leaderboardStore interface {
 	read(board uint32) ([]ctrStat, error)
 }
 
+// playerNameStore remembers the names players were issued a ticket under,
+// so 12/10 resolves a friend who has not connected yet. Runtime installs
+// SQLite.
+type playerNameStore interface {
+	rememberName(pid uint64, name string, at time.Time) error
+	namedPlayers(names []string) (map[string]*playerID, error)
+}
+
+var playerNames playerNameStore
+
+func rememberPlayerName(id playerID, at time.Time) error {
+	if playerNames == nil || id.PID == 0 || id.Username == "" {
+		return nil
+	}
+	return playerNames.rememberName(id.PID, id.Username, at)
+}
+
 // rankedLeaderboard answers stats reads without loading a whole board.
 type rankedLeaderboard interface {
 	readRanks(board uint32, start uint64, limit uint32) ([]ctrStat, uint64, error)
@@ -75,14 +92,16 @@ func readLeaderboard(store leaderboardStore, task byte, board uint32, start uint
 
 const ctrDB = "ctr.sqlite"
 
-const ctrSchemaVersion = 1
+// Version 2 adds player_names; the lab databases already hold version 1.
+const ctrSchemaVersion = 2
 
 // awardRaces accepts events from the last seven days, five minutes ahead at
 // most. A race receipt or a day's online seconds last written more than nine
 // days ago can no longer affect a reward, so it is neither loaded nor kept.
 const replayRetention = 9 * 24 * time.Hour
 
-// ctrSQLite owns the only connection pool for this instance's economy and stats.
+// ctrSQLite owns the only connection pool for this instance's economy, stats
+// and player names.
 type ctrSQLite struct {
 	db   *sql.DB
 	lock *os.File
@@ -152,7 +171,7 @@ func (s *ctrSQLite) initialize(unlockAll bool) error {
 	switch version {
 	case 0:
 		// No old files are read or imported. Schema and mode commit together.
-		if _, err := tx.Exec(ctrSchema); err != nil {
+		if _, err := tx.Exec(ctrSchema + playerNamesSchema); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('unlock_all', ?)`, want); err != nil {
@@ -161,7 +180,15 @@ func (s *ctrSQLite) initialize(unlockAll bool) error {
 		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, ctrSchemaVersion)); err != nil {
 			return err
 		}
-	case ctrSchemaVersion:
+	case 1, ctrSchemaVersion:
+		if version == 1 {
+			if _, err := tx.Exec(playerNamesSchema); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, ctrSchemaVersion)); err != nil {
+				return err
+			}
+		}
 		var got string
 		if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'unlock_all'`).Scan(&got); err != nil {
 			return fmt.Errorf("read unlock-all mode: %w", err)
@@ -262,6 +289,18 @@ CREATE TABLE leaderboard (
 	PRIMARY KEY (board, pid)
 ) WITHOUT ROWID;
 CREATE INDEX leaderboard_rank ON leaderboard(board, score DESC, pid < 0, pid);
+`
+
+// The latest name each player was issued a ticket under. It only answers
+// 12/10 lookups: admission never reads it.
+const playerNamesSchema = `
+CREATE TABLE player_names (
+	pid INTEGER PRIMARY KEY,
+	name TEXT NOT NULL,
+	name_key TEXT NOT NULL, -- lower-case name, as 12/10 compares
+	recorded_at INTEGER NOT NULL
+);
+CREATE INDEX player_names_lookup ON player_names(name_key, recorded_at DESC);
 `
 
 func newSQLiteAccount() *economyAccount {
@@ -747,4 +786,35 @@ func (s *ctrSQLite) readEntities(board uint32, pids []uint64) ([]ctrStat, error)
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Rank < rows[j].Rank })
 	return rows, nil
+}
+
+func (s *ctrSQLite) rememberName(pid uint64, name string, at time.Time) error {
+	_, err := s.db.Exec(`INSERT INTO player_names(pid, name, name_key, recorded_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT(pid) DO UPDATE SET name = excluded.name, name_key = excluded.name_key, recorded_at = excluded.recorded_at`,
+		int64(pid), name, strings.ToLower(name), at.Unix())
+	return err
+}
+
+// namedPlayers returns, by lower-case name, the player most recently recorded
+// under each requested name.
+func (s *ctrSQLite) namedPlayers(names []string) (map[string]*playerID, error) {
+	out := map[string]*playerID{}
+	for _, name := range names {
+		key := strings.ToLower(name)
+		if out[key] != nil {
+			continue
+		}
+		var pid int64
+		var stored string
+		err := s.db.QueryRow(`SELECT pid, name FROM player_names WHERE name_key = ?
+			ORDER BY recorded_at DESC, pid DESC LIMIT 1`, key).Scan(&pid, &stored)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out[key] = &playerID{PID: uint64(pid), Username: stored}
+	}
+	return out, nil
 }

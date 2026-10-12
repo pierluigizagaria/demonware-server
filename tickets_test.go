@@ -1,65 +1,99 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
-func forgetKnownIdentities(dir string) {
-	knownMu.Lock()
-	delete(knownDirs, dir)
-	knownMu.Unlock()
+func issueTestTicket(ticket []byte, id playerID) {
+	rememberTicket(ticket, id, time.Now(), fixturePSNPlatform().Policy().TicketWindow)
 }
 
-func age(t *testing.T, at time.Time, paths ...string) {
+func issuedTicketCount() int {
+	issuedMu.Lock()
+	defer issuedMu.Unlock()
+	return len(issuedTickets)
+}
+
+func withTestPlayerNames(t *testing.T) *ctrSQLite {
 	t.Helper()
-	for _, p := range paths {
-		if err := os.Chtimes(p, at, at); err != nil {
+	db := openTestCTR(t, filepath.Join(t.TempDir(), ctrDB), false)
+	old := playerNames
+	playerNames = db
+	t.Cleanup(func() { playerNames = old })
+	return db
+}
+
+func TestIssuedTicketsLeaveMemoryAfterTheirWindow(t *testing.T) {
+	now := time.Now()
+	window := 120 * time.Second
+	id := playerID{PID: 17, Username: "Fixture"}
+	expired := psnTicket(now.Add(-window - issuedIdentityGrace))
+	closing := psnTicket(now.Add(-window))
+	fresh := psnTicket(now)
+	rememberTicket(expired, id, now, window)
+	rememberTicket(closing, id, now, window)
+	rememberTicket(fresh, id, now, window)
+	if _, ok := issuedIdentity(expired); ok {
+		t.Fatal("ticket past its window and grace kept in memory")
+	}
+	if _, ok := issuedTicketPlayer(closing, now, window); ok {
+		t.Fatal("ticket admitted after its window")
+	}
+	if got, ok := issuedIdentity(closing); !ok || got.PID != 17 {
+		t.Fatal("identity of a just-admitted ticket lost before its grace ended")
+	}
+	if got, ok := issuedTicketPlayer(fresh, now, window); !ok || got.PID != 17 || got.Title != 5760 {
+		t.Fatal("fresh ticket not admitted with its identity")
+	}
+	altered := append([]byte(nil), fresh...)
+	altered[100] ^= 1
+	if _, ok := issuedTicketPlayer(altered, now, window); ok {
+		t.Fatal("ticket with the same tag but other bytes admitted")
+	}
+}
+
+func TestPlayerNamesSurviveRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ctrDB)
+	db := openTestCTR(t, path, false)
+	at := time.Now().Add(-time.Hour)
+	for _, r := range []struct {
+		pid  uint64
+		name string
+		at   time.Time
+	}{{9, "Later", at}, {9, "Renamed", at.Add(time.Minute)}, {10, "Later", at.Add(2 * time.Minute)}} {
+		if err := db.rememberName(r.pid, r.name, r.at); err != nil {
 			t.Fatal(err)
 		}
 	}
-}
-
-func TestPruneIssuedTicketsKeepsAccountsAndFreshTickets(t *testing.T) {
-	dir := t.TempDir()
-	now := time.Now()
-	window := 120 * time.Second
-	old, fresh := psnTicket(now.Add(-time.Hour)), psnTicket(now)
-	if err := persistTicket(dir, old, playerID{PID: 17, Username: "Fixture"}); err != nil {
+	db.Close()
+	db = openTestCTR(t, path, false)
+	got, err := db.namedPlayers([]string{"LATER", "renamed", "stranger"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := persistTicket(dir, fresh, playerID{PID: 17, Username: "Fixture"}); err != nil {
-		t.Fatal(err)
-	}
-	oldFiles := []string{filepath.Join(dir, ticketKey(old)+".tkt"), filepath.Join(dir, "id_"+ticketKey(old)+".json")}
-	age(t, now.Add(-time.Hour), oldFiles...)
-
-	pruneIssuedTickets(dir, window, now)
-	for _, p := range oldFiles {
-		if _, err := os.Stat(p); !os.IsNotExist(err) {
-			t.Fatalf("expired %s kept", filepath.Base(p))
-		}
-	}
-	if _, ok := issuedTicketPlayer(dir, fresh, now, window); !ok {
-		t.Fatal("fresh ticket pruned")
-	}
-	forgetKnownIdentities(dir) // restart
-	if got := knownIdentities(dir, []string{"fixture"})["fixture"]; got == nil || got.PID != 17 {
-		t.Fatal("authenticated player no longer resolves after pruning")
+	if len(got) != 2 || got["later"] == nil || got["later"].PID != 10 || got["renamed"] == nil || got["renamed"].PID != 9 || got["renamed"].Username != "Renamed" {
+		t.Fatalf("names after restart: %+v", got)
 	}
 }
 
-func TestKnownIdentitiesFollowIssuanceWithoutRescan(t *testing.T) {
-	dir := t.TempDir()
-	if got := knownIdentities(dir, []string{"later"}); len(got) != 0 {
-		t.Fatal("unexpected identity")
+func TestCTRSchemaOneGainsPlayerNames(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ctrDB)
+	db := openTestCTR(t, path, false)
+	sqliteExec(t, db, "DROP TABLE player_names")
+	sqliteExec(t, db, "PRAGMA user_version = 1")
+	db.Close()
+	if other, err := openCTRSQLite(path, true); err == nil {
+		other.Close()
+		t.Fatal("mode mismatch accepted during the upgrade")
 	}
-	if err := persistTicket(dir, psnTicket(time.Now()), playerID{PID: 9, Username: "Later"}); err != nil {
+	db = openTestCTR(t, path, false)
+	var version int
+	if err := db.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != ctrSchemaVersion {
+		t.Fatalf("version %d, %v", version, err)
+	}
+	if err := db.rememberName(9, "Fixture", time.Now()); err != nil {
 		t.Fatal(err)
-	}
-	if got := knownIdentities(dir, []string{"LATER"})["later"]; got == nil || got.PID != 9 {
-		t.Fatal("issued identity missing from the loaded index")
 	}
 }

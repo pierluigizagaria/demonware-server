@@ -78,18 +78,26 @@ func (l *lobbyConn) loadIdentity(ticket []byte) {
 }
 
 func (l *lobbyConn) tryIdentity(ticket []byte) bool {
-	p := filepath.Join(l.sessDir, "id_"+hex.EncodeToString(ticket[33:41])+".json")
-	raw, err := os.ReadFile(p)
-	if err != nil {
-		return false
-	}
 	var id playerID
-	if json.Unmarshal(raw, &id) != nil || id.Username == "" {
-		return false
-	}
-	// auth.go stamps the announced title into the ticket at offset 5.
-	if len(ticket) >= 9 {
-		id.Title = binary.LittleEndian.Uint32(ticket[5:9])
+	if activePolicy.IssuedTickets {
+		issued, ok := issuedIdentity(ticket) // PS4 tickets live in memory (tickets.go)
+		if !ok {
+			return false
+		}
+		id = *issued
+	} else {
+		p := filepath.Join(l.sessDir, "id_"+hex.EncodeToString(ticket[33:41])+".json")
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return false
+		}
+		if json.Unmarshal(raw, &id) != nil || id.Username == "" {
+			return false
+		}
+		// auth.go stamps the announced title into the ticket at offset 5.
+		if len(ticket) >= 9 {
+			id.Title = binary.LittleEndian.Uint32(ticket[5:9])
+		}
 	}
 	l.player = &id
 	onlineMu.Lock()
@@ -354,9 +362,9 @@ func pidOnline(id uint64) uint64 {
 }
 
 // onGetUserIDs answers bdTitleUtilities.getUserIDs (12/10): online IDs to
-// account IDs. Players connected now win; otherwise an identity this server
-// has already issued a ticket to still resolves, so a friend who logged in
-// first is found even before they connect to the lobby. Resolving an
+// account IDs. Players connected now win; otherwise the name a player was
+// last issued a ticket under still resolves (player_names in ctr.sqlite), so
+// a friend is found even before they connect to the lobby. Resolving an
 // identity does not make it joinable: only live sessions are advertised.
 func (l *lobbyConn) onGetUserIDs(task byte, r *bdReader) []byte {
 	count, err := r.u32()
@@ -371,7 +379,15 @@ func (l *lobbyConn) onGetUserIDs(task byte, r *bdReader) []byte {
 		}
 		names = append(names, name)
 	}
-	known := knownIdentities(l.sessDir, names)
+	known := map[string]*playerID{}
+	if playerNames != nil {
+		recorded, err := playerNames.namedPlayers(names)
+		if err != nil {
+			l.logf("friends getUserIDs: player names: %v", err)
+		} else {
+			known = recorded
+		}
+	}
 	onlineMu.Lock()
 	for _, p := range online {
 		known[strings.ToLower(p.Username)] = p

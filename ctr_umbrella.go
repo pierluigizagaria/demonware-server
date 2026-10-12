@@ -88,7 +88,7 @@ func handleCTRUmbrella(w http.ResponseWriter, r *http.Request, body []byte, n ui
 // otherwise it keeps the original rule: issued here within 24 hours.
 func umbrellaTicketPlayer(ticket []byte) (*playerID, bool) {
 	if activePolicy.IssuedTickets {
-		return issuedTicketPlayer(sessDir, ticket, time.Now(), activePolicy.TicketWindow)
+		return issuedTicketPlayer(ticket, time.Now(), activePolicy.TicketWindow)
 	}
 	if !ticketWasIssued(sessDir, ticket) || time.Since(time.Unix(int64(binary.LittleEndian.Uint32(ticket[13:17])), 0)) > 24*time.Hour {
 		return nil, false

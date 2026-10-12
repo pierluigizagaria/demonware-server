@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -10,8 +11,6 @@ import (
 	"log"
 	"net"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -97,14 +96,18 @@ func TestSharedPS4AuthUsesInjectedVerifier(t *testing.T) {
 		handler.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", bytes.NewReader(body)))
 		return w
 	}
-	if w := call(); w.Code != 200 {
+	w := call()
+	if w.Code != 200 {
 		t.Fatal("verified identity refused")
 	}
-	files, _ := filepath.Glob(filepath.Join(dir, "*.tkt"))
-	if len(files) != 1 {
+	var response struct {
+		ServerTicket string `json:"server_ticket"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
+	ticket, _ := base64.StdEncoding.DecodeString(response.ServerTicket)
+	if _, ok := issuedIdentity(ticket); !ok {
 		t.Fatal("ticket missing")
 	}
-	ticket, _ := os.ReadFile(files[0])
 	if len(ticket) != 128 || binary.LittleEndian.Uint32(ticket[5:9]) != 5760 || binary.LittleEndian.Uint64(ticket[25:33]) != 17 {
 		t.Fatal("PS4 ticket identity/title lost")
 	}

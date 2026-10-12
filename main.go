@@ -104,9 +104,6 @@ func main() {
 	if err := os.MkdirAll(sessDir, 0o755); err != nil {
 		log.Fatalf("[D3] sessions dir: %v", err)
 	}
-	if activePolicy.IssuedTickets {
-		go pruneIssuedTicketsEvery(sessDir, activePolicy.TicketWindow)
-	}
 	if err := writePubfiles(pubConfigPath, pubDir); err != nil {
 		diagnosticLogf("[D3 Pubfiles] %v", err)
 	}
@@ -123,6 +120,7 @@ func main() {
 	defer store.Close()
 	economy.backend, economy.unlockAll = store, unlockAll
 	ctrStats = store
+	playerNames = store
 	if unlockAll {
 		log.Print("[D3] unlock-all: on")
 	} else {
@@ -145,8 +143,8 @@ func main() {
 
 // selectPlatform installs the PS4 identity adapter when CTR_AUTH_CONFIG names
 // a shadNet trust policy; otherwise the original Nintendo admission runs.
-// PS4 tickets, wallets and leaderboards live in directories namespaced by
-// issuer, application and title.
+// PS4 wallets, leaderboards and player names live in a directory namespaced
+// by issuer, application and title; its tickets live in memory (tickets.go).
 func selectPlatform() (platformAuthenticator, error) {
 	path := os.Getenv("CTR_AUTH_CONFIG")
 	if path == "" {
@@ -156,7 +154,6 @@ func selectPlatform() (platformAuthenticator, error) {
 	if err != nil {
 		return nil, err
 	}
-	sessDir = filepath.Join(sessDir, p.ticketNamespace)
-	walletNamespace = p.ticketNamespace
+	walletNamespace = p.stateNamespace
 	return p, nil
 }
