@@ -18,7 +18,7 @@ func marketplaceTestStore(t *testing.T) *economyStore {
 	old := economy
 	economy = &economyStore{dir: t.TempDir()}
 	t.Cleanup(func() { economy = old })
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	return economy
 }
 

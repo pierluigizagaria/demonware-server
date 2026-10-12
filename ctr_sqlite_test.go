@@ -80,7 +80,7 @@ type economyResult struct {
 // Exercise unchanged domain logic against JSON and SQLite, reopening both after
 // every step. JSON encoding normalizes nil/empty maps omitted by the reference.
 func TestEconomyStoresAgree(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "20000")
+	setStartBalance(t, 20000)
 	reference := &economyStore{dir: t.TempDir()}
 	s, db := newTestEconomy(t, false)
 	const pid = uint64(math.MaxUint64)
@@ -186,9 +186,9 @@ func TestEconomyStoresAgree(t *testing.T) {
 }
 
 func TestSQLitePurchaseAtomic(t *testing.T) {
-	for _, balance := range []string{"0", "10000"} {
-		t.Run(balance, func(t *testing.T) {
-			t.Setenv("CTR_START_BALANCE", balance)
+	for _, balance := range []int64{0, 10000} {
+		t.Run(fmt.Sprint(balance), func(t *testing.T) {
+			setStartBalance(t, balance)
 			s, db := newTestEconomy(t, false)
 			for _, ids := range [][]uint32{{200085, math.MaxUint32}, {200085, 200597, math.MaxUint32}} {
 				if _, err := s.purchase(42, ids); err == nil {
@@ -198,7 +198,7 @@ func TestSQLitePurchaseAtomic(t *testing.T) {
 					t.Fatal("refused first purchase wrote state")
 				}
 			}
-			if balance == "0" {
+			if balance == 0 {
 				if _, err := s.purchase(42, []uint32{200085}); err == nil {
 					t.Fatal("overspend accepted")
 				}
@@ -208,7 +208,7 @@ func TestSQLitePurchaseAtomic(t *testing.T) {
 			}
 		})
 	}
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	for _, failure := range []struct{ name, sql string }{
 		{"ledger", "CREATE TRIGGER fail_write BEFORE INSERT ON ledger WHEN NEW.item IS NOT NULL BEGIN SELECT RAISE(ABORT, 'test failure'); END"},
 		{"balance", "CREATE TRIGGER fail_write BEFORE INSERT ON balances BEGIN SELECT RAISE(ABORT, 'test failure'); END"},
@@ -244,7 +244,7 @@ func TestSQLitePurchaseAtomic(t *testing.T) {
 }
 
 func TestSQLiteRewardAndRefreshAtomic(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "0")
+	setStartBalance(t, 0)
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	r := ruleForTest(t, "drift_for_X_seconds_consecutively")
 	at := ruleTime(r)
@@ -302,7 +302,7 @@ func TestSQLiteRewardAndRefreshAtomic(t *testing.T) {
 }
 
 func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	s, db := newTestEconomy(t, false)
 	const pid = uint64(42)
 	if _, err := s.purchase(pid, []uint32{200085}); err != nil {
@@ -421,7 +421,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 }
 
 func TestSQLiteInventoryAndLedgerAreAppendOnly(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	s, db := newTestEconomy(t, false)
 	if _, err := s.purchase(42, []uint32{200085}); err != nil {
 		t.Fatal(err)
@@ -456,7 +456,7 @@ func TestSQLiteInventoryAndLedgerAreAppendOnly(t *testing.T) {
 }
 
 func TestSQLiteConcurrentPurchaseRetry(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	s, db := newTestEconomy(t, false)
 	var wg sync.WaitGroup
 	for i := 0; i < 12; i++ {
@@ -547,7 +547,7 @@ func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 }
 
 func TestSQLiteStartsFreshAndFixesStartingBalance(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "321")
+	setStartBalance(t, 321)
 	s, db := newTestEconomy(t, false)
 	// Corrupt reference files must neither be parsed nor replaced by SQLite.
 	files := []string{"42.json", "42.items.json", "42.economy-v2.json"}
@@ -560,7 +560,7 @@ func TestSQLiteStartsFreshAndFixesStartingBalance(t *testing.T) {
 	if err != nil || a.Balances[10] != 321 || len(a.Items) != 0 {
 		t.Fatalf("fresh account: %+v, %v", a, err)
 	}
-	t.Setenv("CTR_START_BALANCE", "999")
+	setStartBalance(t, 999)
 	db.Close()
 	db = openTestCTR(t, filepath.Join(s.dir, ctrDB), false)
 	s.backend = db

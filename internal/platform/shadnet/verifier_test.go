@@ -10,8 +10,6 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -278,42 +276,35 @@ func TestLoadRemoteTrustConfiguration(t *testing.T) {
 		w.Write(jwks)
 	}))
 	defer server.Close()
-	dir := t.TempDir()
-	config := map[string]any{"issuer": policy.Issuer, "client_id": policy.ClientID, "np_title_id": policy.NPTitleID, "scopes": policy.Scopes, "jwks_url": server.URL + "/.well-known/jwks.json"}
-	path := filepath.Join(dir, "trust.json")
-	write := func(c map[string]any) {
-		t.Helper()
-		raw, _ := json.Marshal(c)
-		if err := os.WriteFile(path, raw, 0600); err != nil {
-			t.Fatal(err)
-		}
+	jwksURL := server.URL + "/.well-known/jwks.json"
+	if err := Check(policy, jwksURL); err != nil {
+		t.Fatal(err)
 	}
-	write(config)
-	if _, err := Load(path); err != nil {
+	if _, err := Load(policy, jwksURL); err != nil {
 		t.Fatal("remote public key endpoint refused")
 	}
-	for _, tc := range []struct {
-		field string
-		value any
-	}{
-		{"issuer", "http://issuer.example.test"}, {"issuer", "https://user:pass@example.test"},
-		{"issuer", "https://issuer.example.test/?query"}, {"client_id", ""},
-		{"scopes", []string{"openid", "openid"}}, {"scopes", []string{"openid:duid"}},
-		{"scopes", []string{"openid", "bad scope"}}, {"jwks_url", "public.json"},
-		{"jwks_file", "public.json"}, {"unknown", true},
+	for _, change := range []func(p *Policy, url *string){
+		func(p *Policy, _ *string) { p.Issuer = "http://issuer.example.test" },
+		func(p *Policy, _ *string) { p.Issuer = "https://user:pass@example.test" },
+		func(p *Policy, _ *string) { p.Issuer = "https://issuer.example.test/?query" },
+		func(p *Policy, _ *string) { p.ClientID = "" },
+		func(p *Policy, _ *string) { p.NPTitleID = "" },
+		func(p *Policy, _ *string) { p.Scopes = []string{"openid", "openid"} },
+		func(p *Policy, _ *string) { p.Scopes = []string{"openid:duid"} },
+		func(p *Policy, _ *string) { p.Scopes = []string{"openid", "bad scope"} },
+		func(p *Policy, _ *string) { p.Scopes = nil },
+		func(_ *Policy, url *string) { *url = "public.json" },
+		func(_ *Policy, url *string) { *url = "" },
 	} {
-		copyConfig := map[string]any{}
-		for k, value := range config {
-			copyConfig[k] = value
+		p, url := policy, jwksURL
+		p.Scopes = append([]string(nil), policy.Scopes...)
+		change(&p, &url)
+		if Check(p, url) == nil {
+			t.Fatal("invalid trust configuration passed the check")
 		}
-		copyConfig[tc.field] = tc.value
-		write(copyConfig)
-		if _, err := Load(path); err == nil {
+		if _, err := Load(p, url); err == nil {
 			t.Fatal("invalid trust configuration accepted")
 		}
-	}
-	if _, err := Load(""); err == nil {
-		t.Fatal("missing configuration accepted")
 	}
 }
 

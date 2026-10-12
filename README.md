@@ -18,9 +18,10 @@ Not validated: the Pit Stop in game, parties, rejoining and lobby merges after
 the latest changes, LAN/WAN play, capacity, and running a public server.
 Race rewards rely on what the client reports.
 
-Architecture, configuration (`CTR_AUTH_CONFIG`, `CTR_AUTH_SIGNING_KEY`,
-`DATA_DIR`, `CTR_UNLOCK_ALL`, ...) and the changes to the original code are
-in [FORK.md](FORK.md). Players also need shadNet and shadPS4 changes that are
+Architecture, configuration (one env file per instance, documented in
+[example.env](example.env): `SHADNET_*`, `CTR_AUTH_SIGNING_KEY`, `DATA_DIR`,
+`CTR_UNLOCK_ALL`, ...) and the changes to the original code are in
+[FORK.md](FORK.md). Players also need shadNet and shadPS4 changes that are
 still under review upstream, and the
 [CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch):
 see [Client side](FORK.md#client-side).

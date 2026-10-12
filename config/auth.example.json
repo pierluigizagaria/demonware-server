@@ -1,7 +1,0 @@
-{
-  "issuer": "https://identity.example.net",
-  "client_id": "example-application",
-  "np_title_id": "CUSA13795",
-  "scopes": ["openid", "openid:duid"],
-  "jwks_url": "https://identity.example.net/.well-known/jwks.json"
-}

@@ -31,7 +31,7 @@ import (
 	"time"
 )
 
-var riftDir = envOr("D3_RIFTDATA", "riftdata")
+var riftDir = "riftdata" // D3_RIFTDATA (config.go)
 
 // riftSettings is the "challenge_rifts" block of pubfiles.json.
 type riftSettings struct {

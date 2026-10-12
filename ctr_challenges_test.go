@@ -13,7 +13,7 @@ func TestWindowShoppingOriginalScheduleAndReward(t *testing.T) {
 		t.Fatalf("wrong original rule: %+v %v", state, active)
 	}
 	s := &economyStore{dir: t.TempDir()}
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	e := achievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
 	credit, update, err := s.awardWindowShopping(42, []achievementEvent{e, e}, now)
 	if err != nil || credit != 25 || len(update) == 0 {
@@ -54,7 +54,7 @@ func TestWindowShoppingInactiveAndStaleEvents(t *testing.T) {
 }
 
 func TestWindowShoppingConcurrentVisitsAwardOnce(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	s := &economyStore{dir: t.TempDir()}
 	now := time.Date(2026, 9, 23, 3, 0, 0, 0, time.UTC)
 	e := achievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}

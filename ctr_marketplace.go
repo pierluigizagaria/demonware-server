@@ -28,7 +28,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
-	"strconv"
 )
 
 const (
@@ -42,12 +41,7 @@ const (
 // Wumpa Coins, Nitro Boost, Free Nitro Boost, in the original catalog order.
 func currencyIDs() []uint64 { return []uint64{10, 11, 12} }
 
-func startingBalance() int64 {
-	if n, err := strconv.ParseInt(envOr("CTR_START_BALANCE", "0"), 10, 64); err == nil && n >= 0 {
-		return n
-	}
-	return 0
-}
+func startingBalance() int64 { return startBalance }
 
 func loadWallets() {
 	economy.dir = dataDir

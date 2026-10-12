@@ -69,8 +69,8 @@ func (psnPlatform) AuthData(id playerID) map[string]string {
 
 // loadPSNPlatform also returns the trust ID (issuer, client and title) that
 // the instance database is bound to.
-func loadPSNPlatform(configPath string) (psnPlatform, string, error) {
-	verifier, err := shadnet.Load(configPath)
+func loadPSNPlatform(policy shadnet.Policy, jwksURL string) (psnPlatform, string, error) {
+	verifier, err := shadnet.Load(policy, jwksURL)
 	if err != nil {
 		return psnPlatform{}, "", err
 	}

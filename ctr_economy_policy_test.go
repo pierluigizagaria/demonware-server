@@ -7,19 +7,6 @@ import (
 	"testing"
 )
 
-func TestUnlockAllParse(t *testing.T) {
-	for in, want := range map[string]bool{"": false, "0": false, "false": false, "1": true, "true": true} {
-		if got, err := parseUnlockAll(in); err != nil || got != want {
-			t.Fatalf("%q = %v, %v", in, got, err)
-		}
-	}
-	for _, in := range []string{"unlock-all", "all", "yes", "2", "TRUE", "False", " true", "false ", "\n"} {
-		if _, err := parseUnlockAll(in); err == nil {
-			t.Fatalf("%q accepted", in)
-		}
-	}
-}
-
 func TestSQLiteUnlockAllOwnsCatalogWithoutWrites(t *testing.T) {
 	s, db := newTestEconomy(t, true)
 	a, err := s.inventory(42)
@@ -55,7 +42,7 @@ func TestSQLiteUnlockAllOwnsCatalogWithoutWrites(t *testing.T) {
 }
 
 func TestSQLiteNormalInventoryIsPersisted(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	s, _ := newTestEconomy(t, false)
 	a, err := s.inventory(42)
 	if err != nil || len(a.Items) != 0 {
@@ -76,7 +63,7 @@ func TestPlatformMarketplaceUnlockAllInventory(t *testing.T) {
 	t.Cleanup(func() { economy = old })
 	s, db := newTestEconomy(t, true)
 	economy = s
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	before := sqliteChanges(t, db)
 	l, wire := sharedPS4Lobby()
 	l.onTask(marketplaceHex(t, ps4PurchaseRequest))

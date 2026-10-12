@@ -43,7 +43,7 @@ func TestOriginalChallengeCatalog(t *testing.T) {
 	}
 }
 func TestDriftThresholdRewardAndRestart(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	s := &economyStore{dir: t.TempDir()}
 	r := ruleForTest(t, "drift_for_X_seconds_consecutively")
 	now := ruleTime(r)

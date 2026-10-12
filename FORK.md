@@ -42,16 +42,25 @@ invented races or occurrences. The auth listener bounds reading each request
 
 ## Running the server
 
-Copy `config/auth.example.json` to a private location and fill in the issuer,
-the registered client/title, the exact granted scopes and the trusted
-`jwks_url` of the shadNet instance. `example.env` lists every variable.
+Settings are environment variables, as in the other Nextendo servers, and
+[`example.env`](example.env) documents every one. Give each instance its own
+copy (for example `normal.env`, `unlock-all.env`; git ignores `*.env` except
+the example) and start `server -env normal.env`, or let the deployment supply
+the file (systemd `EnvironmentFile=`, `docker --env-file`). `-env` reads the
+file as `docker --env-file` does (values kept exactly, no quotes) and lets
+variables already in the process environment take precedence. `config.go`
+reads and validates everything once at startup, shadNet trust included and
+before any key is fetched: an invalid value, a missing required one, or an
+unknown `CTR_`, `D3_`, `DASH_`, `NEXTENDO_` or `SHADNET_` variable stops the
+server with every problem listed. Switches accept `0`/`false` and `1`/`true`.
+Keys and certificates stay in their own files, named by path.
 
 | Variable | Purpose |
 | --- | --- |
-| `CTR_AUTH_CONFIG` | Required shadNet trust policy |
+| `SHADNET_ISSUER`, `SHADNET_CLIENT_ID`, `SHADNET_TITLE_ID`, `SHADNET_SCOPES`, `SHADNET_JWKS_URL` | Required shadNet trust: issuer, registered client and title, exact granted scopes (space-separated) and the trusted public key set |
 | `CTR_AUTH_SIGNING_KEY` | Required RSA-2048 key (exponent 65537) for the CTR response signature; the PS4 game accepts it only with the CTR:NF Server Signature Patch (see [Client side](#client-side)) |
 | `DATA_DIR` | Persistent state directory (default `data`): `ctrnf.db` holds the economy, ledger, mode, leaderboards and player names. |
-| `CTR_UNLOCK_ALL` | Optional instance-wide unlock-all: unset, `0`, `false` = off; `1`, `true` = on. Any other value fails startup. The database records the mode and refuses a different one. |
+| `CTR_UNLOCK_ALL` | Optional instance-wide unlock-all: unset, `0`, `false` = off; `1`, `true` = on. The database records the mode and refuses a different one. |
 | `CTR_START_BALANCE` | Initial Wumpa Coins for new accounts (default `0`); existing balances are preserved. |
 | `AUTH_PORT`, `CERT_FILE`, `KEY_FILE` | HTTPS auth listener |
 | `LOBBY_PORTS`, `NAT_PORT` | Lobby TCP ports and NAT UDP port |
@@ -94,7 +103,7 @@ remain only as references for upstream tests. The initial schema is version 1,
 recorded with `PRAGMA user_version`. Schema creation and the
 `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` rows `unlock_all=0|1` and
 `trust_id` commit together. The trust ID is a hash of the issuer, client ID and
-title in `CTR_AUTH_CONFIG`: shadNet account IDs are unique only within it, so a
+title in `SHADNET_*`: shadNet account IDs are unique only within it, so a
 database refuses to open for another one. A missing, invalid or conflicting mode
 or trust ID fails closed on reopen. Player names and the trust binding are part
 of the initial schema. Other versions are refused; there is no migration from
@@ -143,9 +152,12 @@ checks verification, the signed response, ticket issuance and lobby admission.
 Fixes from the original repository are merged with `git merge`, so the fork
 keeps the upstream layout:
 
-- New behavior lives in files the fork owns: `platform_psn.go`,
+- New behavior lives in files the fork owns: `config.go`, `platform_psn.go`,
   `platform_tasks.go`, `tickets.go`, `ctr_sqlite.go`, `ctr_economy_policy.go`,
   `diagnostic_redaction.go`, `instance_lock_*.go`, `internal/` and their tests.
+- Upstream code reads the package variables `config.go` sets, never the
+  environment. An upstream change that adds a variable must add it to
+  `config.go` and `example.env`; a test fails when `example.env` misses one.
 - Nintendo-only upstream files are deleted: `identity.go`, `gates.go`,
   `accountlookup.go`, `presence.go` and their tests. An upstream change to one
   of them is a modify/delete conflict; keep the deletion.

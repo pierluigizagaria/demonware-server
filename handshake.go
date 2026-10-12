@@ -417,7 +417,7 @@ func (l *lobbyConn) onEncrypted(raw []byte) {
 // sent back to the usual listening port.
 const migratePort uint16 = 3074
 
-var migrateEnabled = os.Getenv("CTR_MIGRATE") == "1"
+var migrateEnabled bool // CTR_MIGRATE (config.go)
 
 func migrateIP() net.IP {
 	ip := net.ParseIP(nextendoHost).To4()

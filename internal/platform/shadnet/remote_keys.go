@@ -35,11 +35,8 @@ func newRemoteVerifier(policy Policy, endpoint string, client *http.Client) (*Ve
 	if err != nil {
 		return nil, err
 	}
-	u, err := url.Parse(endpoint)
-	if err != nil || !validText(endpoint, 2048) || u.Hostname() == "" ||
-		u.User != nil || u.Opaque != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
-		(u.Scheme != "https" && !(u.Scheme == "http" && net.ParseIP(u.Hostname()).IsLoopback())) {
-		return nil, errors.New("JWKS requires a configured HTTPS or literal loopback HTTP endpoint")
+	if err := checkEndpoint(endpoint); err != nil {
+		return nil, err
 	}
 	if client == nil {
 		client = &http.Client{}
@@ -55,6 +52,16 @@ func newRemoteVerifier(policy Policy, endpoint string, client *http.Client) (*Ve
 	r.keys, r.expires = keys, r.clock().Add(keyCacheLifetime)
 	v.remote = r
 	return v, nil
+}
+
+func checkEndpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil || !validText(endpoint, 2048) || u.Hostname() == "" ||
+		u.User != nil || u.Opaque != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
+		(u.Scheme != "https" && !(u.Scheme == "http" && net.ParseIP(u.Hostname()).IsLoopback())) {
+		return errors.New("JWKS requires a configured HTTPS or literal loopback HTTP endpoint")
+	}
+	return nil
 }
 
 func (r *remoteKeys) fetch() (map[string]*rsa.PublicKey, error) {

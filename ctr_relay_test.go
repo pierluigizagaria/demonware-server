@@ -46,11 +46,11 @@ func TestRelayGateDefaultsToNobody(t *testing.T) {
 	relay.low, relay.high, relay.ip = 3100, 3139, net.IPv4(1, 2, 3, 4)
 	defer func() { relay.low, relay.high = 0, 0 }()
 
-	t.Setenv("CTR_RELAY_PIDS", "")
+	setRelayPIDs(t, "")
 	if got := withRelay(b, 111, 222); !bytes.Equal(got, b) {
 		t.Fatal("an empty CTR_RELAY_PIDS must leave hostAddr untouched")
 	}
-	t.Setenv("CTR_RELAY_PIDS", "999")
+	setRelayPIDs(t, "999")
 	if got := withRelay(b, 111, 222); !bytes.Equal(got, b) {
 		t.Fatal("a non-matching pid must leave hostAddr untouched")
 	}
@@ -68,7 +68,7 @@ func TestRelayInjectsIntoFirstFreeSlotOnly(t *testing.T) {
 		relay.pairs, relay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
 	}()
 
-	t.Setenv("CTR_RELAY_PIDS", "222")
+	setRelayPIDs(t, "222")
 	got := withRelay(b, 111, 222)
 	if bytes.Equal(got, b) {
 		t.Fatal("a matching pid should have had a relay address written in")
@@ -111,7 +111,7 @@ func TestRelayReusesPortForSamePair(t *testing.T) {
 		relay.low, relay.high = 0, 0
 		relay.pairs, relay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
 	}()
-	t.Setenv("CTR_RELAY_PIDS", "*")
+	setRelayPIDs(t, "*")
 
 	first := parseAddrSlot(withRelay(b, 111, 222)[relayAddrLen : 2*relayAddrLen])
 	second := parseAddrSlot(withRelay(b, 111, 222)[relayAddrLen : 2*relayAddrLen])
@@ -136,7 +136,7 @@ func TestRelayReleasesPairsOnlyWhenAPlayerLeaves(t *testing.T) {
 		relay.low, relay.high = 0, 0
 		relay.pairs, relay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
 	}()
-	t.Setenv("CTR_RELAY_PIDS", "*")
+	setRelayPIDs(t, "*")
 	withRelay(b, 111, 222)
 	withRelay(b, 111, 333)
 	relay.reapOffline(map[uint64]bool{111: true, 222: true, 333: true})

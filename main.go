@@ -12,61 +12,50 @@
 //	pubfiles    season, community events, item blacklist              pubfiles.go pubfiles.json
 //	dashboard   /api/stats on DASH_PORT (8093) for nextendo-dashboard dashboard.go
 //
-//	server            run the server
-//	server pubfiles   regenerate the publisher files from pubfiles.json and exit
-//	                      (the lobby reads them on every request: no restart needed)
+//	server [-env file]            run the server
+//	server [-env file] pubfiles   regenerate the publisher files from pubfiles.json and exit
+//	                                  (the lobby reads them on every request: no restart needed)
+//
+// Settings are environment variables, read once and validated in config.go;
+// example.env documents each one.
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 )
 
+// Defaults; applyConfig replaces them with the validated settings (config.go).
 var (
-	// The server's IPv4 address as the players see it, announced in NAT
-	// discovery replies.
-	nextendoHost = envOr("NEXTENDO_HOST", "127.0.0.1")
-	authPort     = envOrInt("AUTH_PORT", 8460)
-	lobbyPorts   = envOr("LOBBY_PORTS", "3074,3075,3076,3077,3078,3079,3080")
-	natPort      = envOrInt("NAT_PORT", 3074)
-	certFile     = envOr("CERT_FILE", "cert.pem")
-	keyFile      = envOr("KEY_FILE", "key.pem")
+	// NEXTENDO_HOST: the server's IPv4 address as the players see it,
+	// announced in NAT discovery replies.
+	nextendoHost = "127.0.0.1"
+	authPort     = 8460
+	lobbyPorts   = "3074,3075,3076,3077,3078,3079,3080"
+	natPort      = 3074
+	certFile     = "cert.pem"
+	keyFile      = "key.pem"
 	// BIND_ADDR restricts the network listeners (default: all interfaces).
-	bindAddr = os.Getenv("BIND_ADDR")
+	bindAddr string
 
-	// Persistent state: ctrnf.db (economy, leaderboards, player names).
-	dataDir = envOr("DATA_DIR", "data")
-	// pubfiles.json drives the three files written to D3_PUBFILES.
-	pubConfigPath = envOr("D3_PUBFILES_CONFIG", "pubfiles.json")
-	pubDir        = envOr("D3_PUBFILES", "pubfiles")
+	// DATA_DIR: persistent state, ctrnf.db (economy, leaderboards, player names).
+	dataDir = "data"
+	// D3_PUBFILES_CONFIG drives the three files written to D3_PUBFILES.
+	pubConfigPath = "pubfiles.json"
+	pubDir        = "pubfiles"
 
-	// Raw captures (auth bodies, every lobby frame) under <D3_DUMPS>/<start>/.
-	// D3_DUMPS=off disables them.
-	dumpRoot = envOr("D3_DUMPS", "off")
-	// D3_VERBOSE=1 logs every decrypted lobby message as a hex dump.
-	verbose = os.Getenv("D3_VERBOSE") == "1"
+	// D3_DUMPS: raw captures (auth bodies, every lobby frame) under
+	// <D3_DUMPS>/<start>/. off disables them.
+	dumpRoot = "off"
+	// D3_VERBOSE logs every decrypted lobby message as a hex dump.
+	verbose bool
 
 	runStamp = time.Now().Format("20060102-150405")
 )
-
-func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-func envOrInt(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	return def
-}
 
 // runDumpDir returns this run's capture directory for one component, "" when
 // captures are off.
@@ -87,35 +76,47 @@ func main() {
 	// nextendo/logs/diablo-3.log).
 	log.SetOutput(os.Stdout)
 
-	if len(os.Args) > 1 && os.Args[1] == "pubfiles" {
+	envFile := flag.String("env", "", "load this instance's settings from a KEY=VALUE `file` (see example.env); variables already in the environment take precedence")
+	flag.Usage = func() {
+		fmt.Fprintln(flag.CommandLine.Output(), "usage: server [-env file] [pubfiles]")
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+	pubfilesOnly := flag.NArg() == 1 && flag.Arg(0) == "pubfiles"
+	if flag.NArg() > 0 && !pubfilesOnly {
+		flag.Usage()
+		os.Exit(2)
+	}
+	cfg, err := readConfig(*envFile, !pubfilesOnly)
+	if err != nil {
+		log.Fatalf("[D3] configuration:\n%v", err)
+	}
+	applyConfig(cfg)
+
+	if pubfilesOnly {
 		if err := writePubfiles(pubConfigPath, pubDir); err != nil {
 			log.Fatalf("[D3 Pubfiles] %v", err)
 		}
 		return
 	}
 
-	// CTR_AUTH_CONFIG names the shadNet trust policy (config/auth.example.json).
-	platform, trustID, err := loadPSNPlatform(os.Getenv("CTR_AUTH_CONFIG"))
+	platform, trustID, err := loadPSNPlatform(cfg.shadnet, cfg.jwksURL)
 	if err != nil {
-		log.Fatalf("[D3] shadNet trust policy (CTR_AUTH_CONFIG): %v", err)
+		log.Fatalf("[D3] shadNet trust policy (SHADNET_*): %v", err)
 	}
 	if err := writePubfiles(pubConfigPath, pubDir); err != nil {
 		diagnosticLogf("[D3 Pubfiles] %v", err)
 	}
 	loadWallets()
-	unlockAll, err := parseUnlockAll(os.Getenv("CTR_UNLOCK_ALL"))
-	if err != nil {
-		log.Fatalf("[D3] economy: %v", err)
-	}
-	store, err := openCTRSQLite(filepath.Join(dataDir, ctrDB), unlockAll, trustID)
+	store, err := openCTRSQLite(filepath.Join(dataDir, ctrDB), cfg.unlockAll, trustID)
 	if err != nil {
 		log.Fatalf("[D3] CTR database: %v", err)
 	}
 	defer store.Close()
-	economy.backend, economy.unlockAll = store, unlockAll
+	economy.backend, economy.unlockAll = store, cfg.unlockAll
 	ctrStats = store
 	playerNames = store
-	if unlockAll {
+	if cfg.unlockAll {
 		log.Print("[D3] unlock-all: on")
 	} else {
 		log.Print("[D3] unlock-all: off")
@@ -123,7 +124,7 @@ func main() {
 
 	go startDashboard()
 	go serveNAT(natPort)
-	startCTRRelay(envOrInt("CTR_RELAY_PORT_LOW", 0), envOrInt("CTR_RELAY_PORT_HIGH", 0), nextendoHost)
+	startCTRRelay(cfg.relayLow, cfg.relayHigh, nextendoHost)
 	go reapSessions()
 	startLobby()
 

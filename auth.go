@@ -34,7 +34,7 @@ const ticketMagic uint32 = 0xEFBDADDE
 var authReqNum atomic.Uint64
 
 func serveAuth(platform psnPlatform) error {
-	ctrSigner, err := loadCTRAuthSigner(os.Getenv("CTR_AUTH_SIGNING_KEY"))
+	ctrSigner, err := loadCTRAuthSigner(signingKeyFile)
 	if err != nil {
 		return err
 	}
@@ -62,11 +62,10 @@ func serveAuth(platform psnPlatform) error {
 		return err
 	}
 	// Behind sni-router: the PROXY header carries the player's address (proxyproto.go).
-	proxyProto := os.Getenv("NEXTENDO_PROXY_PROTOCOL") == "1"
-	if proxyProto {
+	if proxyProtocol {
 		ln = newProxyListener(ln)
 	}
-	diagnosticLogf("[D3 Auth] listening HTTPS :%d (proxyProto=%v, cert=%s)", authPort, proxyProto, certFile)
+	diagnosticLogf("[D3 Auth] listening HTTPS :%d (proxyProto=%v, cert=%s)", authPort, proxyProtocol, certFile)
 	return srv.ServeTLS(ln, certFile, keyFile)
 }
 

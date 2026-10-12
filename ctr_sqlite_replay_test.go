@@ -10,7 +10,7 @@ import (
 )
 
 func TestSQLiteReplayStateRetention(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "0")
+	setStartBalance(t, 0)
 	s, db := newTestEconomy(t, false)
 	now := time.Now().UTC()
 	first := capturedRace(now)
@@ -47,7 +47,7 @@ func TestSQLiteReplayStateRetention(t *testing.T) {
 }
 
 func TestSQLiteSaveWritesOnlyChangedRows(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "1000")
+	setStartBalance(t, 1000)
 	s, db := newTestEconomy(t, false)
 	now := time.Now().UTC()
 	if _, err := s.awardRaces(42, []achievementEvent{capturedRace(now)}, now); err != nil {

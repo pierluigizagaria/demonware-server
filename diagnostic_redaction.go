@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 	"reflect"
 )
 
-var redactLogs = os.Getenv("NEXTENDO_REDACT_LOGS") != "0"
+// NEXTENDO_REDACT_LOGS, on unless set to 0 or false (config.go).
+var redactLogs = true
 
 // diagnosticLogf keeps numbers and booleans, which identify tasks, sizes and
 // outcomes, and the type of an error. Everything else is withheld: strings,

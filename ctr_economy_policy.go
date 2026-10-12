@@ -2,18 +2,6 @@ package main
 
 import "fmt"
 
-// CTR_UNLOCK_ALL is fixed for the instance, independently of admission.
-func parseUnlockAll(v string) (bool, error) {
-	switch v {
-	case "", "0", "false":
-		return false, nil
-	case "1", "true":
-		return true, nil
-	default:
-		return false, fmt.Errorf("invalid CTR_UNLOCK_ALL (expected 0, false, 1 or true)")
-	}
-}
-
 // Every item any catalog SKU grants. Read-only after initialization.
 var catalogItems = func() map[uint32]bool {
 	m := map[uint32]bool{}

@@ -9,7 +9,7 @@ import (
 )
 
 func TestEconomyPurchaseRestartAndRetry(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	s := &economyStore{dir: t.TempDir()}
 	sku := economyCatalog[200085]
 	debit, err := s.purchase(42, []uint32{200085})
@@ -45,7 +45,7 @@ func TestEconomyLegacyMigrationPreservesBalanceAndOwnership(t *testing.T) {
 	}
 }
 func TestEconomyNoPartialPurchase(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	s := &economyStore{dir: t.TempDir()}
 	if _, err := s.purchase(42, []uint32{200085, 4294967295}); err == nil {
 		t.Fatal("unknown SKU accepted")
@@ -56,7 +56,7 @@ func TestEconomyNoPartialPurchase(t *testing.T) {
 	}
 }
 func TestEconomyConcurrentRetry(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	s := &economyStore{dir: t.TempDir()}
 	var wg sync.WaitGroup
 	for i := 0; i < 12; i++ {
@@ -82,7 +82,7 @@ func TestEconomyCorruptWalletFailsClosed(t *testing.T) {
 	}
 }
 func TestEconomyWriteFailureDoesNotGrant(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	s := &economyStore{dir: t.TempDir()}
 	a, _ := s.snapshot(42)
 	// A directory at the final path forces rename to fail on Windows and Linux.
@@ -139,7 +139,7 @@ func TestInventoryPagesAreOneBased(t *testing.T) {
 	}
 }
 func TestEconomyInsufficientFunds(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "0")
+	setStartBalance(t, 0)
 	s := &economyStore{dir: t.TempDir()}
 	if _, err := s.purchase(42, []uint32{200085}); err == nil {
 		t.Fatal("overspend accepted")

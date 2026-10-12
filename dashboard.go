@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -352,7 +353,7 @@ func buildGameStats(game string) apiStats {
 		Server: apiServer{
 			AccessKey:  map[string]string{"ctr": "demonware-ctr", "d3": "demonware-d3"}[game],
 			NexVersion: "Demonware lobby 220", AuthPort: fmt.Sprint(authPort), SecurePort: natPort,
-			SNIHost: envOr("NEXTENDO_SNI_HOST", ""), SessionKey: 24, Stack: "demonware",
+			SNIHost: sniHost, SessionKey: 24, Stack: "demonware",
 		},
 		Players:    players,
 		Gatherings: gs,
@@ -362,8 +363,7 @@ func buildGameStats(game string) apiStats {
 }
 
 func startDashboard() {
-	port := envOr("DASH_PORT", "8093")
-	token := envOr("DASH_TOKEN", "")
+	port, token := strconv.Itoa(dashPort), dashToken
 
 	authed := func(w http.ResponseWriter, r *http.Request) bool {
 		if token != "" && subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("key")), []byte(token)) == 1 {

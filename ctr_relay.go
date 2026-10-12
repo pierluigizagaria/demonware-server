@@ -40,7 +40,7 @@ import (
 // anyone; "*" means everyone. It exists so the relay can be proven on one account before
 // it is allowed near the ~69% of rooms that already connect directly.
 func relayFor(joinerPID uint64) bool {
-	list := strings.TrimSpace(envOr("CTR_RELAY_PIDS", ""))
+	list := strings.TrimSpace(relayPIDs)
 	if list == "" {
 		return false
 	}

@@ -9,7 +9,7 @@ func capturedRace(at time.Time) achievementEvent {
 	return achievementEvent{Name: "end_race", Timestamp: uint64(at.Unix()), Values: map[string]uint64{"Track": 3273086243, "RaceMode": 1, "Rank": 2, "CompletedLap": 3, "Time": 114, "Online": 0, "RewardGoldenWumpa": 0}}
 }
 func TestOriginalRaceRewardAndRestartRetry(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "10000")
+	setStartBalance(t, 10000)
 	s := &economyStore{dir: t.TempDir()}
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	e := capturedRace(now)
@@ -92,7 +92,7 @@ func TestRewardEventWireRoundTrip(t *testing.T) {
 }
 
 func TestRaceReceiptIgnoresFieldsOutsideThePayout(t *testing.T) {
-	t.Setenv("CTR_START_BALANCE", "0")
+	setStartBalance(t, 0)
 	s := &economyStore{dir: t.TempDir()}
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	e := capturedRace(now)

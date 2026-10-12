@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/platform/shadnet"
 )
 
 // An external native shadNet fixture supplies disposable credentials. The
@@ -38,7 +40,16 @@ func TestShadNetPublisherInterop(t *testing.T) {
 	if json.Unmarshal(raw, &f) != nil || len(f.Users) != 2 || f.Users[0].ID == f.Users[1].ID {
 		t.Fatal("invalid fixture metadata")
 	}
-	p, _, err := loadPSNPlatform(f.Config)
+	// The fixture names a JSON trust file with the SHADNET_* values.
+	var trust struct {
+		shadnet.Policy
+		JWKSURL string `json:"jwks_url"`
+	}
+	raw, err = os.ReadFile(f.Config)
+	if err != nil || json.Unmarshal(raw, &trust) != nil {
+		t.Fatal("invalid fixture trust file")
+	}
+	p, _, err := loadPSNPlatform(trust.Policy, trust.JWKSURL)
 	if err != nil {
 		t.Fatal(err)
 	}
