@@ -78,6 +78,23 @@ on `PATH` for response signing.
 
 ## Main-menu news
 
+The simplest setup is one default message and only the translations the
+operator wants to maintain. For example, put these lines in the instance's
+env file:
+
+```dotenv
+CTR_NEWS=Welcome to the community server!   ***
+CTR_NEWS_IT=Benvenuti sul server della community!   ***
+```
+
+An Italian request receives the Italian text; English and every other language
+receive the default. `CTR_NEWS_EN` is unnecessary when the default is already
+English. Add, for example, `CTR_NEWS_FR` only when a French translation is
+available; the 28 supported overrides are a reference, not a required checklist.
+The server does not translate text automatically. The client supplies the
+language code: in the recorded lab run, profile A's English console setting
+selected `en`, independently of the operator's language or account.
+
 Service 104 (`bdMarketingComms`) serves the PS4 main-menu ticker through
 104/5 and accepts viewed reports through 104/4. `CTR_NEWS` supplies the default
 text. The 28 optional `CTR_NEWS_<CODE>` settings in `example.env` override
@@ -88,6 +105,12 @@ back to `CTR_NEWS`, with no English or base-language fallback. An empty default
 and no matching override produce no message. Values are read once at startup;
 restart the instance to change them. The normal and unlock-all processes may
 use different text, independently of their economy mode or players.
+
+End each translation with a visible separator such as `   ***` because the
+game scrolls consecutive copies without inserting a gap. Optional spaces after
+the separator are preserved by the env-file reader and message encoder. Do not
+quote values in the env file. The observed menu font displays the message in
+uppercase; the operator can still write normal sentence case.
 
 Text must be valid UTF-8, fit in 2047 bytes and contain no control characters
 (including NUL, newline, carriage return and tab) or Unicode line/paragraph
@@ -109,9 +132,13 @@ reports log only counts and message IDs, without changing identity, economy,
 statistics or database state.
 
 Use clearly unofficial operator text. This is text only: URLs cannot be opened
-from the ticker. Go tests cover the wire contract and configuration, but in-game
-appearance, scrolling, repetition, character rendering and the client's 104/4
-report still need a human-operated check. This change was not installed in the lab.
+from the ticker. Go tests cover the wire contract and configuration. The local
+2026-10-12 check on the installed `367d03d` build confirmed the default text in
+the main menu, uppercase display and continuous repetition. Accented glyphs,
+language overrides and long-text rendering were not checked in game. No 104/4
+viewed report was observed during the run, including game exit; delivery and
+repetition do not depend on receiving it. It must not be treated as a reliable
+read receipt or used to count views.
 
 ## Client side
 
