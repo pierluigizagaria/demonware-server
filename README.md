@@ -20,11 +20,22 @@ Race rewards rely on what the client reports.
 
 Architecture, configuration (`CTR_AUTH_CONFIG`, `CTR_AUTH_SIGNING_KEY`,
 `DATA_DIR`, `CTR_UNLOCK_ALL`, ...) and the changes to the original code are
-in [FORK.md](FORK.md). The PS4 code is on the `feat/ps4-platform` branch of
-this fork; build it with Go 1.25 or newer: `go build -o server .` and
-`go test ./...`. (The clone URL in [Install](#install) is the original Diablo III
-repository.) The license is unchanged (PolyForm Shield 1.0.0, see
-[License](#license)); read its Noncompete section before running a service.
+in [FORK.md](FORK.md). Players also need shadNet and shadPS4 changes that are
+still under review upstream, and the
+[CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch):
+see [Client side](FORK.md#client-side).
+
+The PS4 code is on the `feat/ps4-platform` branch of this fork; build it with
+Go 1.25 or newer:
+
+    git clone -b feat/ps4-platform https://github.com/pierluigizagaria/nextendo-demonware.git
+    cd nextendo-demonware
+    go build -o server .
+    go test ./...
+
+(The clone URL in [Install](#install) is the original Diablo III repository.)
+The license is unchanged (PolyForm Shield 1.0.0, see [License](#license)); read
+its Noncompete section before running a service.
 
 The rest of this file is the original documentation for Diablo III and
 Crash Team Racing on Switch, which this fork no longer serves: it accepts only

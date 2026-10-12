@@ -49,7 +49,7 @@ the registered client/title, the exact granted scopes and the trusted
 | Variable | Purpose |
 | --- | --- |
 | `CTR_AUTH_CONFIG` | Required shadNet trust policy |
-| `CTR_AUTH_SIGNING_KEY` | Required RSA key for the CTR response signature (the client must trust its public key) |
+| `CTR_AUTH_SIGNING_KEY` | Required RSA-2048 key (exponent 65537) for the CTR response signature; the PS4 game accepts it only with the CTR:NF Server Signature Patch (see [Client side](#client-side)) |
 | `DATA_DIR` | Persistent state directory (default `data`): `ctrnf.db` holds the economy, ledger, mode, leaderboards and player names. |
 | `CTR_UNLOCK_ALL` | Optional instance-wide unlock-all: unset, `0`, `false` = off; `1`, `true` = on. Any other value fails startup. The database records the mode and refuses a different one. |
 | `CTR_START_BALANCE` | Initial Wumpa Coins for new accounts (default `0`); existing balances are preserved. |
@@ -62,6 +62,23 @@ the registered client/title, the exact granted scopes and the trusted
 released when either player has no lobby connection, never because it was
 quiet. The relay is not qualified for the PS4 race transport. `openssl` must be
 on `PATH` for response signing.
+
+## Client side
+
+This repository contains only the server. A PS4 player also needs:
+
+- shadNet with the NPAuth ID-token issuer, proposed in
+  [shadps4-emu/shadNet#44](https://github.com/shadps4-emu/shadNet/pull/44)
+  (not merged yet);
+- shadPS4 with NPAuth ID tokens through shadNet, the draft
+  [shadps4-emu/shadPS4#5350](https://github.com/shadps4-emu/shadPS4/pull/5350)
+  that depends on it;
+- the [CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch)
+  for CUSA13795 01.21, so the game accepts replies signed with
+  `CTR_AUTH_SIGNING_KEY`;
+- the game's Demonware auth, Umbrella and lobby hosts routed to this server,
+  whose TLS certificate the client must accept. Client routing and
+  certificates are not part of this repository.
 
 ## Two publisher servers
 
