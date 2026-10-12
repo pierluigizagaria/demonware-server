@@ -134,9 +134,11 @@ statistics or database state.
 Use clearly unofficial operator text. This is text only: URLs cannot be opened
 from the ticker. Go tests cover the wire contract and configuration. The local
 2026-10-12 check on the installed `367d03d` build confirmed the default text in
-the main menu, uppercase display and continuous repetition. Accented glyphs,
-language overrides and long-text rendering were not checked in game. No 104/4
-viewed report was observed during the run, including game exit; delivery and
+the main menu, uppercase display and continuous repetition. A subsequent user
+screenshot confirmed the tested Latin accents (`à è é ì ò ù`, their uppercase
+forms, and `ñ Ñ ç Ç`) in the menu's uppercase rendering. Language overrides and
+long-text rendering remain unchecked in game. No 104/4 viewed report was
+observed during the first run, including game exit; delivery and
 repetition do not depend on receiving it. It must not be treated as a reliable
 read receipt or used to count views.
 
