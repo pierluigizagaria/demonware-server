@@ -125,7 +125,7 @@ func TestInventoryOwnerAndCatalogItem(t *testing.T) {
 	owner, _ := r.u64()
 	kind, _ := r.str()
 	id, _ := r.u32()
-	if owner != 42 || kind != "nintendo" || id != item {
+	if owner != 42 || kind != marketplaceAccountType || id != item {
 		t.Fatalf("bad inventory owner/item %d %s %d", owner, kind, id)
 	}
 }

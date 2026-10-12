@@ -33,20 +33,18 @@ const ticketMagic uint32 = 0xEFBDADDE
 
 var authReqNum atomic.Uint64
 
-func serveAuth(platform platformAuthenticator) error {
+func serveAuth(platform psnPlatform) error {
 	ctrSigner, err := loadCTRAuthSigner(os.Getenv("CTR_AUTH_SIGNING_KEY"))
 	if err != nil {
 		return err
 	}
-	if platform.Policy().SignedResponses && ctrSigner == nil {
-		return fmt.Errorf("this platform requires CTR_AUTH_SIGNING_KEY")
+	if ctrSigner == nil {
+		return fmt.Errorf("CTR_AUTH_SIGNING_KEY is required")
 	}
-	if ctrSigner != nil {
-		diagnosticLogf("[CTR Auth] signed replies enabled for title 5775 (client trust mod required)")
-	}
+	diagnosticLogf("[CTR Auth] signed replies enabled (client trust mod required)")
 	dumps := runDumpDir("auth")
 
-	h := newPlatformAuthHandler(platform, ctrSigner, sessDir, dumps)
+	h := newPlatformAuthHandler(platform, ctrSigner, dumps)
 
 	srv := &http.Server{
 		Addr:    net.JoinHostPort(bindAddr, strconv.Itoa(authPort)),
@@ -72,16 +70,7 @@ func serveAuth(platform platformAuthenticator) error {
 	return srv.ServeTLS(ln, certFile, keyFile)
 }
 
-// clientIP returns the caller's address without the port (127.0.0.1 behind sni-router).
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
-
-func newPlatformAuthHandler(platform platformAuthenticator, ctrSigner *ctrAuthSigner, sessDir, dumps string) http.Handler {
+func newPlatformAuthHandler(platform psnPlatform, ctrSigner *ctrAuthSigner, dumps string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := authReqNum.Add(1)
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
@@ -122,17 +111,16 @@ func newPlatformAuthHandler(platform platformAuthenticator, ctrSigner *ctrAuthSi
 		}
 		_ = json.Unmarshal(body, &req)
 
-		// Nextendo gates BEFORE issuing any ticket at all (gates.go).
-		id, identityErr := platform.Authenticate(body, clientIP(r))
+		// The shadNet identity is verified BEFORE any ticket is issued (platform_psn.go).
+		id, identityErr := platform.Authenticate(body)
 		if identityErr != nil {
 			reason := "platform verification failed"
 			diagnosticLogf("[D3 Auth] #%d %q pid=%d kind=%s REFUSED (%s)", n, id.Username, id.PID, id.Kind, reason)
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		policy := platform.Policy()
-		if policy.SignedResponses && ctrSigner == nil {
-			diagnosticLogf("[D3 Auth] #%d refused: this platform requires signed responses", n)
+		if ctrSigner == nil {
+			diagnosticLogf("[D3 Auth] #%d refused: responses must be signed", n)
 			http.Error(w, "authentication signing unavailable", http.StatusInternalServerError)
 			return
 		}
@@ -188,20 +176,9 @@ func newPlatformAuthHandler(platform platformAuthenticator, ctrSigner *ctrAuthSi
 		// we put everything in it.
 		serverTicket := append([]byte{}, clientTicket...)
 
-		// The lobby recovers the session key by trying recently issued
-		// tickets: the 0x82's tag picks the right one. The player's identity
-		// (online friends, presence) is recovered from the 8-byte key.
-		if policy.IssuedTickets {
-			rememberTicket(clientTicket, id, time.Now(), policy.TicketWindow)
-		} else if err := os.MkdirAll(sessDir, 0o755); err == nil {
-			name := fmt.Sprintf("%d_%x.tkt", time.Now().Unix(), clientTicket[33:37])
-			if err := os.WriteFile(filepath.Join(sessDir, name), clientTicket, 0o644); err != nil {
-				diagnosticLogf("[D3 Auth] session: %v", err)
-			}
-			if raw, err := json.Marshal(id); err == nil {
-				_ = os.WriteFile(filepath.Join(sessDir, fmt.Sprintf("id_%x.json", clientTicket[33:41])), raw, 0o644)
-			}
-		}
+		// The lobby finds the ticket echoed in the 0x82 by its 8-byte tag and
+		// takes the session key and the player's identity from it (tickets.go).
+		rememberTicket(clientTicket, id, time.Now(), ticketWindow)
 		// 12/10 resolves friends by the names they were issued a ticket under.
 		if err := rememberPlayerName(id, time.Now()); err != nil {
 			diagnosticLogf("[D3 Auth] #%d player name not recorded: %v", n, err)

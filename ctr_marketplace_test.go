@@ -196,6 +196,8 @@ func TestParsePurchaseSkuFromRealCapture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The PS4 build sends the same request with its own context (ps4PurchaseRequest).
+	payload = bytes.Replace(payload, []byte("octane_switch"), []byte(marketplaceContext), 1)
 	sku, ok := parsePurchaseSku(payload)
 	if !ok {
 		t.Fatal("could not read the sku out of a real purchase request")

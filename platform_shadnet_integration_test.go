@@ -38,11 +38,10 @@ func TestShadNetPublisherInterop(t *testing.T) {
 	if json.Unmarshal(raw, &f) != nil || len(f.Users) != 2 || f.Users[0].ID == f.Users[1].ID {
 		t.Fatal("invalid fixture metadata")
 	}
-	p, err := loadPSNPlatform(f.Config)
+	p, _, err := loadPSNPlatform(f.Config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	withPolicy(t, p.Policy())
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -55,8 +54,7 @@ func TestShadNetPublisherInterop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
-	handler := newPlatformAuthHandler(p, signer, dir, "")
+	handler := newPlatformAuthHandler(p, signer, "")
 	for _, user := range f.Users {
 		parts := strings.Split(user.Token, ".")
 		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
@@ -98,11 +96,11 @@ func TestShadNetPublisherInterop(t *testing.T) {
 		if err != nil || response.AuthTask != "47" {
 			t.Fatal("unexpected publisher response")
 		}
-		id, ok := issuedTicketPlayer(ticket, time.Now(), p.Policy().TicketWindow)
+		id, ok := issuedTicketPlayer(ticket, time.Now(), ticketWindow)
 		if !ok || id.PID != user.ID || id.Username != user.Name || id.Title != 5760 {
 			t.Fatal("issued ticket does not carry the verified identity")
 		}
-		l := handshake(t, dir, ticket)
+		l := handshake(t, ticket)
 		dropOnline(l.n)
 		if l.keys == nil || l.player == nil || l.player.PID != user.ID {
 			t.Fatal("lobby did not admit the issued ticket")

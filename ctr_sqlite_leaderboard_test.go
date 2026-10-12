@@ -9,7 +9,7 @@ import (
 
 func openTestLeaderboard(t *testing.T, path string) *ctrSQLite {
 	t.Helper()
-	s, err := openCTRSQLite(path, false)
+	s, err := openCTRSQLite(path, false, testTrustID)
 	if err != nil {
 		t.Fatal(err)
 	}

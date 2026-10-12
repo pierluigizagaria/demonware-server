@@ -5,24 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestCTRUmbrellaIssuedTicket(t *testing.T) {
-	old := sessDir
-	sessDir = t.TempDir()
-	defer func() { sessDir = old }()
-	ticket := make([]byte, 128)
-	binary.LittleEndian.PutUint32(ticket, ticketMagic)
-	binary.LittleEndian.PutUint32(ticket[5:], 5775)
-	binary.LittleEndian.PutUint32(ticket[13:], uint32(time.Now().Unix()))
-	binary.LittleEndian.PutUint64(ticket[25:], 1800000119)
-	copy(ticket[33:], []byte("test-session-key"))
+	ticket := psnTicket(time.Now())
 	call := func(titleID any) *httptest.ResponseRecorder {
 		body, _ := json.Marshal(map[string]any{"ticket": base64.StdEncoding.EncodeToString(ticket), "titleID": titleID})
 		w := httptest.NewRecorder()
@@ -30,21 +19,15 @@ func TestCTRUmbrellaIssuedTicket(t *testing.T) {
 		handleCTRUmbrella(w, r, body, 1, "")
 		return w
 	}
-	if w := call(5775); w.Code != 401 {
+	if w := call(5760); w.Code != 401 {
 		t.Fatalf("unissued ticket accepted: %d", w.Code)
 	}
-	if err := os.WriteFile(filepath.Join(sessDir, "test.tkt"), ticket, 0600); err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := json.Marshal(playerID{PID: 1800003406})
-	if err := os.WriteFile(filepath.Join(sessDir, fmt.Sprintf("id_%x.json", ticket[33:41])), raw, 0600); err != nil {
-		t.Fatal(err)
-	}
+	issueTestTicket(ticket, playerID{PID: 17, Username: "fixture"})
 	// The client sends its integers as JSON strings, so both forms must pass.
-	if w := call("5775"); w.Code != 200 {
+	if w := call("5760"); w.Code != 200 {
 		t.Fatalf("string-encoded titleID rejected: %d %s", w.Code, w.Body)
 	}
-	w := call(5775)
+	w := call(5760)
 	if w.Code != 200 {
 		t.Fatalf("issued ticket rejected: %d", w.Code)
 	}
@@ -57,7 +40,7 @@ func TestCTRUmbrellaIssuedTicket(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.ID != 1800003406 || result.Token == "" || result.Expires <= time.Now().Unix() || result.Accounts == nil {
+	if result.ID != 17 || result.Token == "" || result.Expires <= time.Now().Unix() || result.Accounts == nil {
 		t.Fatal("incomplete CTR account response")
 	}
 }

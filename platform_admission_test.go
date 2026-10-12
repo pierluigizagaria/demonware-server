@@ -20,13 +20,6 @@ import (
 	"github.com/NextendoNetwork/nextendo-demonware/internal/platform"
 )
 
-func withPolicy(t *testing.T, p platformPolicy) {
-	t.Helper()
-	old := activePolicy
-	activePolicy = p
-	t.Cleanup(func() { activePolicy = old })
-}
-
 func testCTRSigner(t *testing.T) *ctrAuthSigner {
 	t.Helper()
 	if _, err := exec.LookPath("openssl"); err != nil {
@@ -68,10 +61,10 @@ func psnTicket(issued time.Time) []byte {
 
 // handshake sends a client 0x82 carrying ticket, tagged with the ticket's own
 // lobby key, and returns the connection so callers can see if it was keyed.
-func handshake(t *testing.T, dir string, ticket []byte) *lobbyConn {
+func handshake(t *testing.T, ticket []byte) *lobbyConn {
 	t.Helper()
 	l, _ := sharedPS4Lobby()
-	l.keys, l.player, l.sessDir = nil, nil, dir
+	l.keys, l.player = nil, nil
 	l.maxLen, l.nonce, l.payload1 = 65536, make([]byte, 8), make([]byte, 20)
 	raw := frame(append(append([]byte{msgClientAuth}, ticket...), make([]byte, 8)...))
 	var transcript bytes.Buffer
@@ -91,33 +84,30 @@ func handshake(t *testing.T, dir string, ticket []byte) *lobbyConn {
 }
 
 func TestPS4LobbyAdmitsOnlyFreshIssuedTickets(t *testing.T) {
-	withPolicy(t, fixturePSNPlatform().Policy())
-	dir := t.TempDir()
-	if l := handshake(t, dir, psnTicket(time.Now())); l.keys != nil {
+	if l := handshake(t, psnTicket(time.Now())); l.keys != nil {
 		t.Fatal("unissued self-supplied ticket established encrypted session")
 	}
 	fresh := psnTicket(time.Now())
 	issueTestTicket(fresh, playerID{PID: 17, Username: "fixture", Sub: "shadnet:17", Kind: "shadnet", Title: 5760})
-	l := handshake(t, dir, fresh)
+	l := handshake(t, fresh)
 	defer dropOnline(l.n)
 	if l.keys == nil || l.player == nil || l.player.PID != 17 || l.player.Title != 5760 {
 		t.Fatal("fresh issued ticket refused or identity lost")
 	}
 	stale := psnTicket(time.Now().Add(-121 * time.Second))
 	issueTestTicket(stale, playerID{PID: 17, Username: "fixture"})
-	if l := handshake(t, dir, stale); l.keys != nil {
+	if l := handshake(t, stale); l.keys != nil {
 		t.Fatal("expired publisher ticket admitted")
 	}
 	foreign := psnTicket(time.Now())
 	issueTestTicket(foreign, playerID{PID: 18, Username: "other"})
-	if l := handshake(t, dir, foreign); l.keys != nil {
+	if l := handshake(t, foreign); l.keys != nil {
 		t.Fatal("ticket bound to another account admitted")
 	}
 }
 
 func TestPS4AuthRequiresResponseSigner(t *testing.T) {
-	dir := t.TempDir()
-	h := newPlatformAuthHandler(fixturePSNPlatform(), nil, dir, "")
+	h := newPlatformAuthHandler(fixturePSNPlatform(), nil, "")
 	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
 	before := issuedTicketCount()
 	w := httptest.NewRecorder()
@@ -128,13 +118,9 @@ func TestPS4AuthRequiresResponseSigner(t *testing.T) {
 	if issuedTicketCount() != before {
 		t.Fatal("ticket issued without a signed response")
 	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
-		t.Fatal("PS4 auth wrote session files")
-	}
 }
 
 func TestPS4UmbrellaUsesFreshIssuedTicket(t *testing.T) {
-	withPolicy(t, fixturePSNPlatform().Policy())
 	call := func(ticket []byte) int {
 		body, _ := json.Marshal(map[string]any{"ticket": ticket, "titleID": "5760"})
 		w := httptest.NewRecorder()
@@ -196,14 +182,14 @@ func TestCTRFollowerLeaveKeepsPartyAndNotifiesHost(t *testing.T) {
 }
 
 func TestAuthRefusesIncompleteBody(t *testing.T) {
-	dir := t.TempDir()
-	h := newPlatformAuthHandler(fixturePSNPlatform(), testCTRSigner(t), dir, "")
+	h := newPlatformAuthHandler(fixturePSNPlatform(), testCTRSigner(t), "")
+	before := issuedTicketCount()
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", iotest.ErrReader(io.ErrUnexpectedEOF)))
 	if w.Code != 400 {
 		t.Fatalf("incomplete body answered %d", w.Code)
 	}
-	if files, _ := filepath.Glob(filepath.Join(dir, "*.tkt")); len(files) != 0 {
+	if issuedTicketCount() != before {
 		t.Fatal("ticket issued for an incomplete request")
 	}
 }

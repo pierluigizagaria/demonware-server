@@ -127,8 +127,9 @@ func parseKeys(jwks []byte) (map[string]*rsa.PublicKey, error) {
 	return keys, nil
 }
 
-// TrustID separates persisted publisher tickets across issuers, applications
-// and title contexts without changing the game's numeric account identifier.
+// TrustID names the issuer, application and title this policy trusts. Account
+// IDs are unique only within it, so an instance database records it and
+// refuses another.
 func (v *Verifier) TrustID() string {
 	raw, _ := json.Marshal([]string{v.policy.Issuer, v.policy.ClientID, v.policy.NPTitleID})
 	sum := sha256.Sum256(raw)

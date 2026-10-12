@@ -2,7 +2,7 @@ package main
 
 import "fmt"
 
-// CTR_UNLOCK_ALL is fixed for the instance, independently of platform or admission.
+// CTR_UNLOCK_ALL is fixed for the instance, independently of admission.
 func parseUnlockAll(v string) (bool, error) {
 	switch v {
 	case "", "0", "false":

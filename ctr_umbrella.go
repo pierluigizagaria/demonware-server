@@ -64,7 +64,7 @@ func handleCTRUmbrella(w http.ResponseWriter, r *http.Request, body []byte, n ui
 		return
 	}
 	// Accept only a ticket issued by this private server, not arbitrary claims.
-	id, ok := umbrellaTicketPlayer(ticket)
+	id, ok := issuedTicketPlayer(ticket, time.Now(), ticketWindow)
 	if !ok {
 		deny(401, "ticket not issued here, too old or without identity")
 		return
@@ -82,16 +82,4 @@ func handleCTRUmbrella(w http.ResponseWriter, r *http.Request, body []byte, n ui
 		Expires  int64  `json:"expires"`
 		Accounts []any  `json:"accounts"`
 	}{id.PID, base64.RawURLEncoding.EncodeToString(token), time.Now().Add(time.Hour).Unix(), []any{}})
-}
-
-// umbrellaTicketPlayer applies the platform's fresh issued-ticket admission;
-// otherwise it keeps the original rule: issued here within 24 hours.
-func umbrellaTicketPlayer(ticket []byte) (*playerID, bool) {
-	if activePolicy.IssuedTickets {
-		return issuedTicketPlayer(ticket, time.Now(), activePolicy.TicketWindow)
-	}
-	if !ticketWasIssued(sessDir, ticket) || time.Since(time.Unix(int64(binary.LittleEndian.Uint32(ticket[13:17])), 0)) > 24*time.Hour {
-		return nil, false
-	}
-	return storedIdentity(sessDir, ticket)
 }

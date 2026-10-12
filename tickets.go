@@ -3,18 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 )
 
-// PS4 tickets admit only a fresh connection, and the auth handler, lobby and
+// Tickets admit only a fresh connection, and the auth handler, lobby and
 // Umbrella that read them run in this process, so they are kept in memory by
 // the ticket's 8-byte session tag. A restart drops every lobby connection and
-// clients authenticate again. The original admission keeps its files.
+// clients authenticate again.
 type issuedTicket struct {
 	ticket []byte
 	id     playerID
@@ -76,30 +72,6 @@ func issuedIdentity(ticket []byte) (*playerID, bool) {
 		return nil, false
 	}
 	id := t.id
-	id.Title = binary.LittleEndian.Uint32(ticket[5:9])
-	return &id, true
-}
-
-// ticketWasIssued serves the original admission, whose tickets are named by
-// issue time and are found by content.
-func ticketWasIssued(dir string, ticket []byte) bool {
-	files, _ := filepath.Glob(filepath.Join(dir, "*.tkt"))
-	for _, file := range files {
-		if stored, err := os.ReadFile(file); err == nil && bytes.Equal(stored, ticket) {
-			return true
-		}
-	}
-	return false
-}
-
-// storedIdentity reads the identity the original admission recorded at
-// issuance; it is not admission.
-func storedIdentity(dir string, ticket []byte) (*playerID, bool) {
-	raw, err := os.ReadFile(filepath.Join(dir, fmt.Sprintf("id_%x.json", ticket[33:41])))
-	var id playerID
-	if err != nil || json.Unmarshal(raw, &id) != nil || id.PID == 0 {
-		return nil, false
-	}
 	id.Title = binary.LittleEndian.Uint32(ticket[5:9])
 	return &id, true
 }

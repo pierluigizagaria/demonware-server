@@ -70,7 +70,6 @@ func (r *bdReader) accountIDs() []accountID {
 
 // onlinePIDSet returns the connected players, indexed for lookup.
 func onlinePIDSet() map[uint64]bool {
-	retryPending()
 	out := map[uint64]bool{}
 	for _, pid := range onlinePIDs() {
 		out[pid] = true

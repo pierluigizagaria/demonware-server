@@ -1,15 +1,15 @@
-// diablo-3 — Demonware game server for Diablo III on Nintendo Switch
-// (title 01001B300B9BE000, Demonware title "crimson"), for Nextendo Network.
+// Demonware server for Crash Team Racing Nitro-Fueled on PS4 (CUSA13795),
+// whose players sign in through shadNet. It is a fork of the Nextendo server
+// for Diablo III and Crash Team Racing on Switch; the Diablo III code is kept
+// unchanged but unused (FORK.md).
 //
-// Diablo III does not use NEX: its online layer is Demonware. One process
-// serves all of it, like every Nextendo game server:
+// One process serves all of it:
 //
-//	auth        HTTPS :AUTH_PORT (8460), reached through sni-router   auth.go identity.go gates.go
+//	auth        HTTPS :AUTH_PORT (8460), reached through sni-router   auth.go platform_psn.go tickets.go
 //	lobby       TCP 3074 (+3075..3080), encrypted remote tasks        lobby.go handshake.go bdcrypto.go services.go
 //	matchmaking public games, friend lookups, user data               matchmaking.go friends.go
 //	NAT         UDP 3074: IP / NAT discovery, introductions           nat.go
 //	pubfiles    season, community events, item blacklist              pubfiles.go pubfiles.json
-//	presence    connected players -> nextendo-account                 presence.go
 //	dashboard   /api/stats on DASH_PORT (8093) for nextendo-dashboard dashboard.go
 //
 //	server            run the server
@@ -37,10 +37,8 @@ var (
 	// BIND_ADDR restricts the network listeners (default: all interfaces).
 	bindAddr = os.Getenv("BIND_ADDR")
 
-	// Tickets and player identities written by auth, read back by the lobby.
-	sessDir = envOr("D3_SESSIONS", "sessions")
-	// Subdirectory of CTR_WALLETS for the selected platform's account IDs.
-	walletNamespace = ""
+	// Persistent state: ctr.sqlite (economy, leaderboards, player names).
+	dataDir = envOr("DATA_DIR", "data")
 	// pubfiles.json drives the three files written to D3_PUBFILES.
 	pubConfigPath = envOr("D3_PUBFILES_CONFIG", "pubfiles.json")
 	pubDir        = envOr("D3_PUBFILES", "pubfiles")
@@ -96,24 +94,20 @@ func main() {
 		return
 	}
 
-	platform, err := selectPlatform()
+	// CTR_AUTH_CONFIG names the shadNet trust policy (config/auth.example.json).
+	platform, trustID, err := loadPSNPlatform(os.Getenv("CTR_AUTH_CONFIG"))
 	if err != nil {
-		log.Fatalf("[D3] platform: %v", err)
-	}
-	activePolicy = platform.Policy()
-	if err := os.MkdirAll(sessDir, 0o755); err != nil {
-		log.Fatalf("[D3] sessions dir: %v", err)
+		log.Fatalf("[D3] shadNet trust policy (CTR_AUTH_CONFIG): %v", err)
 	}
 	if err := writePubfiles(pubConfigPath, pubDir); err != nil {
 		diagnosticLogf("[D3 Pubfiles] %v", err)
 	}
-	loadGates()
 	loadWallets()
 	unlockAll, err := parseUnlockAll(os.Getenv("CTR_UNLOCK_ALL"))
 	if err != nil {
 		log.Fatalf("[D3] economy: %v", err)
 	}
-	store, err := openCTRSQLite(filepath.Join(economy.dir, ctrDB), unlockAll)
+	store, err := openCTRSQLite(filepath.Join(dataDir, ctrDB), unlockAll, trustID)
 	if err != nil {
 		log.Fatalf("[D3] CTR database: %v", err)
 	}
@@ -128,9 +122,6 @@ func main() {
 	}
 
 	go startDashboard()
-	if _, nintendo := platform.(nintendoPlatform); nintendo {
-		startPresenceReporter() // reports Nextendo account PIDs only
-	}
 	go serveNAT(natPort)
 	startCTRRelay(envOrInt("CTR_RELAY_PORT_LOW", 0), envOrInt("CTR_RELAY_PORT_HIGH", 0), nextendoHost)
 	go reapSessions()
@@ -139,21 +130,4 @@ func main() {
 	if err := serveAuth(platform); err != nil {
 		log.Fatalf("[D3 Auth] stopped: %v", err)
 	}
-}
-
-// selectPlatform installs the PS4 identity adapter when CTR_AUTH_CONFIG names
-// a shadNet trust policy; otherwise the original Nintendo admission runs.
-// PS4 wallets, leaderboards and player names live in a directory namespaced
-// by issuer, application and title; its tickets live in memory (tickets.go).
-func selectPlatform() (platformAuthenticator, error) {
-	path := os.Getenv("CTR_AUTH_CONFIG")
-	if path == "" {
-		return nintendoPlatform{}, nil
-	}
-	p, err := loadPSNPlatform(path)
-	if err != nil {
-		return nil, err
-	}
-	walletNamespace = p.stateNamespace
-	return p, nil
 }

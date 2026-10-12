@@ -54,70 +54,48 @@ func marketplaceNoFiles(t *testing.T, s *economyStore) {
 }
 
 func TestPlatformMarketplaceBalances(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		title   uint32
-		request string
-		context string
-	}{
-		{"PS4", 5760, ps4BalancesRequest, "octane_psn"},
-		{"Nintendo", 5775, realBalancesRequest, "octane_switch"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			marketplaceTestStore(t)
-			l, wire := sharedPS4Lobby()
-			l.player.Title = tc.title
-			payload := marketplaceHex(t, tc.request)
-			ctx, max := parseBalancesRequest(payload)
-			if ctx != tc.context || max != 3 {
-				t.Fatalf("balances request = %q, %d", ctx, max)
-			}
-			reply := sharedTask(t, l, wire, payload)
-			marketplaceOutcome(t, reply, 0)
-			want := getPlayerBalancesResponse(map[uint64]int64{10: 10000}, 3)
-			if !bytes.Equal(structBodyOf(t, reply), want) {
-				t.Fatal("wrong persisted balances reply")
-			}
-			if tc.title == 5760 {
-				for _, max := range []byte{1, 16} {
-					payload[len(payload)-2] = max
-					reply = sharedTask(t, l, wire, payload)
-					marketplaceOutcome(t, reply, 0)
-					if !bytes.Equal(structBodyOf(t, reply), getPlayerBalancesResponse(map[uint64]int64{10: 10000}, int(max))) {
-						t.Fatal("maxNumResults not honored")
-					}
-				}
-			}
-		})
+	marketplaceTestStore(t)
+	l, wire := sharedPS4Lobby()
+	payload := marketplaceHex(t, ps4BalancesRequest)
+	ctx, max := parseBalancesRequest(payload)
+	if ctx != "octane_psn" || max != 3 {
+		t.Fatalf("balances request = %q, %d", ctx, max)
+	}
+	reply := sharedTask(t, l, wire, payload)
+	marketplaceOutcome(t, reply, 0)
+	want := getPlayerBalancesResponse(map[uint64]int64{10: 10000}, 3)
+	if !bytes.Equal(structBodyOf(t, reply), want) {
+		t.Fatal("wrong persisted balances reply")
+	}
+	for _, max := range []byte{1, 16} {
+		payload[len(payload)-2] = max
+		reply = sharedTask(t, l, wire, payload)
+		marketplaceOutcome(t, reply, 0)
+		if !bytes.Equal(structBodyOf(t, reply), getPlayerBalancesResponse(map[uint64]int64{10: 10000}, int(max))) {
+			t.Fatal("maxNumResults not honored")
+		}
 	}
 }
 
+// The Switch context is refused on every Pit Stop task.
 func TestPlatformMarketplaceRejectsWrongContexts(t *testing.T) {
-	for _, title := range []uint32{5760, 5775} {
-		for _, task := range []byte{taskGetBalancesV3, taskGetInventoryPaginated, taskPurchaseSkus} {
-			s := marketplaceTestStore(t)
-			l, wire := sharedPS4Lobby()
-			l.player.Title = title
-			ctx := "octane_switch"
-			purchase := realPurchase
-			if title == 5775 {
-				ctx, purchase = "octane_psn", ps4PurchaseRequest
-			}
-			w := &bdWriter{b: []byte{svcMarketplace, tagU8, task}}
-			switch task {
-			case taskGetBalancesV3:
-				w.structv(pbVarintField(pbBytesField(nil, 1, []byte(ctx)), 2, 3))
-				w.b = append(w.b, 0)
-			case taskGetInventoryPaginated:
-				w.strv(ctx)
-				w.u32(1)
-				w.u32(16)
-			case taskPurchaseSkus:
-				w.b = marketplaceHex(t, purchase)
-			}
-			marketplaceOutcome(t, sharedTask(t, l, wire, w.b), errUnhandled)
-			marketplaceNoFiles(t, s)
+	for _, task := range []byte{taskGetBalancesV3, taskGetInventoryPaginated, taskPurchaseSkus} {
+		s := marketplaceTestStore(t)
+		l, wire := sharedPS4Lobby()
+		w := &bdWriter{b: []byte{svcMarketplace, tagU8, task}}
+		switch task {
+		case taskGetBalancesV3:
+			w.structv(pbVarintField(pbBytesField(nil, 1, []byte("octane_switch")), 2, 3))
+			w.b = append(w.b, 0)
+		case taskGetInventoryPaginated:
+			w.strv("octane_switch")
+			w.u32(1)
+			w.u32(16)
+		case taskPurchaseSkus:
+			w.b = marketplaceHex(t, realPurchase)
 		}
+		marketplaceOutcome(t, sharedTask(t, l, wire, w.b), errUnhandled)
+		marketplaceNoFiles(t, s)
 	}
 }
 
@@ -125,7 +103,7 @@ func TestPS4MarketplaceRejectsUnsupportedTasksWithoutWrite(t *testing.T) {
 	s := marketplaceTestStore(t)
 	l, wire := sharedPS4Lobby()
 	// Exercise every unknown selector, including 146, 42 and 81, plus the
-	// Nintendo-only 246. Use purchase-shaped arguments to catch misrouting.
+	// Switch-only 246. Use purchase-shaped arguments to catch misrouting.
 	payload := marketplaceHex(t, ps4PurchaseRequest)
 	check := func() {
 		for task := 0; task <= 255; task++ {
@@ -198,20 +176,6 @@ func TestPS4MarketplaceRejectsMalformedBalances(t *testing.T) {
 	marketplaceNoFiles(t, s)
 }
 
-func TestNintendoMarketplaceFallbackUnchanged(t *testing.T) {
-	s := marketplaceTestStore(t)
-	l, wire := sharedPS4Lobby()
-	l.player.Title = 5775
-	for _, task := range []byte{146, 42, 81, 255, taskSwitchReconciliation} {
-		reply := sharedTask(t, l, wire, []byte{svcMarketplace, tagU8, task, 0})
-		marketplaceOutcome(t, reply, 0)
-		if task == taskSwitchReconciliation && len(structBodyOf(t, reply)) != 0 {
-			t.Fatal("Nintendo reconciliation changed")
-		}
-	}
-	marketplaceNoFiles(t, s)
-}
-
 // Decode separate encrypted frames so the purchase reply and push order are
 // checked through the real dispatcher without opening a listener.
 func marketplaceFrames(t *testing.T, l *lobbyConn, wire *platformWire) [][]byte {
@@ -246,7 +210,6 @@ func TestPlatformMarketplacePurchaseInventoryAndBalancePush(t *testing.T) {
 		request, context, owner string
 	}{
 		{"PS4", 5760, ps4PurchaseRequest, "octane_psn", "psn"},
-		{"Nintendo", 5775, realPurchase, "octane_switch", "nintendo"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := marketplaceTestStore(t)

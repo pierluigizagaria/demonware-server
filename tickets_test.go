@@ -7,7 +7,7 @@ import (
 )
 
 func issueTestTicket(ticket []byte, id playerID) {
-	rememberTicket(ticket, id, time.Now(), fixturePSNPlatform().Policy().TicketWindow)
+	rememberTicket(ticket, id, time.Now(), ticketWindow)
 }
 
 func issuedTicketCount() int {
@@ -78,13 +78,14 @@ func TestPlayerNamesSurviveRestart(t *testing.T) {
 	}
 }
 
-func TestCTRSchemaOneGainsPlayerNames(t *testing.T) {
+func TestCTRSchemaOneGainsPlayerNamesAndTrust(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ctrDB)
 	db := openTestCTR(t, path, false)
 	sqliteExec(t, db, "DROP TABLE player_names")
+	sqliteExec(t, db, "DELETE FROM meta WHERE key = 'trust_id'")
 	sqliteExec(t, db, "PRAGMA user_version = 1")
 	db.Close()
-	if other, err := openCTRSQLite(path, true); err == nil {
+	if other, err := openCTRSQLite(path, true, testTrustID); err == nil {
 		other.Close()
 		t.Fatal("mode mismatch accepted during the upgrade")
 	}
@@ -95,5 +96,28 @@ func TestCTRSchemaOneGainsPlayerNames(t *testing.T) {
 	}
 	if err := db.rememberName(9, "Fixture", time.Now()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCTRDatabaseRefusesAnotherTrust(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ctrDB)
+	openTestCTR(t, path, false).Close()
+	if other, err := openCTRSQLite(path, false, "another-issuer"); err == nil {
+		other.Close()
+		t.Fatal("database opened for another shadNet issuer")
+	}
+	if _, err := openCTRSQLite(filepath.Join(t.TempDir(), ctrDB), false, ""); err == nil {
+		t.Fatal("database opened without a trust ID")
+	}
+	for _, statement := range []string{"DELETE FROM meta WHERE key = 'trust_id'", "UPDATE meta SET value = 'x' WHERE key = 'trust_id'"} {
+		db := openTestCTR(t, path, false)
+		sqliteExec(t, db, statement)
+		db.Close()
+		if reopened, err := openCTRSQLite(path, false, testTrustID); err == nil {
+			reopened.Close()
+			t.Fatalf("%s accepted", statement)
+		}
+		path = filepath.Join(t.TempDir(), ctrDB)
+		openTestCTR(t, path, false).Close()
 	}
 }

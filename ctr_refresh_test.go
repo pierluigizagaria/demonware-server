@@ -12,7 +12,7 @@ func TestInventoryCompleteClientWireLayout(t *testing.T) {
 	writeInventoryItem(w, 42, 688)
 	// Independent bdMarketplaceInventory::deserialize wire fixture. In particular,
 	// signed int64 uses 09; 14 is the MAX_INT64 sentinel with no trailing bytes.
-	want, err := hex.DecodeString("0a2a00000000000000106e696e74656e646f0008b00200000801000000080000000013080000000008000000000900000000000000000600000800000000")
+	want, err := hex.DecodeString("0a2a000000000000001070736e0008b00200000801000000080000000013080000000008000000000900000000000000000600000800000000")
 	if err != nil {
 		t.Fatal(err)
 	}

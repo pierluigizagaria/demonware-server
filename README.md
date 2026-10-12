@@ -2,8 +2,8 @@
 
 ## This fork: Crash Team Racing Nitro-Fueled on PS4 (experimental)
 
-This is an unofficial fork that adds a PS4 platform adapter for Crash Team
-Racing Nitro-Fueled (CUSA13795, Demonware title 5760) running in the
+This is an unofficial fork that serves only Crash Team Racing Nitro-Fueled on
+PS4 (CUSA13795, Demonware title 5760), running in the
 [shadPS4](https://github.com/shadps4-emu/shadPS4) emulator. Players sign in to a
 separate [shadNet](https://github.com/shadps4-emu/shadNet) service; this server
 verifies its ID tokens against shadNet's public keys and then serves the same
@@ -11,15 +11,15 @@ Demonware protocol, matchmaking and CTR services as for Switch. It is not
 affiliated with Sony, Activision, Demonware, Nintendo, Nextendo Network or the
 shadPS4 project.
 
-**Status: experimental research code.** Validated only on one local machine:
-sign-in through shadNet and the publisher, and one complete two-player race
-with an earlier build.
+**Status: experimental research code.** Validated only on one local machine,
+with earlier builds: sign-in through shadNet and the publisher, and one complete
+two-player race.
 Not validated: the Pit Stop in game, parties, rejoining and lobby merges after
 the latest changes, LAN/WAN play, capacity, and running a public server.
 Race rewards rely on what the client reports.
 
 Architecture, configuration (`CTR_AUTH_CONFIG`, `CTR_AUTH_SIGNING_KEY`,
-`CTR_WALLETS`, `CTR_UNLOCK_ALL`, ...) and the changes to the original code are
+`DATA_DIR`, `CTR_UNLOCK_ALL`, ...) and the changes to the original code are
 in [FORK.md](FORK.md). The PS4 code is on the `feat/ps4-platform` branch of
 this fork; build it with Go 1.25 or newer: `go build -o server .` and
 `go test ./...`. (The clone URL in [Install](#install) is the original Diablo III
@@ -27,7 +27,8 @@ repository.) The license is unchanged (PolyForm Shield 1.0.0, see
 [License](#license)); read its Noncompete section before running a service.
 
 The rest of this file is the original documentation for Diablo III and
-Crash Team Racing on Switch.
+Crash Team Racing on Switch, which this fork no longer serves: it accepts only
+PS4 players signed in through shadNet.
 
 Game server for **Diablo III** nxmod [creator of the original Diablo-3 repo](https://github.com/nx-mod/nextendo-demonware) & the original developer of the backend for Demonware support for [Nextendo Network](https://nextendo.network), and also with **Crash Team Racing Nitro-Fueled** support contributed by [CollectingW](https://github.com/CollectingW) (see [Crash Team Racing](#crash-team-racing)). Source only, no binaries, no certs, no game assets. Not affiliated with Blizzard, Activision, Demonware or Nintendo.
 

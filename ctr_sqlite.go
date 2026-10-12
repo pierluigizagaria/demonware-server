@@ -92,7 +92,7 @@ func readLeaderboard(store leaderboardStore, task byte, board uint32, start uint
 
 const ctrDB = "ctr.sqlite"
 
-// Version 2 adds player_names to version 1.
+// Version 2 adds player_names and the trust ID to version 1.
 const ctrSchemaVersion = 2
 
 // awardRaces accepts events from the last seven days, five minutes ahead at
@@ -123,7 +123,12 @@ func lockCTRInstance(path string) (*os.File, error) {
 	return f, nil
 }
 
-func openCTRSQLite(path string, unlockAll bool) (*ctrSQLite, error) {
+// openCTRSQLite opens the instance database bound to trustID, the shadNet
+// issuer, client and title whose account IDs it stores.
+func openCTRSQLite(path string, unlockAll bool, trustID string) (*ctrSQLite, error) {
+	if trustID == "" {
+		return nil, fmt.Errorf("CTR database needs a trust ID")
+	}
 	lock, err := lockCTRInstance(path)
 	if err != nil {
 		return nil, err
@@ -141,7 +146,7 @@ func openCTRSQLite(path string, unlockAll bool) (*ctrSQLite, error) {
 	}
 	db.SetMaxOpenConns(1)
 	s := &ctrSQLite{db: db, lock: lock}
-	if err := s.initialize(unlockAll); err != nil {
+	if err := s.initialize(unlockAll, trustID); err != nil {
 		s.Close()
 		return nil, err
 	}
@@ -154,7 +159,7 @@ func (s *ctrSQLite) Close() error {
 	return err
 }
 
-func (s *ctrSQLite) initialize(unlockAll bool) error {
+func (s *ctrSQLite) initialize(unlockAll bool, trustID string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -174,7 +179,7 @@ func (s *ctrSQLite) initialize(unlockAll bool) error {
 		if _, err := tx.Exec(ctrSchema + playerNamesSchema); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('unlock_all', ?)`, want); err != nil {
+		if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('unlock_all', ?), ('trust_id', ?)`, want, trustID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, ctrSchemaVersion)); err != nil {
@@ -182,12 +187,23 @@ func (s *ctrSQLite) initialize(unlockAll bool) error {
 		}
 	case 1, ctrSchemaVersion:
 		if version == 1 {
+			// Version 1 predates the binding: it adopts the configured trust ID.
 			if _, err := tx.Exec(playerNamesSchema); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('trust_id', ?)`, trustID); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, ctrSchemaVersion)); err != nil {
 				return err
 			}
+		}
+		var trusted string
+		if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'trust_id'`).Scan(&trusted); err != nil {
+			return fmt.Errorf("read trust ID: %w", err)
+		}
+		if trusted != trustID {
+			return fmt.Errorf("CTR database belongs to another shadNet issuer, client or title")
 		}
 		var got string
 		if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'unlock_all'`).Scan(&got); err != nil {

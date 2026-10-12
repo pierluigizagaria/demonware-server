@@ -39,13 +39,13 @@ func TestPSNPlatformUsesVerifiedIdentityAndOriginalEnvelope(t *testing.T) {
 		return platform.Identity{AccountID: 17, OnlineID: "verified-user", Subject: "17"}, nil
 	})}
 	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
-	id, err := p.Authenticate(body, "127.0.0.1")
+	id, err := p.Authenticate(body)
 	if err != nil || calls != 1 || id.PID != 17 || id.Username != "verified-user" || id.Sub != "shadnet:17" || id.Title != 5760 || id.Kind != "shadnet" {
 		t.Fatal("verified identity did not reach the publisher boundary")
 	}
 	data := p.AuthData(id)
 	if len(data) != 1 || data["extended_data"] != "nextendo:shadnet:17" {
-		t.Fatal("PSN response changed or included Nintendo platform data")
+		t.Fatal("PSN auth extra data changed")
 	}
 }
 
@@ -55,8 +55,8 @@ func TestPSNPlatformRejectsInvalidEnvelopesBeforeVerification(t *testing.T) {
 		return platform.Identity{}, nil
 	})}
 	cases := []struct{ name, field, value string }{
-		{"Nintendo title", "title_id", "5775"},
-		{"Nintendo task", "auth_task", "78"},
+		{"Switch title", "title_id", "5775"},
+		{"Switch auth task", "auth_task", "78"},
 		{"overflow seed", "iv_seed", "4294967296"},
 		{"negative seed", "iv_seed", "-1"},
 		{"missing seed", "iv_seed", ""},
@@ -68,26 +68,26 @@ func TestPSNPlatformRejectsInvalidEnvelopesBeforeVerification(t *testing.T) {
 			req := psnAuthRequest(t, "synthetic-fixture")
 			req[tc.field] = tc.value
 			body, _ := json.Marshal(req)
-			if _, err := p.Authenticate(body, "127.0.0.1"); err == nil {
+			if _, err := p.Authenticate(body); err == nil {
 				t.Fatal("invalid envelope accepted")
 			}
 		})
 	}
 	body, _ := json.Marshal(psnAuthRequest(t, strings.Repeat("x", 4097)))
-	if _, err := p.Authenticate(body, "127.0.0.1"); err == nil {
+	if _, err := p.Authenticate(body); err == nil {
 		t.Fatal("oversized token accepted")
 	}
 }
 
-func TestPlatformAdmissionFailsClosedWithoutNintendoFallback(t *testing.T) {
+func TestPlatformAdmissionFailsClosed(t *testing.T) {
 	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
 	p := psnPlatform{verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
 		return platform.Identity{}, errors.New("refused")
 	})}
-	if id, err := p.Authenticate(body, "127.0.0.1"); err == nil || id.PID != 0 || id.Kind != "" {
-		t.Fatal("failed platform verification fell through to another identity path")
+	if id, err := p.Authenticate(body); err == nil || id.PID != 0 || id.Kind != "" {
+		t.Fatal("failed verification returned an identity")
 	}
-	if _, err := (psnPlatform{}).Authenticate(body, "127.0.0.1"); err == nil {
+	if _, err := (psnPlatform{}).Authenticate(body); err == nil {
 		t.Fatal("missing verifier admitted a player")
 	}
 }

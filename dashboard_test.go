@@ -12,7 +12,7 @@ func TestDashboardCTRMembershipAndTitleSplit(t *testing.T) {
 	oldRooms := ctrMM.rooms
 	oldSessions := sessions
 	defer func() { online = oldOnline; connStats = oldStats; ctrMM.rooms = oldRooms; sessions = oldSessions }()
-	online = map[uint64]*playerID{1: {PID: 101, Username: "host", Title: 5775}, 2: {PID: 102, Username: "joined", Title: 5775}, 3: {PID: 103, Username: "pending", Title: 5775}, 4: {PID: 104, Username: "diablo"}}
+	online = map[uint64]*playerID{1: {PID: 101, Username: "host", Title: 5760}, 2: {PID: 102, Username: "joined", Title: 5760}, 3: {PID: 103, Username: "pending", Title: 5760}, 4: {PID: 104, Username: "diablo"}}
 	connStats = map[uint64]*connStat{}
 	for id := range online {
 		connStats[id] = &connStat{first: time.Now(), last: time.Now()}

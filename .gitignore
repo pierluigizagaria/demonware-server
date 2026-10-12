@@ -39,10 +39,10 @@ stdout.txt
 /runtime/
 /.npauth/
 /identity/
-/sessions/
 /profiles/
 /*.economy-v2.json
 
 # Per-instance SQLite state, including WAL and shared-memory sidecars
+/data/
 ctr.sqlite
 ctr.sqlite-*

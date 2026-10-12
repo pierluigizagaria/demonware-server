@@ -34,7 +34,7 @@ func startLobby() {
 				if err != nil {
 					return
 				}
-				lc := &lobbyConn{c: c, n: connNum.Add(1), dumpDir: dumps, sessDir: sessDir, pubDir: pubDir}
+				lc := &lobbyConn{c: c, n: connNum.Add(1), dumpDir: dumps, pubDir: pubDir}
 				go func() {
 					registerConn(lc)
 					defer unregisterConn(lc)

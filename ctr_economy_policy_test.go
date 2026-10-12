@@ -107,14 +107,13 @@ func TestPlatformMarketplaceUnlockAllInventory(t *testing.T) {
 	}
 }
 
-func TestSQLiteUsesWalletNamespace(t *testing.T) {
-	old, oldNS := economy, walletNamespace
-	t.Cleanup(func() { economy, walletNamespace = old, oldNS })
-	for _, ns := range []string{"", "npauth-test"} {
+func TestSQLiteUsesDataDir(t *testing.T) {
+	old, oldDir := economy, dataDir
+	t.Cleanup(func() { economy, dataDir = old, oldDir })
+	for _, ns := range []string{"", "nested"} {
 		t.Run(ns, func(t *testing.T) {
 			root := t.TempDir()
-			t.Setenv("CTR_WALLETS", root)
-			economy, walletNamespace = &economyStore{}, ns
+			economy, dataDir = &economyStore{}, filepath.Join(root, ns)
 			loadWallets()
 			if economy.dir != filepath.Join(root, ns) {
 				t.Fatalf("wallet dir = %s", economy.dir)

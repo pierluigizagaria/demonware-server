@@ -36,7 +36,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -76,7 +75,6 @@ type lobbyConn struct {
 	c       net.Conn
 	n       uint64
 	dumpDir string
-	sessDir string
 	pubDir  string
 
 	maxLen   uint32
@@ -286,9 +284,8 @@ type keyCand struct {
 	key24 []byte
 }
 
-// candidates gathers the plausible 24-byte keys: the ticket extracted from
-// the 0x82 itself, tickets issued by d3-auth, and zero (older tickets, whose
-// bytes 97..120 were null).
+// candidates gathers the plausible 24-byte keys. Only a fresh ticket issued
+// here may key the handshake: the one the 0x82 echoes.
 func (l *lobbyConn) candidates(raw []byte) []keyCand {
 	var out []keyCand
 	add := func(name string, t []byte) {
@@ -297,35 +294,11 @@ func (l *lobbyConn) candidates(raw []byte) []keyCand {
 			keyCand{name + "[33:57]", append([]byte{}, t[33:57]...)},
 		)
 	}
-	if activePolicy.IssuedTickets {
-		// Only a fresh ticket issued here may key the handshake.
-		if t := findTicket(raw); t != nil {
-			if _, ok := issuedTicketPlayer(t, time.Now(), activePolicy.TicketWindow); ok {
-				add("issued-ticket", t)
-			}
-		}
-		return out
-	}
 	if t := findTicket(raw); t != nil {
-		add("ticket-0x82", t)
-	}
-	if entries, err := os.ReadDir(l.sessDir); err == nil {
-		cutoff := time.Now().Add(-72 * time.Hour)
-		for _, e := range entries {
-			if !strings.HasSuffix(e.Name(), ".tkt") {
-				continue
-			}
-			info, err := e.Info()
-			if err != nil || info.ModTime().Before(cutoff) {
-				continue
-			}
-			b, err := os.ReadFile(filepath.Join(l.sessDir, e.Name()))
-			if err == nil && len(b) == 128 {
-				add(e.Name(), b)
-			}
+		if _, ok := issuedTicketPlayer(t, time.Now(), ticketWindow); ok {
+			add("issued-ticket", t)
 		}
 	}
-	out = append(out, keyCand{"zero", make([]byte, 24)})
 	return out
 }
 

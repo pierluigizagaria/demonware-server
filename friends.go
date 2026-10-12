@@ -1,44 +1,30 @@
 package main
 
-// Online friends in D3.
+// Online friends.
 //
-// On connect, the game asks 12/9 (getUserNames) with its Nintendo friends'
-// identifiers. These identifiers depend on the platform:
-//
-//	console: friend's device account identifier (BaaS friend list)
-//	         e.g. player2 = 0x0123456789ABCDEF
-//	Citron : friend's Nextendo PID, e.g. player1 = 1800000101
+// Friend IDs are shadNet account IDs, the PID each ticket carries. 12/10
+// (getUserIDs) resolves the friends' online names to them; the other lookups
+// take them as they are.
 //
 // Result 12/9 (reader 0xBFCE70, 0x60-byte object): 0A u64 id | 10 nickname string.
 // Result 29/4 (reader 0xBF6860, 0x30-byte object): 0A u64 id | 13 blob.
 //
 // We answer for friends currently connected to the lobby. A connection's
-// player is known from its ticket (d3-auth writes sessions/id_<key>.json);
-// device identifiers come from the friend lists the console fetches via
-// baas-proxy, read back from its log.
+// player is the identity its ticket was issued to (tickets.go).
 
 import (
-	"bufio"
 	"encoding/binary"
-	"encoding/hex"
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 type playerID struct {
 	Username string `json:"username"`
 	PID      uint64 `json:"pid"`
 	Sub      string `json:"sub"`
-	Kind     string `json:"kind,omitempty"` // "switch" or "ryujinx" (emulator), see identity.go
+	Kind     string `json:"kind,omitempty"` // "shadnet"
 
-	// Demonware title this connection announced (5745 Diablo III, 5775 Crash Team
-	// Racing). Taken from the ticket, never from the stored identity file: one
-	// account can play either game, and presence must name the right one.
+	// Demonware title from the ticket: 5760, Crash Team Racing on PS4.
 	Title uint32 `json:"-"`
 }
 
@@ -48,77 +34,21 @@ var (
 
 	userDataMu sync.Mutex
 	userData   = map[string][]byte{} // nickname|context -> 29/1 blob
-
-	aliasMu     sync.Mutex
-	aliases     = map[uint64]string{} // device/NSA identifier -> nickname
-	aliasLoaded time.Time
 )
 
-// Connections whose identity file didn't exist yet at handshake time (ticket
-// issued by an older d3-auth). We retry on every friend lookup: the file
-// appears as soon as the player re-authenticates.
-var pending = map[uint64]pendingID{}
-
-type pendingID struct {
-	conn   *lobbyConn
-	ticket []byte
-}
-
-// loadIdentity recovers a ticket's player via the file written by d3-auth.
+// loadIdentity names the connection's player after the identity its ticket
+// was issued to; the handshake has already admitted that ticket.
 func (l *lobbyConn) loadIdentity(ticket []byte) {
-	if len(ticket) < 41 {
+	id, ok := issuedIdentity(ticket)
+	if !ok {
+		l.logf("identity unknown")
 		return
 	}
-	if !l.tryIdentity(ticket) {
-		onlineMu.Lock()
-		pending[l.n] = pendingID{conn: l, ticket: append([]byte{}, ticket...)}
-		onlineMu.Unlock()
-		l.logf("identity pending (ticket %x)", ticket[33:41])
-	}
-}
-
-func (l *lobbyConn) tryIdentity(ticket []byte) bool {
-	var id playerID
-	if activePolicy.IssuedTickets {
-		issued, ok := issuedIdentity(ticket) // PS4 tickets live in memory (tickets.go)
-		if !ok {
-			return false
-		}
-		id = *issued
-	} else {
-		p := filepath.Join(l.sessDir, "id_"+hex.EncodeToString(ticket[33:41])+".json")
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			return false
-		}
-		if json.Unmarshal(raw, &id) != nil || id.Username == "" {
-			return false
-		}
-		// auth.go stamps the announced title into the ticket at offset 5.
-		if len(ticket) >= 9 {
-			id.Title = binary.LittleEndian.Uint32(ticket[5:9])
-		}
-	}
-	l.player = &id
+	l.player = id
 	onlineMu.Lock()
-	online[l.n] = &id
-	delete(pending, l.n)
+	online[l.n] = id
 	onlineMu.Unlock()
 	l.logf("player %q pid=%d", id.Username, id.PID)
-	return true
-}
-
-// retryPending retries the missing identities.
-func retryPending() {
-	onlineMu.Lock()
-	todo := make([]pendingID, 0, len(pending))
-	for _, p := range pending {
-		todo = append(todo, p)
-	}
-	onlineMu.Unlock()
-	for _, p := range todo {
-		p.conn.tryIdentity(p.ticket)
-	}
 }
 
 // dropPresence forgets a player's rich presence (ctr_presence.go keeps the store).
@@ -140,108 +70,45 @@ func dropOnline(conn uint64) {
 		}
 	}
 	delete(online, conn)
-	delete(pending, conn)
 	onlineMu.Unlock()
 	if pid != 0 {
 		dropPresence(pid) // a player who left must not look joinable
 	}
 }
 
-// refreshAliases re-reads the friend lists baas-proxy relayed (at most once
-// per minute) to learn device/NSA identifier -> nickname.
-func refreshAliases() {
-	aliasMu.Lock()
-	defer aliasMu.Unlock()
-	if time.Since(aliasLoaded) < time.Minute {
-		return
-	}
-	aliasLoaded = time.Now()
-	f, err := os.Open(envOr("BAASPROXY_LOG", "../baas-proxy/logs/baas-proxy.log"))
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<20), 16<<20)
-	for sc.Scan() {
-		line := sc.Text()
-		i := strings.Index(line, `body: {"count"`)
-		if i < 0 {
-			continue
-		}
-		var list struct {
-			Items []struct {
-				Friend struct {
-					ID             string `json:"id"`
-					Nickname       string `json:"nickname"`
-					DeviceAccounts []struct {
-						ID string `json:"id"`
-					} `json:"deviceAccounts"`
-				} `json:"friend"`
-			} `json:"items"`
-		}
-		if json.Unmarshal([]byte(line[i+6:]), &list) != nil {
-			continue
-		}
-		for _, it := range list.Items {
-			if it.Friend.Nickname == "" {
-				continue
-			}
-			if v, err := strconv.ParseUint(it.Friend.ID, 16, 64); err == nil {
-				aliases[v] = it.Friend.Nickname
-			}
-			for _, d := range it.Friend.DeviceAccounts {
-				if v, err := strconv.ParseUint(d.ID, 16, 64); err == nil {
-					aliases[v] = it.Friend.Nickname
-				}
-			}
-		}
-	}
-}
-
-// onlinePlayerFor returns the connected player a friend id stands for, or nil.
-// The id is a PID (Citron), or a console's device/NSA id (resolved from the
-// baas-proxy log, or by asking nextendo-account).
+// onlinePlayerFor returns the connected player whose account ID is id, or nil.
 func onlinePlayerFor(id uint64) *playerID {
-	retryPending()
-	if activePolicy.AccountFriendIDs {
-		return onlineUser(id, "")
-	}
-	refreshAliases()
-	aliasMu.Lock()
-	name := aliases[id]
-	aliasMu.Unlock()
-	if p := onlineUser(id, name); p != nil {
-		return p
-	}
-	// A console friend id is not a PID: ask nextendo-account who owns it, so a
-	// deployment does not depend on the local baas-proxy log (accountlookup.go).
-	if pid, ok := pidForConsoleID(id); ok {
-		return onlineUser(pid, "")
+	onlineMu.Lock()
+	defer onlineMu.Unlock()
+	for _, p := range online {
+		if p.PID != 0 && p.PID == id {
+			return p
+		}
 	}
 	return nil
 }
 
-// nicknameOnline returns the nickname of a connected player identified by id
-// (PID or device/NSA identifier).
+// onlinePIDs returns every connected player's PID once.
+func onlinePIDs() []uint64 {
+	onlineMu.Lock()
+	defer onlineMu.Unlock()
+	seen := map[uint64]bool{}
+	out := []uint64{}
+	for _, p := range online {
+		if p.PID != 0 && !seen[p.PID] {
+			seen[p.PID] = true
+			out = append(out, p.PID)
+		}
+	}
+	return out
+}
+
+// nicknameOnline returns the nickname of a connected player identified by id.
 func nicknameOnline(id uint64) string {
 	if p := onlinePlayerFor(id); p != nil {
 		return p.Username
 	}
 	return ""
-}
-
-// onlineUser returns the connected player whose PID is id, or whose name is
-// alias (ignoring case).
-func onlineUser(id uint64, alias string) *playerID {
-	onlineMu.Lock()
-	defer onlineMu.Unlock()
-	for _, p := range online {
-		if (p.PID != 0 && p.PID == id) || (alias != "" && strings.EqualFold(p.Username, alias)) {
-			return p
-		}
-	}
-	return nil
 }
 
 func (w *bdWriter) str(s string) {
@@ -352,8 +219,8 @@ func (l *lobbyConn) onUserData(task byte, r *bdReader) []byte {
 	return nil
 }
 
-// pidOnline returns the Nextendo PID of a connected player identified by id (PID or
-// device/NSA identifier), or 0. Used by the Crash Team Racing code.
+// pidOnline returns the PID of a connected player identified by id, or 0.
+// Used by the Crash Team Racing code.
 func pidOnline(id uint64) uint64 {
 	if p := onlinePlayerFor(id); p != nil {
 		return p.PID

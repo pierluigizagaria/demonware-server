@@ -1,29 +1,27 @@
-# PS4 platform support
+# PS4 fork
 
 Base: `c3400c312a739cf7598204a981156959910ed874` from
 [NextendoNetwork/nextendo-demonware](https://github.com/NextendoNetwork/nextendo-demonware).
-License unchanged: PolyForm Shield. Nintendo admission, gates and tests are kept.
-Protocol, matchmaking and storage changes (encrypted frame sequence, seat
-handling, SQLite economy and leaderboards) apply to both platforms.
+License unchanged: PolyForm Shield.
 
-Crash Team Racing Nitro-Fueled on PS4 (CUSA13795, Demonware title 5760) speaks
-the same Demonware protocol as the Switch version: handshake, 128-byte ticket and
-the service 145/138/12 tasks. Only platform identity differs. This branch adds a
-PS4 identity adapter in front of the existing auth handler and runs PS4 traffic
-through the same dispatcher, matchmaking engine and CTR services as Switch.
+This fork serves only Crash Team Racing Nitro-Fueled on PS4 (CUSA13795,
+Demonware title 5760), whose players sign in through shadNet. The PS4 game
+speaks the same Demonware protocol as the Switch version (handshake, 128-byte
+ticket, the service 145/138/12 tasks), so it runs through the original
+dispatcher, matchmaking engine and CTR services. The Nintendo sign-in, account
+gates, presence reporting and console friend lookups were removed. The Diablo
+III code is kept unchanged but is unreachable: only CTR PS4 tickets are issued.
 
 ## Design
 
 | Piece | Where | Behavior |
 | --- | --- | --- |
-| Platform boundary | `platform.go` | `platformAuthenticator` (identity, auth extra data, policy); one installed at startup |
-| Nintendo | `platform_nintendo.go` | Original identity/gates; zero policy keeps original admission |
-| PS4 | `platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL and cached for 5 minutes, renewed in the background during the last minute, issuer/audience/title/scopes, 60 s clock leeway) |
-| Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | PS4 policy: lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity; a missing response signer fails closed. PS4 tickets live in memory by session tag (the auth handler, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. The original admission keeps its `sessions/` files |
-| PS4 tasks | `platform_tasks.go`, `services.go` | 38/6 identity report; raw bandwidth completion; 12/10 getUserIDs (shared: online players, then the name each player was last issued a ticket under, from `player_names` in `ctr.sqlite`; never used for admission). Friend IDs are shadNet account IDs: no baas-proxy aliases or nextendo-account lookups |
-| PS4 marketplace | `ctr_marketplace.go`, `ctr_rewards.go`, platform boundary | Shared 80/245,165,154 use `octane_psn` and owner `psn`; purchases accept only original PS4 SDK defaults. 80/246 and unknown PS4 tasks fail without ledger writes. Nintendo keeps `octane_switch`/`nintendo` and its upstream fallback. |
-| Unlock-all option | `ctr_economy_policy.go`, `main.go` | Opt-in full catalog ownership is computed at read time. Known-SKU purchases debit nothing and write nothing; unknown SKUs fail. `meta.unlock_all` fixes the mode for the database, independently of platform or admission. Startup logs `unlock-all: on` or `unlock-all: off`. |
-| Economy storage | `ctr_sqlite.go`, `ctr_economy.go` | One `ctr.sqlite` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction and writes only changed rows. Race receipts and online seconds older than nine days, beyond the seven-day reward window, are never loaded and are deleted when that account next saves (an inactive account keeps its expired rows). |
+| PS4 identity | `platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL and cached for 5 minutes, renewed in the background during the last minute, issuer/audience/title/scopes, 60 s clock leeway) |
+| Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | Lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity; a missing response signer fails closed. Tickets live in memory by session tag (the auth handler, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. No session files and no all-zero handshake key |
+| PS4 tasks | `platform_tasks.go`, `services.go` | 38/6 identity report; raw bandwidth completion; 12/10 getUserIDs (online players, then the name each player was last issued a ticket under, from `player_names` in `ctr.sqlite`; never used for admission). Friend IDs are shadNet account IDs |
+| Marketplace | `ctr_marketplace.go`, `ctr_rewards.go` | 80/245,165,154 use `octane_psn` and owner `psn`; purchases accept only original PS4 SDK defaults. 80/246 (Switch only) and unknown tasks fail without ledger writes |
+| Unlock-all option | `ctr_economy_policy.go`, `main.go` | Opt-in full catalog ownership is computed at read time. Known-SKU purchases debit nothing and write nothing; unknown SKUs fail. `meta.unlock_all` fixes the mode for the database, independently of admission. Startup logs `unlock-all: on` or `unlock-all: off`. |
+| Economy storage | `ctr_sqlite.go`, `ctr_economy.go` | One `<DATA_DIR>/ctr.sqlite` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction and writes only changed rows. Race receipts and online seconds older than nine days, beyond the seven-day reward window, are never loaded and are deleted when that account next saves (an inactive account keeps its expired rows). |
 | Leaderboards | `ctr_sqlite.go`, `ctr_stats.go`, `main.go` | bdStats shares `ctr.sqlite` with the economy, keeping the original table, batch transactions and ranking. Rank pages and entity reads run in SQL on an index matching the ranking order. The upstream JSON store remains the reference for the contract test. |
 | Engine | `ctr_async.go`, `ctr_merge.go` | Every player holds one seat. Party members are the leader's unverified claim, so a search whose claimed followers already hold a seat is refused; the check and the reservation are atomic before the success reply. A leader's new search replaces only its own searches and seat (`detach`, shared with disconnects); a stale connection's disconnect releases no seat the account's newer connection may hold; disbanding an old lobby ends no search. Party followers who leave lose only their seat and the host gets the new membership; explicit merge-eligibility flags; merges cancelled when a source closes or membership changes; handoff before backfill |
 | Diagnostics | `diagnostic_redaction.go` | `NEXTENDO_REDACT_LOGS` (default on) keeps only numeric and boolean log arguments (errors show their type) and disables raw dumps |
@@ -42,18 +40,17 @@ values are the client's statement: the server prevents duplicate claims, not
 invented races or occurrences. The auth listener bounds reading each request
 (headers 15 s, whole request 30 s) and refuses incomplete bodies.
 
-## Running the PS4 server
+## Running the server
 
-PS4 is selected when `CTR_AUTH_CONFIG` is set. Copy `config/auth.example.json`
-to a private location and fill in the issuer, the registered client/title, the
-exact granted scopes and the trusted `jwks_url` of the shadNet instance.
+Copy `config/auth.example.json` to a private location and fill in the issuer,
+the registered client/title, the exact granted scopes and the trusted
+`jwks_url` of the shadNet instance. `example.env` lists every variable.
 
 | Variable | Purpose |
 | --- | --- |
-| `CTR_AUTH_CONFIG` | shadNet trust policy (selects the PS4 platform) |
+| `CTR_AUTH_CONFIG` | Required shadNet trust policy |
 | `CTR_AUTH_SIGNING_KEY` | Required RSA key for the CTR response signature (the client must trust its public key) |
-| `D3_SESSIONS` | Ticket files of the original admission; PS4 writes none |
-| `CTR_WALLETS` | Instance state directory (default `wallets`): `ctr.sqlite` contains the economy, ledger, mode, leaderboards and player names. PS4 uses `<CTR_WALLETS>/<issuer namespace>/ctr.sqlite`; Nintendo uses `<CTR_WALLETS>/ctr.sqlite`. |
+| `DATA_DIR` | Persistent state directory (default `data`): `ctr.sqlite` holds the economy, ledger, mode, leaderboards and player names. |
 | `CTR_UNLOCK_ALL` | Optional instance-wide unlock-all: unset, `0`, `false` = off; `1`, `true` = on. Any other value fails startup. The database records the mode and refuses a different one. |
 | `CTR_START_BALANCE` | Initial Wumpa Coins for new accounts (default `0`); existing balances are preserved. |
 | `AUTH_PORT`, `CERT_FILE`, `KEY_FILE` | HTTPS auth listener |
@@ -69,7 +66,7 @@ on `PATH` for response signing.
 ## Two publisher servers
 
 An unlock-all server and a normal economy server are two processes with their own
-`CTR_WALLETS`, listeners and matchmaking pools. Both may trust the
+`DATA_DIR`, listeners and matchmaking pools. Both may trust the
 same shadNet issuer. Nothing is shared between them. Unlock-all covers Pit Stop
 content only; save-owned unlocks stay with the save. The game caches marketplace
 inventory in the save, so give each server its own profile and save.
@@ -77,10 +74,14 @@ inventory in the save, so give each server its own profile and save.
 The database starts fresh: no old wallet JSON, leaderboard database or policy
 marker is imported, read, moved or deleted at runtime. The JSON implementations
 remain only as references for upstream tests. Schema version 2 is recorded with
-`PRAGMA user_version`. A version 1 database only gains `player_names`, in the
-same transaction that checks the mode; other versions are refused. Schema creation and the
-`meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` row `unlock_all=0|1` commit
-together. A missing, invalid or conflicting mode fails closed on reopen.
+`PRAGMA user_version`. Schema creation and the
+`meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` rows `unlock_all=0|1` and
+`trust_id` commit together. The trust ID is a hash of the issuer, client ID and
+title in `CTR_AUTH_CONFIG`: shadNet account IDs are unique only within it, so a
+database refuses to open for another one. A missing, invalid or conflicting mode
+or trust ID fails closed on reopen. A version 1 database gains `player_names`
+and adopts the configured trust ID in the same transaction that checks its
+mode; other versions are refused.
 
 Economy and leaderboard stores share one connection with WAL, `synchronous=FULL`
 and a 5-second busy timeout. PIDs use their signed 64-bit bit pattern. Challenge
@@ -118,3 +119,19 @@ go test -tags=integration -run TestShadNetPublisherInterop .   # needs SHADNET_I
 
 The integration test consumes tokens from a running native shadNet issuer and
 checks verification, the signed response, ticket issuance and lobby admission.
+
+## Following upstream
+
+Fixes from the original repository are merged with `git merge`, so the fork
+keeps the upstream layout:
+
+- New behavior lives in files the fork owns: `platform_psn.go`,
+  `platform_tasks.go`, `tickets.go`, `ctr_sqlite.go`, `ctr_economy_policy.go`,
+  `diagnostic_redaction.go`, `instance_lock_*.go`, `internal/` and their tests.
+- Nintendo-only upstream files are deleted: `identity.go`, `gates.go`,
+  `accountlookup.go`, `presence.go` and their tests. An upstream change to one
+  of them is a modify/delete conflict; keep the deletion.
+- Shared upstream files keep their functions and signatures; only the Nintendo
+  branches and values were removed or replaced (for example `octane_switch`
+  and `nintendo` became the PS4 constants in `platform_psn.go`).
+- Diablo III files are unchanged, so their upstream fixes apply as they are.

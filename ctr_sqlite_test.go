@@ -14,9 +14,11 @@ import (
 	"time"
 )
 
+const testTrustID = "test-trust"
+
 func openTestCTR(t *testing.T, path string, unlockAll bool) *ctrSQLite {
 	t.Helper()
-	db, err := openCTRSQLite(path, unlockAll)
+	db, err := openCTRSQLite(path, unlockAll, testTrustID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -492,8 +494,12 @@ func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 			if err := db.db.QueryRow("SELECT value FROM meta WHERE key='unlock_all'").Scan(&mode); err != nil {
 				t.Fatal(err)
 			}
-			if mode != map[bool]string{false: "0", true: "1"}[unlockAll] || sqliteCount(t, db, "meta") != 1 {
-				t.Fatalf("meta row: %q", mode)
+			var trust string
+			if err := db.db.QueryRow("SELECT value FROM meta WHERE key='trust_id'").Scan(&trust); err != nil {
+				t.Fatal(err)
+			}
+			if mode != map[bool]string{false: "0", true: "1"}[unlockAll] || trust != testTrustID || sqliteCount(t, db, "meta") != 2 {
+				t.Fatalf("meta rows: %q %q", mode, trust)
 			}
 			if err := db.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 				t.Fatal(err)
@@ -513,14 +519,14 @@ func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 			db.Close()
 			db = openTestCTR(t, path, unlockAll)
 			db.Close()
-			if other, err := openCTRSQLite(path, !unlockAll); err == nil {
+			if other, err := openCTRSQLite(path, !unlockAll, testTrustID); err == nil {
 				other.Close()
 				t.Fatal("mode mismatch accepted")
 			}
 			db = openTestCTR(t, path, unlockAll)
 			sqliteExec(t, db, fmt.Sprintf("PRAGMA user_version = %d", ctrSchemaVersion+1))
 			db.Close()
-			if newer, err := openCTRSQLite(path, unlockAll); err == nil {
+			if newer, err := openCTRSQLite(path, unlockAll, testTrustID); err == nil {
 				newer.Close()
 				t.Fatal("newer schema accepted")
 			}
@@ -532,7 +538,7 @@ func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 			db := openTestCTR(t, path, false)
 			sqliteExec(t, db, statement)
 			db.Close()
-			if reopened, err := openCTRSQLite(path, false); err == nil {
+			if reopened, err := openCTRSQLite(path, false, testTrustID); err == nil {
 				reopened.Close()
 				t.Fatal("missing/invalid mode accepted")
 			}
@@ -577,7 +583,7 @@ func TestSQLiteStartsFreshAndFixesStartingBalance(t *testing.T) {
 func TestSQLiteRefusesSecondInstance(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ctrDB)
 	db := openTestCTR(t, path, false)
-	if other, err := openCTRSQLite(path, false); err == nil {
+	if other, err := openCTRSQLite(path, false, testTrustID); err == nil {
 		other.Close()
 		t.Fatal("second instance opened the same database")
 	}
