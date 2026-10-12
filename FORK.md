@@ -73,15 +73,16 @@ inventory in the save, so give each server its own profile and save.
 
 The database starts fresh: no old wallet JSON, leaderboard database or policy
 marker is imported, read, moved or deleted at runtime. The JSON implementations
-remain only as references for upstream tests. Schema version 3 is recorded with
-`PRAGMA user_version`. Schema creation and the
+remain only as references for upstream tests. The initial schema is version 1,
+recorded with `PRAGMA user_version`. Schema creation and the
 `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` rows `unlock_all=0|1` and
 `trust_id` commit together. The trust ID is a hash of the issuer, client ID and
 title in `CTR_AUTH_CONFIG`: shadNet account IDs are unique only within it, so a
 database refuses to open for another one. A missing, invalid or conflicting mode
-or trust ID fails closed on reopen. A version 1 or 2 database gains what it
-lacks (`player_names`, then the trust ID, adopting the configured one) in the
-same transaction that checks its mode; other versions are refused.
+or trust ID fails closed on reopen. Player names and the trust binding are part
+of the initial schema. Other versions are refused; there is no migration from
+the discarded pre-release lab schemas. Back up that state and start with a fresh
+database when installing this version.
 
 Economy and leaderboard stores share one connection with WAL, `synchronous=FULL`
 and a 5-second busy timeout. PIDs use their signed 64-bit bit pattern. Challenge

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -79,32 +80,32 @@ func TestPlayerNamesSurviveRestart(t *testing.T) {
 	}
 }
 
-func TestCTRSchemaUpgradeAdoptsTrust(t *testing.T) {
-	for _, old := range []int{1, 2} {
+func TestCTRSchemaRefusesPreReleaseVersions(t *testing.T) {
+	for _, old := range []int{2, 3} {
 		path := filepath.Join(t.TempDir(), ctrDB)
 		db := openTestCTR(t, path, false)
-		if old == 1 {
-			sqliteExec(t, db, "DROP TABLE player_names")
-		}
-		sqliteExec(t, db, "DELETE FROM meta WHERE key = 'trust_id'")
 		sqliteExec(t, db, fmt.Sprintf("PRAGMA user_version = %d", old))
-		db.Close()
-		if other, err := openCTRSQLite(path, true, testTrustID); err == nil {
-			other.Close()
-			t.Fatalf("version %d: mode mismatch accepted during the upgrade", old)
-		}
-		db = openTestCTR(t, path, false)
-		var version int
-		if err := db.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != ctrSchemaVersion {
-			t.Fatalf("version %d upgraded to %d, %v", old, version, err)
-		}
 		if err := db.rememberName(9, "Fixture", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		db.Close()
-		if other, err := openCTRSQLite(path, false, "another-issuer"); err == nil {
+		if other, err := openCTRSQLite(path, false, testTrustID); err == nil {
 			other.Close()
-			t.Fatalf("version %d: upgraded database did not keep the adopted trust ID", old)
+			t.Fatalf("pre-release schema %d accepted", old)
+		}
+		// A refused open must leave the old database recoverable.
+		check, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { check.Close() })
+		var version int
+		if err := check.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != old {
+			t.Fatalf("version %d changed to %d, %v", old, version, err)
+		}
+		var name string
+		if err := check.QueryRow("SELECT name FROM player_names WHERE pid = 9").Scan(&name); err != nil || name != "Fixture" {
+			t.Fatalf("refused database lost its name: %q, %v", name, err)
 		}
 	}
 }

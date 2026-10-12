@@ -92,8 +92,7 @@ func readLeaderboard(store leaderboardStore, task byte, board uint32, start uint
 
 const ctrDB = "ctrnf.db"
 
-// Version 2 added player_names; version 3 binds the database to a trust ID.
-const ctrSchemaVersion = 3
+const ctrSchemaVersion = 1
 
 // awardRaces accepts events from the last seven days, five minutes ahead at
 // most. A race receipt or a day's online seconds last written more than nine
@@ -176,7 +175,7 @@ func (s *ctrSQLite) initialize(unlockAll bool, trustID string) error {
 	switch version {
 	case 0:
 		// No old files are read or imported. Schema and mode commit together.
-		if _, err := tx.Exec(ctrSchema + playerNamesSchema); err != nil {
+		if _, err := tx.Exec(ctrSchema); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('unlock_all', ?), ('trust_id', ?)`, want, trustID); err != nil {
@@ -185,21 +184,7 @@ func (s *ctrSQLite) initialize(unlockAll bool, trustID string) error {
 		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, ctrSchemaVersion)); err != nil {
 			return err
 		}
-	case 1, 2, ctrSchemaVersion:
-		if version == 1 {
-			if _, err := tx.Exec(playerNamesSchema); err != nil {
-				return err
-			}
-		}
-		if version < ctrSchemaVersion {
-			// Earlier versions predate the binding: they adopt the configured trust ID.
-			if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('trust_id', ?)`, trustID); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, ctrSchemaVersion)); err != nil {
-				return err
-			}
-		}
+	case ctrSchemaVersion:
 		var trusted string
 		if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'trust_id'`).Scan(&trusted); err != nil {
 			return fmt.Errorf("read trust ID: %w", err)
@@ -307,11 +292,8 @@ CREATE TABLE leaderboard (
 	PRIMARY KEY (board, pid)
 ) WITHOUT ROWID;
 CREATE INDEX leaderboard_rank ON leaderboard(board, score DESC, pid < 0, pid);
-`
-
-// The latest name each player was issued a ticket under. It only answers
-// 12/10 lookups: admission never reads it.
-const playerNamesSchema = `
+-- The latest name each player was issued a ticket under. It only answers
+-- 12/10 lookups: admission never reads it.
 CREATE TABLE player_names (
 	pid INTEGER PRIMARY KEY,
 	name TEXT NOT NULL,
