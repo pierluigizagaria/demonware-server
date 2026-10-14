@@ -66,18 +66,18 @@ type Session struct {
 	Tickets  *auth.TicketStore
 	Clock    func() time.Time
 	Entropy  io.Reader
-	C        net.Conn
+	conn     net.Conn
 	N        uint64
 	dumpDir  string
 
-	MaxLen   uint32
-	Nonce    []byte
-	Payload1 []byte // the sent 0x81's payload, for the transcript
+	maxLen   uint32
+	nonce    []byte
+	payload1 []byte // the sent 0x81's payload, for the transcript
 
-	Keys     *demonware.SessionKeys
+	keys     *demonware.SessionKeys
 	Player   *platform.PlayerID
-	S2CSeq   uint32
-	C2SSeq   uint32 // last accepted client frame number
+	s2cSeq   uint32
+	c2sSeq   uint32 // last accepted client frame number
 	sendMu   sync.Mutex
 	msgSeen  int
 	stateMu  sync.Mutex
@@ -114,13 +114,13 @@ func (l *Session) readFull(n int) ([]byte, error) {
 		return nil, net.ErrClosed
 	}
 	// Long: a connection kept silent must last as long as the game keeps it.
-	if l.Keys == nil {
-		_ = l.C.SetReadDeadline(time.Now().Add(15 * time.Second))
+	if l.keys == nil {
+		_ = l.conn.SetReadDeadline(time.Now().Add(15 * time.Second))
 	} else {
-		_ = l.C.SetReadDeadline(time.Time{})
+		_ = l.conn.SetReadDeadline(time.Time{})
 	}
 	l.stateMu.Unlock()
-	_, err := io.ReadFull(l.C, b)
+	_, err := io.ReadFull(l.conn, b)
 	return b, err
 }
 
@@ -130,7 +130,7 @@ func (l *Session) RequestStop() {
 	l.stateMu.Lock()
 	defer l.stateMu.Unlock()
 	l.stopping = true
-	_ = l.C.SetReadDeadline(time.Now())
+	_ = l.conn.SetReadDeadline(time.Now())
 }
 
 func (l *Session) isStopping() bool {
@@ -141,12 +141,12 @@ func (l *Session) isStopping() bool {
 
 // readFrame returns the RAW frame (length included), nil for a keepalive.
 func (l *Session) readFrame() ([]byte, error) {
-	return demonware.ReadFrame(l.readFull, l.MaxLen)
+	return demonware.ReadFrame(l.readFull, l.maxLen)
 }
 
 func (l *Session) send(b []byte) error {
-	_ = l.C.SetWriteDeadline(time.Now().Add(15 * time.Second))
-	_, err := l.C.Write(b)
+	_ = l.conn.SetWriteDeadline(time.Now().Add(15 * time.Second))
+	_, err := l.conn.Write(b)
 	return err
 }
 
@@ -159,10 +159,10 @@ func (l *Session) dump(tag string, b []byte) {
 }
 
 func (l *Session) run() {
-	defer l.C.Close()
+	defer l.conn.Close()
 	defer l.Table.CloseSession(l)
 	defer l.Presence.DropOnline(l.N)
-	l.logf("==== CONNECT from=%s", l.C.RemoteAddr())
+	l.logf("==== CONNECT from=%s", l.conn.RemoteAddr())
 
 	hello, err := l.readFull(demonware.HelloLen)
 	if err != nil {
@@ -175,17 +175,17 @@ func (l *Session) run() {
 		l.logf("unexpected hello: %v", err)
 		return
 	}
-	l.MaxLen = h.MaxFrame
-	l.Nonce = h.Nonce[:]
-	l.logf("hello ok: versions 210..220 maxFrame=0x%X nonce=%X", l.MaxLen, l.Nonce)
+	l.maxLen = h.MaxFrame
+	l.nonce = h.Nonce[:]
+	l.logf("hello ok: versions 210..220 maxFrame=0x%X nonce=%X", l.maxLen, l.nonce)
 
 	// 0x81: version | server identifier (conn+0x268, surfaced to the game in
 	// the "connected" event) | 8 bytes the client only skips over.
 	id := 0x0D3000000000 + l.Options.serverIDs.Add(1)
 	var pad [8]byte
 	_, _ = rand.Read(pad[:])
-	l.Payload1 = demonware.ServerHelloPayload(id, pad)
-	if err := l.send(demonware.Frame(append([]byte{demonware.MsgServerHi}, l.Payload1...))); err != nil {
+	l.payload1 = demonware.ServerHelloPayload(id, pad)
+	if err := l.send(demonware.Frame(append([]byte{demonware.MsgServerHi}, l.payload1...))); err != nil {
 		l.logf("send 0x81: %v", err)
 		return
 	}
@@ -217,11 +217,11 @@ func (l *Session) run() {
 		l.dump(fmt.Sprintf("in%02d_%02x", l.msgSeen, body[0]), raw)
 
 		switch {
-		case l.Keys == nil && body[0] == demonware.MsgClientAuth:
+		case l.keys == nil && body[0] == demonware.MsgClientAuth:
 			if !l.OnClientAuth(raw) {
 				return
 			}
-		case l.Keys == nil:
+		case l.keys == nil:
 			l.logf("type 0x%02X before the handshake:\n%s", body[0], hex.Dump(raw))
 		default:
 			l.OnEncrypted(raw)
@@ -238,7 +238,7 @@ func (l *Session) OnClientAuth(raw []byte) bool {
 	}
 	tag := raw[len(raw)-8:]
 
-	transcript := demonware.HandshakeTranscript(l.MaxLen, l.Nonce, l.Payload1, raw[:len(raw)-8])
+	transcript := demonware.HandshakeTranscript(l.maxLen, l.nonce, l.payload1, raw[:len(raw)-8])
 
 	candidates := l.Candidates(raw)
 	for _, cand := range candidates {
@@ -249,7 +249,9 @@ func (l *Session) OnClientAuth(raw []byte) bool {
 			}
 			k := demonware.DeriveKeys(transcript, k24)
 			if hmac.Equal(k.ClientTag[:], tag) {
-				l.Keys = &k
+				l.stateMu.Lock()
+				l.keys = &k
+				l.stateMu.Unlock()
 				l.logf("0x82 AUTHENTICATED — key=%s rsa=%v", cand.name, wrapped)
 				if tk := demonware.FindTicket(raw); tk != nil {
 					l.LoadIdentity(tk)
@@ -311,18 +313,22 @@ func (l *Session) OnEncrypted(raw []byte) {
 		l.logf("encrypted frame rejected: %v", err)
 		return
 	}
-	if !encrypted.Verify(l.Keys.C2SMAC) {
+	if !encrypted.Verify(l.keys.C2SMAC) {
 		l.logf("msg 0x%02X seq=%d invalid MAC, ignored", encrypted.Type, encrypted.Sequence)
 		return
 	}
 	// Preserve the CTR-confirmed sequence policy, including consuming an
 	// authenticated malformed payload's sequence before attempting to decode it.
-	if encrypted.Sequence != l.C2SSeq+1 {
-		l.logf("msg 0x%02X seq=%d expected %d, ignored", encrypted.Type, encrypted.Sequence, l.C2SSeq+1)
+	l.stateMu.Lock()
+	expected := l.c2sSeq + 1
+	if encrypted.Sequence != expected {
+		l.stateMu.Unlock()
+		l.logf("msg 0x%02X seq=%d expected %d, ignored", encrypted.Type, encrypted.Sequence, expected)
 		return
 	}
-	l.C2SSeq = encrypted.Sequence
-	message, err := encrypted.Decrypt(l.Keys.C2SAES)
+	l.c2sSeq = encrypted.Sequence
+	l.stateMu.Unlock()
+	message, err := encrypted.Decrypt(l.keys.C2SAES)
 	if err != nil {
 		l.logf("msg 0x%02X seq=%d decrypt: %v", encrypted.Type, encrypted.Sequence, err)
 		return
@@ -389,10 +395,10 @@ func (l *Session) sendEncrypted(innerType byte, payload []byte) error {
 	if _, err := rand.Read(iv); err != nil {
 		return err
 	}
-	out, err := demonware.EncodeEncrypted(l.S2CSeq+1, innerType, payload, iv, l.Keys.S2CAES, l.Keys.S2CMAC)
+	out, err := demonware.EncodeEncrypted(l.s2cSeq+1, innerType, payload, iv, l.keys.S2CAES, l.keys.S2CMAC)
 	if err != nil {
 		return err
 	}
-	l.S2CSeq++
+	l.s2cSeq++
 	return l.send(out)
 }

@@ -81,7 +81,7 @@ func TestGuestTicketsReachLobbyAndUmbrella(t *testing.T) {
 			t.Fatal("guest ticket lost its identity")
 		}
 		l := handshake(t, ticket)
-		if l.Keys == nil || l.Player == nil || l.Player.Kind != "guest" || l.Player.PID != want {
+		if !l.ChannelSnapshot().Established || l.Player == nil || l.Player.Kind != "guest" || l.Player.PID != want {
 			t.Fatal("anonymous lobby handshake failed")
 		}
 		if testPresence.NicknameOnline(want) != id.Username {

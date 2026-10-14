@@ -210,7 +210,7 @@ func marketplaceFrames(t *testing.T, l *lobbyConn, wire *platformWire) [][]byte 
 		frames = append(frames, append([]byte{message.Type}, message.Payload...))
 		raw = raw[size:]
 	}
-	if len(frames) != 0 && previous != l.S2CSeq {
+	if len(frames) != 0 && previous != l.ChannelSnapshot().ServerSequence {
 		t.Fatal("last server sequence not recorded")
 	}
 	return frames

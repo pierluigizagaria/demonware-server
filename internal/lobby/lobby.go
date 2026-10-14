@@ -27,7 +27,7 @@ type Server struct {
 	Presence *presence.Store
 	Replies  *ReplyCounter
 
-	IDs     *atomic.Uint64
+	ids     *atomic.Uint64
 	Monitor sessionTelemetry
 	Options *Options
 
@@ -38,8 +38,14 @@ type Server struct {
 	workers   sync.WaitGroup
 }
 
+// NewServer wires one instance without opening listeners or starting workers.
+// ids and options are shared pointers; their atomics are never copied.
+func NewServer(cfg config.Config, table *ServiceTable, diag *diagnostics.Diagnostics, tickets *auth.TicketStore, presenceStore *presence.Store, replies *ReplyCounter, ids *atomic.Uint64, monitor sessionTelemetry, options *Options) *Server {
+	return &Server{Cfg: cfg, Table: table, Diag: diag, Tickets: tickets, Presence: presenceStore, Replies: replies, ids: ids, Monitor: monitor, Options: options, sessions: map[*Session]struct{}{}}
+}
+
 func (server *Server) NewConn(c net.Conn, dumps string) *Session {
-	return &Session{Table: server.Table, Telemetry: server.Monitor, Diagnostics: server.Diag, Options: server.Options, ReplyCounter: server.Replies, Presence: server.Presence, Tickets: server.Tickets, C: c, N: server.IDs.Add(1), dumpDir: dumps}
+	return &Session{Table: server.Table, Telemetry: server.Monitor, Diagnostics: server.Diag, Options: server.Options, ReplyCounter: server.Replies, Presence: server.Presence, Tickets: server.Tickets, conn: c, N: server.ids.Add(1), dumpDir: dumps}
 }
 
 func (server *Server) Start() error {

@@ -31,7 +31,7 @@ func sharedPS4Lobby() (*Session, *sessionWire) {
 	wire := &sessionWire{}
 	keys := demonware.DeriveKeys([]byte("synthetic fixture"), make([]byte, 24))
 	replies := &ReplyCounter{}
-	return &Session{C: wire, N: 1, Keys: &keys, Player: &platform.PlayerID{PID: 17, Title: 5760},
+	return &Session{conn: wire, N: 1, keys: &keys, Player: &platform.PlayerID{PID: 17, Title: 5760},
 		Diagnostics: &diagnostics.Diagnostics{RedactLogs: true}, Telemetry: &fixtureTelemetry{}, Options: &Options{},
 		ReplyCounter: replies, Table: &ServiceTable{Replies: replies}, Tickets: auth.NewTicketStore(), Presence: presence.NewStore(nil)}, wire
 }

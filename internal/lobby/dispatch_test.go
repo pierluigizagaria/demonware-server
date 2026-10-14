@@ -17,7 +17,7 @@ func clientFrame(t *testing.T, l *Session, seq uint32, task []byte) []byte {
 		pt = append(pt, 0)
 	}
 	iv := make([]byte, 16)
-	ct, err := demonware.EncryptCBC(l.Keys.C2SAES, iv, pt)
+	ct, err := demonware.EncryptCBC(l.keys.C2SAES, iv, pt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func clientFrame(t *testing.T, l *Session, seq uint32, task []byte) []byte {
 	body = append(append(body, iv...), ct...)
 	out := binary.LittleEndian.AppendUint32(nil, uint32(1+len(body)+8))
 	out = append(append(out, demonware.FrameFlag), body...)
-	return append(out, demonware.HMACSHA1(l.Keys.C2SMAC, out)[:8]...)
+	return append(out, demonware.HMACSHA1(l.keys.C2SMAC, out)[:8]...)
 }
 
 func TestEncryptedFramesFollowClientSequence(t *testing.T) {
@@ -59,12 +59,12 @@ func TestEncryptedFrameRejectionPreservesSequencePolicy(t *testing.T) {
 	tampered[len(tampered)-1] ^= 1
 	for _, raw := range [][]byte{first[:20], tampered} {
 		l.OnEncrypted(raw)
-		if w.Len() != 0 || l.C2SSeq != 0 {
+		if w.Len() != 0 || l.c2sSeq != 0 {
 			t.Fatal("unauthenticated or truncated frame consumed a sequence or replied")
 		}
 	}
 	l.OnEncrypted(first)
-	if w.Len() == 0 || l.C2SSeq != 1 {
+	if w.Len() == 0 || l.c2sSeq != 1 {
 		t.Fatal("valid frame refused after rejection")
 	}
 	w.Reset()
@@ -74,19 +74,19 @@ func TestEncryptedFrameRejectionPreservesSequencePolicy(t *testing.T) {
 	malformed := clientFrame(t, l, 2, task)
 	pt := make([]byte, 16)
 	binary.LittleEndian.PutUint32(pt, ^uint32(0))
-	ct, err := demonware.EncryptCBC(l.Keys.C2SAES, malformed[10:26], pt)
+	ct, err := demonware.EncryptCBC(l.keys.C2SAES, malformed[10:26], pt)
 	if err != nil {
 		t.Fatal(err)
 	}
 	copy(malformed[26:], ct)
 	n := len(malformed) - 8
-	copy(malformed[n:], demonware.HMACSHA1(l.Keys.C2SMAC, malformed[:n])[:8])
+	copy(malformed[n:], demonware.HMACSHA1(l.keys.C2SMAC, malformed[:n])[:8])
 	l.OnEncrypted(malformed)
-	if w.Len() != 0 || l.C2SSeq != 2 {
+	if w.Len() != 0 || l.c2sSeq != 2 {
 		t.Fatal("authenticated malformed frame changed sequence policy")
 	}
 	l.OnEncrypted(clientFrame(t, l, 3, task))
-	if w.Len() == 0 || l.C2SSeq != 3 {
+	if w.Len() == 0 || l.c2sSeq != 3 {
 		t.Fatal("next valid frame refused after malformed payload")
 	}
 }

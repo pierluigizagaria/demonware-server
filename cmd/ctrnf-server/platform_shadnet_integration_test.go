@@ -115,7 +115,7 @@ func TestShadNetPublisherInterop(t *testing.T) {
 		}
 		l := handshake(t, ticket)
 		testPresence.DropOnline(l.N)
-		if l.Keys == nil || l.Player == nil || l.Player.PID != user.ID {
+		if !l.ChannelSnapshot().Established || l.Player == nil || l.Player.PID != user.ID {
 			t.Fatal("lobby did not admit the issued ticket")
 		}
 	}

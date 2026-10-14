@@ -60,6 +60,6 @@ func newInstance(cfg config.Config, database *store.SQLite) *serverInstance {
 	i.monitor = dashboard.NewTelemetry(cfg, i.nat.Introductions)
 	replies := &lobby.ReplyCounter{}
 	table, _ := ctr.NewServiceTable(replies, i.ctr, i.presence, i.registry, i.matchmaker, cfg.PubfilesDir, i.relay)
-	i.lobby = &lobby.Server{Table: table, Cfg: cfg, Diag: diag, Tickets: i.tickets, Presence: i.presence, Replies: replies, IDs: ids, Monitor: i.monitor, Options: &lobby.Options{MigrateEnabled: cfg.Migrate, PublicHost: cfg.PublicIP}}
+	i.lobby = lobby.NewServer(cfg, table, diag, i.tickets, i.presence, replies, ids, i.monitor, &lobby.Options{MigrateEnabled: cfg.Migrate, PublicHost: cfg.PublicIP})
 	return i
 }

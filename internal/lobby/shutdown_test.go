@@ -43,7 +43,7 @@ func TestShutdownInterruptsIdleAndPartialLobbyReads(t *testing.T) {
 			defer server.Close()
 			defer client.Close()
 			keys := demonware.DeriveKeys([]byte("synthetic transcript"), make([]byte, 24))
-			l := &Session{C: server, Keys: &keys}
+			l := &Session{conn: server, keys: &keys}
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
@@ -87,7 +87,7 @@ func TestShutdownFinishesAdmittedReplyAndCallback(t *testing.T) {
 					}
 				}}
 			})
-			l := &Session{C: server, Keys: &keys, Diagnostics: &diagnostics.Diagnostics{RedactLogs: true}, ReplyCounter: replies,
+			l := &Session{conn: server, keys: &keys, Diagnostics: &diagnostics.Diagnostics{RedactLogs: true}, ReplyCounter: replies,
 				Presence: presence.NewStore(nil), Telemetry: &shutdownTelemetry{}, Table: &ServiceTable{Replies: replies, Handlers: map[byte]TaskHandler{1: handler}}}
 			go func() { defer close(done); l.ProcessTask([]byte{1, 3, 1}) }()
 			awaitShutdown(t, entered)
@@ -142,7 +142,7 @@ func (*shutdownListener) Addr() net.Addr { return &net.TCPAddr{} }
 
 func TestLobbyShutdownJoinsRegisteredConnections(t *testing.T) {
 	monitor := &shutdownTelemetry{registered: make(chan struct{}), unregistered: make(chan struct{})}
-	s := &Server{Diag: &diagnostics.Diagnostics{RedactLogs: true}, IDs: &atomic.Uint64{}, Monitor: monitor,
+	s := &Server{Diag: &diagnostics.Diagnostics{RedactLogs: true}, ids: &atomic.Uint64{}, Monitor: monitor,
 		Table: &ServiceTable{}, Presence: presence.NewStore(nil)}
 	ln := &shutdownListener{conns: make(chan net.Conn), done: make(chan struct{})}
 	if !s.startListener(ln, "") {

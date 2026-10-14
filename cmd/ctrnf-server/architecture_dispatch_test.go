@@ -66,7 +66,7 @@ func architectureFrames(t *testing.T, l *lobbyConn, w *architectureWire, before 
 		}
 		out = append(out, architectureFrame{frame.Sequence, message.Type, hex.EncodeToString(message.Payload), w.fail != i+1})
 	}
-	if l.S2CSeq != before+uint32(len(w.writes)) {
+	if l.ChannelSnapshot().ServerSequence != before+uint32(len(w.writes)) {
 		t.Fatal("write failure changed sequence increment point")
 	}
 	return out

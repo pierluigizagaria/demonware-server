@@ -1,6 +1,8 @@
 package ctr
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestMatchmakingObservationDoesNotExposeQueue(t *testing.T) {
 	m := NewMatchmaker(nil)

@@ -20,7 +20,7 @@ func architectureCall(t *testing.T, l *lobbyConn, w *architectureWire, payload [
 	t.Helper()
 	w.Reset()
 	w.writes = nil
-	before := l.S2CSeq
+	before := l.ChannelSnapshot().ServerSequence
 	l.onTask(payload)
 	frames := architectureFrames(t, l, w, before)
 	if l.AfterReplyActive {
@@ -317,7 +317,7 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	search(a, aw)
 	aw.writes = nil
 	aw.Reset()
-	beforeA := a.S2CSeq
+	beforeA := a.ChannelSnapshot().ServerSequence
 	search(b, bw)
 	frames := architectureFrames(t, a, aw, beforeA)
 	if len(frames) != 1 || frames[0].Inner != demonware.InnerPush {
@@ -340,7 +340,7 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	}
 	bw.writes = nil
 	bw.Reset()
-	beforeB := b.S2CSeq
+	beforeB := b.ChannelSnapshot().ServerSequence
 	q := demonware.NewWriter([]byte{145, 3, 15})
 	q.Uint64(roomID)
 	q.Uint64(version)

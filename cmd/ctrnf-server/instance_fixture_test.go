@@ -231,13 +231,20 @@ func TestComposedInstancesKeepEqualIdentitiesIndependent(t *testing.T) {
 		// Mutating the caller's copy cannot rewrite the instance configuration.
 		cfg.News.Languages["it"] = config.NewsMessage{}
 		w := &architectureWire{}
-		l := &lobbyConn{Session: instance.lobby.NewConn(w, ""), lobbyDependencies: lobbyDependencies{files: testFiles, relay: instance.relay, matchmaker: instance.matchmaker, registry: instance.registry, ctr: instance.ctr}}
+		l := &lobbyConn{C: w, Session: instance.lobby.NewConn(w, ""), lobbyDependencies: lobbyDependencies{files: testFiles, relay: instance.relay, matchmaker: instance.matchmaker, registry: instance.registry, ctr: instance.ctr}}
 		fixture, _ := sharedPS4Lobby()
-		l.Keys, l.Player = fixture.Keys, fixture.Player
+		l.Player = fixture.Player
 		l.Player.Username = text
 		now := time.Now()
 		ticket := psnTicket(now)
 		instance.tickets.RememberTicket(ticket, *l.Player, now, ps4.TicketWindow)
+		raw, keys := fixtureClientAuth(ticket)
+		if !l.OnClientAuth(raw) || !l.ChannelSnapshot().Established {
+			t.Fatal("instance session proof failed")
+		}
+		l.Keys = &keys
+		w.writes = nil
+		w.Reset()
 		if err := instance.presence.RememberPlayerName(*l.Player, now); err != nil {
 			t.Fatal(err)
 		}

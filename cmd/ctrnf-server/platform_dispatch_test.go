@@ -36,8 +36,9 @@ func (*platformWire) SetWriteDeadline(time.Time) error { return nil }
 
 func sharedPS4Lobby() (*lobbyConn, *platformWire) {
 	wire := &platformWire{}
-	k := demonware.DeriveKeys([]byte("synthetic transcript"), make([]byte, 24))
-	return newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 909090, C: wire, Keys: &k, Player: &platform.PlayerID{PID: 17, Username: "fixture", Title: 5760, Kind: "shadnet", Sub: "shadnet:17"}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR}), wire
+	l := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 909090, Player: &platform.PlayerID{PID: 17, Username: "fixture", Title: 5760, Kind: "shadnet", Sub: "shadnet:17"}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	l.C = wire
+	return l, wire
 }
 
 func sharedTask(t *testing.T, l *lobbyConn, w *platformWire, p []byte) []byte {

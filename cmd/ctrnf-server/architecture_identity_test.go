@@ -24,7 +24,7 @@ func TestArchitectureIdentityDoubleRead(t *testing.T) {
 	ticket := psnTicket(now)
 	issueTestTicket(ticket, platform.PlayerID{PID: 17, Username: "fixture", Title: 5760})
 	l, _ := sharedPS4Lobby()
-	l.Keys, l.Player = nil, nil
+	l.Player = nil
 	raw := demonware.Frame(append(append([]byte{demonware.MsgClientAuth}, ticket...), make([]byte, 8)...))
 	candidates := l.Candidates(raw)
 	if len(candidates) != 2 {
@@ -35,10 +35,10 @@ func TestArchitectureIdentityDoubleRead(t *testing.T) {
 	// verification itself has no additional ticket-directory dependency.
 	other := psnTicket(now.Add(ps4.TicketWindow + auth.IssuedIdentityGrace))
 	testTickets.RememberTicket(other, platform.PlayerID{PID: 17}, now.Add(ps4.TicketWindow+auth.IssuedIdentityGrace), ps4.TicketWindow)
-	k := demonware.DeriveKeys([]byte("synthetic verified transcript"), candidates[0].Key24)
-	l.Keys = &k
+	// The fixture has already established a key through a valid proof.
+	// Pruning cannot clear it when the second identity lookup now fails.
 	l.LoadIdentity(ticket)
-	if l.Keys == nil || l.Player != nil {
+	if !l.ChannelSnapshot().Established || l.Player != nil {
 		t.Fatal("double-read baseline changed")
 	}
 	if fresh := l.Candidates(raw); len(fresh) != 0 {

@@ -12,15 +12,15 @@ func TestInstanceReplyCountersAreIsolated(t *testing.T) {
 	first.ReplyCounter, second.ReplyCounter = &ReplyCounter{}, &ReplyCounter{}
 	for _, l := range []*Session{first, second, first} {
 		w := &sessionWire{}
-		l.C = w
+		l.conn = w
 		l.Table = &ServiceTable{Replies: l.ReplyCounter}
-		before := l.S2CSeq
+		before := l.s2cSeq
 		l.ProcessTask([]byte{255, 3, 1})
 		frame, err := demonware.ParseEncryptedFrame(w.Bytes())
-		if err != nil || frame.Sequence != before+1 || !frame.Verify(l.Keys.S2CMAC) {
+		if err != nil || frame.Sequence != before+1 || !frame.Verify(l.keys.S2CMAC) {
 			t.Fatal("invalid reply frame")
 		}
-		message, err := frame.Decrypt(l.Keys.S2CAES)
+		message, err := frame.Decrypt(l.keys.S2CAES)
 		if err != nil || message.Type != demonware.InnerTaskReply {
 			t.Fatal("invalid reply payload")
 		}
