@@ -73,12 +73,14 @@ type LobbySession struct {
 	Nonce    []byte
 	Payload1 []byte // the sent 0x81's payload, for the transcript
 
-	Keys    *demonwarepkg.SessionKeys
-	Player  *platformpkg.PlayerID
-	S2cSeq  uint32
-	C2sSeq  uint32 // last accepted client frame number
-	sendMu  sync.Mutex
-	msgSeen int
+	Keys     *demonwarepkg.SessionKeys
+	Player   *platformpkg.PlayerID
+	S2cSeq   uint32
+	C2sSeq   uint32 // last accepted client frame number
+	sendMu   sync.Mutex
+	msgSeen  int
+	stateMu  sync.Mutex
+	stopping bool
 
 	// Sent after the in-flight task reply (pushed messages).
 	AfterReplyActive bool
@@ -105,14 +107,35 @@ func (l *LobbySession) logf(format string, a ...any) {
 
 func (l *LobbySession) readFull(n int) ([]byte, error) {
 	b := make([]byte, n)
+	l.stateMu.Lock()
+	if l.stopping {
+		l.stateMu.Unlock()
+		return nil, net.ErrClosed
+	}
 	// Long: a connection kept silent must last as long as the game keeps it.
 	if l.Keys == nil {
 		_ = l.C.SetReadDeadline(time.Now().Add(15 * time.Second))
 	} else {
 		_ = l.C.SetReadDeadline(time.Time{})
 	}
+	l.stateMu.Unlock()
 	_, err := io.ReadFull(l.C, b)
 	return b, err
+}
+
+// Only operator shutdown sets stopping. Established sessions have no idle or
+// elapsed-time deadline; an active handler retains its write opportunity.
+func (l *LobbySession) RequestStop() {
+	l.stateMu.Lock()
+	defer l.stateMu.Unlock()
+	l.stopping = true
+	_ = l.C.SetReadDeadline(time.Now())
+}
+
+func (l *LobbySession) isStopping() bool {
+	l.stateMu.Lock()
+	defer l.stateMu.Unlock()
+	return l.stopping
 }
 
 // readFrame returns the RAW frame (length included), nil for a keepalive.
@@ -169,6 +192,9 @@ func (l *LobbySession) run() {
 
 	for {
 		raw, err := l.readFrame()
+		if l.isStopping() {
+			return
+		}
 		if err != nil {
 			if err != io.EOF {
 				l.logf("end: %v", err)

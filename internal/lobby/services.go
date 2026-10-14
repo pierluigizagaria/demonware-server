@@ -68,6 +68,11 @@ func (l *LobbySession) sendPush(event uint32, build func(w *demonwarepkg.Writer)
 
 // onTask handles a decrypted request. payload = bytes after the inner type.
 func (l *LobbySession) ProcessTask(payload []byte) {
+	// This check linearizes task admission with RequestStop. Once admitted,
+	// the session worker owns the whole reply and AfterReply operation.
+	if l.isStopping() {
+		return
+	}
 	if len(payload) == 18 && payload[0] == 18 && payload[1] == 1 && payload[2] == 0 && payload[3] == 1 {
 		_ = l.sendEncrypted(demonwarepkg.InnerTaskReply, l.TaskReply(1, ErrUnhandled, nil))
 		return
