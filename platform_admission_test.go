@@ -168,7 +168,7 @@ func TestCTRFollowerLeaveKeepsPartyAndNotifiesHost(t *testing.T) {
 	leader := r.players[1]
 	leader.doc.Members = []uint64{leader.pid, 30009}
 	leader.seats = 2
-	follower := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 30009, player: &playerID{PID: 30009}}
+	follower := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 30009, player: &playerID{PID: 30009}}
 	version := r.version
 	out := m.leave(follower, 0)
 	if len(out) != 1 || out[0].conn != r.host.conn || out[0].event != ctrUpdateLobby || r.version != version+1 {

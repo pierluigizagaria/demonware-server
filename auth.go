@@ -31,23 +31,21 @@ import (
 // bdAuth ticket magic, read from the NSO (rodata 0xF07FB8): bytes DE AD BD EF.
 const ticketMagic uint32 = 0xEFBDADDE
 
-var authReqNum atomic.Uint64
-
-func serveAuth(platform publisherPlatform, tickets *ticketStore, presence *presenceStore) error {
-	ctrSigner, err := loadCTRAuthSigner(signingKeyFile)
+func serveAuth(platform publisherPlatform, tickets *ticketStore, presence *presenceStore, cfg serverConfig, diag *diagnostics, monitor *telemetry) error {
+	ctrSigner, err := loadCTRAuthSigner(cfg.signingKey)
 	if err != nil {
 		return err
 	}
 	if ctrSigner == nil {
 		return fmt.Errorf("CTR_AUTH_SIGNING_KEY is required")
 	}
-	diagnosticLogf("[CTR Auth] signed replies enabled (client trust mod required)")
-	dumps := runDumpDir("auth")
+	diag.diagnosticLogf("[CTR Auth] signed replies enabled (client trust mod required)")
+	dumps := diag.runDumpDir("auth")
 
-	h := newPlatformAuthHandler(tickets, presence, platform, ctrSigner, dumps)
+	h := newPlatformAuthHandler(diag, monitor, tickets, presence, platform, ctrSigner, dumps)
 
 	srv := &http.Server{
-		Addr:    net.JoinHostPort(bindAddr, strconv.Itoa(authPort)),
+		Addr:    net.JoinHostPort(cfg.bindAddr, strconv.Itoa(cfg.authPort)),
 		Handler: h,
 		// The client is an embedded 2018 curl: don't require TLS 1.2+.
 		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS10},
@@ -62,35 +60,36 @@ func serveAuth(platform publisherPlatform, tickets *ticketStore, presence *prese
 		return err
 	}
 	// Behind sni-router: the PROXY header carries the player's address (proxyproto.go).
-	if proxyProtocol {
+	if cfg.proxyProtocol {
 		ln = newProxyListener(ln)
 	}
-	diagnosticLogf("[D3 Auth] listening HTTPS :%d (proxyProto=%v, cert=%s)", authPort, proxyProtocol, certFile)
-	return srv.ServeTLS(ln, certFile, keyFile)
+	diag.diagnosticLogf("[D3 Auth] listening HTTPS :%d (proxyProto=%v, cert=%s)", cfg.authPort, cfg.proxyProtocol, cfg.certFile)
+	return srv.ServeTLS(ln, cfg.certFile, cfg.keyFile)
 }
 
-func newPlatformAuthHandler(tickets *ticketStore, presence *presenceStore, platform publisherPlatform, ctrSigner *ctrAuthSigner, dumps string) http.Handler {
+func newPlatformAuthHandler(diag *diagnostics, monitor *telemetry, tickets *ticketStore, presence *presenceStore, platform publisherPlatform, ctrSigner *ctrAuthSigner, dumps string) http.Handler {
+	var authReqNum atomic.Uint64
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := authReqNum.Add(1)
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		r.Body.Close()
 		if err != nil {
-			diagnosticLogf("[D3 Auth] #%d body: %v", n, err)
+			diag.diagnosticLogf("[D3 Auth] #%d body: %v", n, err)
 			http.Error(w, "incomplete request", http.StatusBadRequest)
 			return
 		}
 		if r.URL.Path == "/v1.0/tokens/lsg/" {
-			handleCTRUmbrella(tickets, w, r, body, n, dumps)
+			handleCTRUmbrella(diag, tickets, w, r, body, n, dumps)
 			return
 		}
 
 		// Request line only: the body carries the player's NSA id_token.
-		diagnosticLogf("[D3 Auth] #%d %s %s%s from %s (%d bytes)", n, r.Method, r.Host, r.URL.RequestURI(), r.RemoteAddr, len(body))
-		if !redactLogs && dumps != "" && len(body) > 0 {
+		diag.diagnosticLogf("[D3 Auth] #%d %s %s%s from %s (%d bytes)", n, r.Method, r.Host, r.URL.RequestURI(), r.RemoteAddr, len(body))
+		if !diag.redactLogs && dumps != "" && len(body) > 0 {
 			name := fmt.Sprintf("%03d_%s_%s.bin", n, r.Method,
 				strings.NewReplacer("/", "_", "?", "_", "&", "_", ":", "_").Replace(strings.TrimPrefix(r.URL.RequestURI(), "/")))
 			if err := os.WriteFile(filepath.Join(dumps, name), body, 0o644); err != nil {
-				diagnosticLogf("[D3 Auth] dump: %v", err)
+				diag.diagnosticLogf("[D3 Auth] dump: %v", err)
 			}
 		}
 
@@ -114,12 +113,12 @@ func newPlatformAuthHandler(tickets *ticketStore, presence *presenceStore, platf
 		id, identityErr := platform.Authenticate(body)
 		if identityErr != nil {
 			reason := "platform verification failed"
-			diagnosticLogf("[D3 Auth] #%d %q pid=%d kind=%s REFUSED (%s)", n, id.Username, id.PID, id.Kind, reason)
+			diag.diagnosticLogf("[D3 Auth] #%d %q pid=%d kind=%s REFUSED (%s)", n, id.Username, id.PID, id.Kind, reason)
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		if ctrSigner == nil {
-			diagnosticLogf("[D3 Auth] #%d refused: responses must be signed", n)
+			diag.diagnosticLogf("[D3 Auth] #%d refused: responses must be signed", n)
 			http.Error(w, "authentication signing unavailable", http.StatusInternalServerError)
 			return
 		}
@@ -162,7 +161,7 @@ func newPlatformAuthHandler(tickets *ticketStore, presence *presenceStore, platf
 		binary.LittleEndian.PutUint64(clientTicket[17:], userID)
 		binary.LittleEndian.PutUint64(clientTicket[25:], expiry)
 		if _, err := rand.Read(clientTicket[33:97]); err != nil { // session key
-			diagnosticLogf("[D3 Auth] rand: %v", err)
+			diag.diagnosticLogf("[D3 Auth] rand: %v", err)
 		}
 		// +97 [24]: the lobby key. The lobby connection (0xBFC8F0) copies a
 		// config block whose bytes 0x88..0xA0 become conn+0x100, the key that
@@ -181,7 +180,7 @@ func newPlatformAuthHandler(tickets *ticketStore, presence *presenceStore, platf
 		tickets.rememberTicket(clientTicket, id, time.Now(), ticketWindow)
 		// 12/10 resolves friends by the names they were issued a ticket under.
 		if err := presence.rememberPlayerName(id, time.Now()); err != nil {
-			diagnosticLogf("[D3 Auth] #%d player name not recorded: %v", n, err)
+			diag.diagnosticLogf("[D3 Auth] #%d player name not recorded: %v", n, err)
 		}
 
 		ivSeed := req.IVSeed
@@ -231,15 +230,15 @@ func newPlatformAuthHandler(tickets *ticketStore, presence *presenceStore, platf
 		if isCTRTitle(titleID) && ctrSigner != nil {
 			signature, err := ctrSigner.sign(out)
 			if err != nil {
-				diagnosticLogf("[CTR Auth] %v", err)
+				diag.diagnosticLogf("[CTR Auth] %v", err)
 				http.Error(w, "authentication signing failed", http.StatusInternalServerError)
 				return
 			}
 			w.Header().Set("X-Signature", signature)
 		}
 
-		loginsTotal.Add(1)
-		diagnosticLogf("[D3 Auth] #%d %q pid=%d kind=%s -> 200 code=700 auth_task=%s", n, id.Username, id.PID, id.Kind, authTask)
+		monitor.loginsTotal.Add(1)
+		diag.diagnosticLogf("[D3 Auth] #%d %q pid=%d kind=%s -> 200 code=700 auth_task=%s", n, id.Username, id.PID, id.Kind, authTask)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(out)

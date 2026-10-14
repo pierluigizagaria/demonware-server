@@ -185,26 +185,26 @@ func clampGameDate(s string) (string, bool) {
 }
 
 // clampDates applies clampGameDate to every date in c.
-func clampDates(c *pubConfig) {
+func (provider *publisherFiles) clampDates(c *pubConfig) {
 	for name, d := range map[string]*string{
 		"season_start": &c.SeasonStart, "season_end": &c.SeasonEnd,
 		"buff_start": &c.BuffStart, "buff_end": &c.BuffEnd,
 	} {
 		if fixed, changed := clampGameDate(*d); changed {
-			diagnosticLogf("[D3 Pubfiles] %s %q is past 19 Jan 2038, which the game cannot hold: using %q", name, *d, fixed)
+			provider.diagnosticLogf("[D3 Pubfiles] %s %q is past 19 Jan 2038, which the game cannot hold: using %q", name, *d, fixed)
 			*d = fixed
 		}
 	}
 }
 
-func loadPubConfig(path string) (pubConfig, error) {
+func (provider *publisherFiles) loadPubConfig(path string) (pubConfig, error) {
 	c := defaultPubConfig()
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		// First run: write the default file so there is something to edit,
 		// rather than failing.
 		if werr := os.WriteFile(path, defaultPubfiles, 0o644); werr == nil {
-			diagnosticLogf("[D3 Pubfiles] %s created with defaults", path)
+			provider.diagnosticLogf("[D3 Pubfiles] %s created with defaults", path)
 		}
 		return c, nil
 	}
@@ -214,13 +214,13 @@ func loadPubConfig(path string) (pubConfig, error) {
 	if err := json.Unmarshal(stripJSONComments(raw), &c); err != nil {
 		return c, fmt.Errorf("%s: %w", path, err)
 	}
-	clampDates(&c)
+	provider.clampDates(&c)
 	return c, nil
 }
 
 // writePubfiles generates the three files from cfgPath into outDir.
-func writePubfiles(cfgPath, outDir string) error {
-	cfg, err := loadPubConfig(cfgPath)
+func (provider *publisherFiles) writePubfiles(cfgPath, outDir string) error {
+	cfg, err := provider.loadPubConfig(cfgPath)
 	if err != nil {
 		return err
 	}
@@ -253,20 +253,20 @@ func writePubfiles(cfgPath, outDir string) error {
 		}
 	}
 	if len(on) == 0 {
-		diagnosticLogf("[D3 Pubfiles] %s: season %d, no community event", outDir, cfg.Season)
+		provider.diagnosticLogf("[D3 Pubfiles] %s: season %d, no community event", outDir, cfg.Season)
 	} else {
-		diagnosticLogf("[D3 Pubfiles] %s: season %d, events: %s", outDir, cfg.Season, strings.Join(on, ", "))
+		provider.diagnosticLogf("[D3 Pubfiles] %s: season %d, events: %s", outDir, cfg.Season, strings.Join(on, ", "))
 	}
 	return nil
 }
 
 // pubfilesHandler serves the generated files read-only (dashboard port):
 // /pubfiles/ lists them, /pubfiles/<name> returns one.
-func pubfilesHandler(w http.ResponseWriter, r *http.Request) {
+func (provider *publisherFiles) pubfilesHandler(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/pubfiles/")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	if name == "" {
-		entries, _ := os.ReadDir(pubDir)
+		entries, _ := os.ReadDir(provider.pubDir)
 		for _, e := range entries {
 			fmt.Fprintf(w, "/pubfiles/%s\n", e.Name())
 		}
@@ -276,18 +276,23 @@ func pubfilesHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if b, _, ok := generatedPubfile(name, time.Now()); ok {
+	if b, _, ok := provider.generatedPubfile(name, time.Now()); ok {
 		_, _ = w.Write(b)
 		return
 	}
-	if b, _, ok := riftFile(name, time.Now()); ok {
+	if b, _, ok := provider.riftFile(name, time.Now()); ok {
 		_, _ = w.Write(b)
 		return
 	}
-	b, err := os.ReadFile(filepath.Join(pubDir, name))
+	b, err := os.ReadFile(filepath.Join(provider.pubDir, name))
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	_, _ = w.Write(b)
+}
+
+type publisherFiles struct {
+	*diagnostics
+	pubDir, pubConfigPath, riftDir string
 }

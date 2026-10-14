@@ -39,8 +39,8 @@ import (
 // bdCommonAddr. Empty means nobody, so turning the ports on alone changes nothing for
 // anyone; "*" means everyone. It exists so the relay can be proven on one account before
 // it is allowed near the ~69% of rooms that already connect directly.
-func relayFor(joinerPID uint64) bool {
-	list := strings.TrimSpace(relayPIDs)
+func (relay *relayTable) relayFor(joinerPID uint64) bool {
+	list := strings.TrimSpace(relay.pids)
 	if list == "" {
 		return false
 	}
@@ -66,6 +66,7 @@ const (
 var emptySlot = [4]byte{0, 255, 0, 255}
 
 type relayPair struct {
+	table              *relayTable
 	port               int
 	hostPID, joinerPID uint64
 	host               *net.UDPAddr // the host's public endpoint, from its own hostAddr
@@ -74,29 +75,33 @@ type relayPair struct {
 }
 
 type relayTable struct {
-	mu     sync.Mutex
-	pairs  map[string]*relayPair // "hostPID:joinerPID" -> pair
-	byPort map[int]*relayPair
-	low    int
-	high   int
-	next   int
-	ip     net.IP
+	*diagnostics
+	bindAddr, pids string
+	mu             sync.Mutex
+	pairs          map[string]*relayPair // "hostPID:joinerPID" -> pair
+	byPort         map[int]*relayPair
+	low            int
+	high           int
+	next           int
+	ip             net.IP
 }
 
-var relay = &relayTable{pairs: map[string]*relayPair{}, byPort: map[int]*relayPair{}}
+func newRelayTable(diag *diagnostics, bindAddr, pids string) *relayTable {
+	return &relayTable{diagnostics: diag, bindAddr: bindAddr, pids: pids, pairs: map[string]*relayPair{}, byPort: map[int]*relayPair{}}
+}
 
-func relayEnabled() bool { return relay.high >= relay.low && relay.low > 0 }
+func (relay *relayTable) relayEnabled() bool { return relay.high >= relay.low && relay.low > 0 }
 
-func startCTRRelay(low, high int, host string, onlinePIDs func() []uint64) {
+func (relay *relayTable) startCTRRelay(low, high int, host string, onlinePIDs func() []uint64) {
 	ip := net.ParseIP(host).To4()
 	if ip == nil || low <= 0 || high < low {
-		diagnosticLogf("[CTR Relay] disabled (host=%q ports %d-%d)", host, low, high)
+		relay.diagnosticLogf("[CTR Relay] disabled (host=%q ports %d-%d)", host, low, high)
 		return
 	}
 	relay.mu.Lock()
 	relay.low, relay.high, relay.next, relay.ip = low, high, low, ip
 	relay.mu.Unlock()
-	diagnosticLogf("[CTR Relay] enabled on %s:%d-%d", ip, low, high)
+	relay.diagnosticLogf("[CTR Relay] enabled on %s:%d-%d", ip, low, high)
 	go relay.reap(onlinePIDs)
 }
 
@@ -132,11 +137,11 @@ func hostPublicAddr(hostAddr []byte) *net.UDPAddr {
 // withRelay returns a copy of hostAddr with a relay endpoint written into the first free
 // relay slot, allocating a port for this (host, joiner) pair. The original is returned
 // unchanged when the relay is off or the blob is not a bdCommonAddr.
-func withRelay(hostAddr []byte, hostPID, joinerPID uint64) []byte {
-	if !relayEnabled() || len(hostAddr) < commonAddrLen || hostPID == 0 || joinerPID == 0 || hostPID == joinerPID {
+func (relay *relayTable) withRelay(hostAddr []byte, hostPID, joinerPID uint64) []byte {
+	if !relay.relayEnabled() || len(hostAddr) < commonAddrLen || hostPID == 0 || joinerPID == 0 || hostPID == joinerPID {
 		return hostAddr
 	}
-	if !relayFor(joinerPID) {
+	if !relay.relayFor(joinerPID) {
 		return hostAddr
 	}
 	dst := hostPublicAddr(hostAddr)
@@ -155,7 +160,7 @@ func withRelay(hostAddr []byte, hostPID, joinerPID uint64) []byte {
 			continue // already occupied
 		}
 		writeAddrSlot(out[off:off+relayAddrLen], &net.UDPAddr{IP: relay.ip, Port: p.port})
-		diagnosticLogf("[CTR Relay] offered :%d to pid=%d for host=%d (slot %d)", p.port, joinerPID, hostPID, slot)
+		relay.diagnosticLogf("[CTR Relay] offered :%d to pid=%d for host=%d (slot %d)", p.port, joinerPID, hostPID, slot)
 		return out
 	}
 	return hostAddr
@@ -183,17 +188,17 @@ func (t *relayTable) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *rela
 		if _, busy := t.byPort[port]; busy {
 			continue
 		}
-		conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP(bindAddr), Port: port})
+		conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP(t.bindAddr), Port: port})
 		if err != nil {
 			continue
 		}
-		p := &relayPair{port: port, hostPID: hostPID, joinerPID: joinerPID, host: host, conn: conn}
+		p := &relayPair{table: t, port: port, hostPID: hostPID, joinerPID: joinerPID, host: host, conn: conn}
 		t.pairs[key], t.byPort[port] = p, p
 		go p.serve()
-		diagnosticLogf("[CTR Relay] pair %d<->%d on :%d (host %s)", hostPID, joinerPID, port, host)
+		t.diagnosticLogf("[CTR Relay] pair %d<->%d on :%d (host %s)", hostPID, joinerPID, port, host)
 		return p
 	}
-	diagnosticLogf("[CTR Relay] no free port for %d<->%d", hostPID, joinerPID)
+	t.diagnosticLogf("[CTR Relay] no free port for %d<->%d", hostPID, joinerPID)
 	return nil
 }
 
@@ -206,15 +211,15 @@ func (p *relayPair) serve() {
 		if err != nil {
 			return
 		}
-		relay.mu.Lock()
+		p.table.mu.Lock()
 		host, joiner := p.host, p.joiner
 		fromHost := host != nil && src.IP.Equal(host.IP) && src.Port == host.Port
 		if !fromHost && (joiner == nil || !src.IP.Equal(joiner.IP) || src.Port != joiner.Port) {
 			p.joiner, joiner = src, src
-			diagnosticLogf("[CTR Relay] :%d FIRST PACKET from %s (%d bytes) — the game DOES use relay slots",
+			p.table.diagnosticLogf("[CTR Relay] :%d FIRST PACKET from %s (%d bytes) — the game DOES use relay slots",
 				p.port, src, n)
 		}
-		relay.mu.Unlock()
+		p.table.mu.Unlock()
 
 		var to *net.UDPAddr
 		if fromHost {

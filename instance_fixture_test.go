@@ -16,11 +16,11 @@ import (
 var testTickets = newTicketStore()
 
 func testAuthHandler(p publisherPlatform, s *ctrAuthSigner, dumps string) http.Handler {
-	return newPlatformAuthHandler(testTickets, testPresence, p, s, dumps)
+	return newPlatformAuthHandler(testDiagnostics, testTelemetry, testTickets, testPresence, p, s, dumps)
 }
 
 func testUmbrellaHandler(w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
-	handleCTRUmbrella(testTickets, w, r, body, n, dumps)
+	handleCTRUmbrella(testDiagnostics, testTickets, w, r, body, n, dumps)
 }
 
 func TestInstanceTicketDirectoriesAreIsolated(t *testing.T) {
@@ -41,10 +41,12 @@ func TestInstanceTicketDirectoriesAreIsolated(t *testing.T) {
 
 var testPresence = newPresenceStore(nil)
 
-func init()                    { testMatchmaker.onlinePIDs = testPresence.onlinePIDs }
-func testBuildStats() apiStats { return buildStats(testPresence, testMatchmaker, testRegistry) }
+func init() { testMatchmaker.onlinePIDs = testPresence.onlinePIDs }
+func testBuildStats() apiStats {
+	return testTelemetry.buildStats(testPresence, testMatchmaker, testRegistry)
+}
 func testBuildGameStats(game string) apiStats {
-	return buildGameStats(testPresence, testMatchmaker, testRegistry, game)
+	return testTelemetry.buildGameStats(testPresence, testMatchmaker, testRegistry, game)
 }
 
 func TestInstancePresenceAndPersistentNamesAreIsolated(t *testing.T) {
@@ -129,7 +131,7 @@ func TestInstanceReplyCountersAreIsolated(t *testing.T) {
 var testStartBalance int64
 var testCTR = &ctrServices{economy: &economyStore{initialBalance: func() int64 { return testStartBalance }}, stats: &ctrStatsStore{}}
 
-func testLoadWallets() { testCTR.economy.loadWallets(dataDir) }
+func testLoadWallets() { testCTR.economy.loadWallets(testConfig.dataDir) }
 
 func init() {
 	testCTR.stats.(*ctrStatsStore).fallbackDir = func() string { return testCTR.economy.dir }
@@ -219,4 +221,27 @@ func TestInstanceContextRegistriesAreIsolated(t *testing.T) {
 	if a.sessions[id].owner != 0 || b.sessions[id].owner != 17 {
 		t.Fatal("registry disconnect crossed instances")
 	}
+}
+
+var testDiagnostics = &diagnostics{redactLogs: true, dumpRoot: "off", runStamp: time.Now().Format("20060102-150405")}
+var testFiles = &publisherFiles{diagnostics: testDiagnostics, pubDir: "pubfiles", pubConfigPath: "pubfiles.json", riftDir: "riftdata"}
+var testOptions = &lobbyOptions{publicHost: "127.0.0.1"}
+var testRelay = newRelayTable(testDiagnostics, "", "")
+
+var testConfig = func() serverConfig {
+	c, err := loadConfig(func(string) string { return "" }, nil, false)
+	if err != nil {
+		panic(err)
+	}
+	return c
+}()
+var testNAT = &natServer{}
+var testTelemetry = newTelemetry(testConfig, testNAT.natIntros.Load)
+
+func testApplyConfig(c serverConfig) {
+	testConfig = c
+	testDiagnostics.redactLogs, testDiagnostics.verbose, testDiagnostics.dumpRoot = c.redactLogs, c.verbose, c.dumps
+	testFiles.pubDir, testFiles.pubConfigPath, testFiles.riftDir = c.pubfilesDir, c.pubfilesConfig, c.riftData
+	testOptions.migrateEnabled, testOptions.publicHost = c.migrate, c.publicIP
+	testRelay.bindAddr, testRelay.pids = c.bindAddr, c.relayPIDs
 }

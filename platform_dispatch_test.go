@@ -30,7 +30,7 @@ func (*platformWire) SetWriteDeadline(time.Time) error { return nil }
 func sharedPS4Lobby() (*lobbyConn, *platformWire) {
 	wire := &platformWire{}
 	k := demonware.DeriveKeys([]byte("synthetic transcript"), make([]byte, 24))
-	return &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 909090, c: wire, keys: &k, player: &playerID{PID: 17, Username: "fixture", Title: 5760, Kind: "shadnet", Sub: "shadnet:17"}}, wire
+	return &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 909090, c: wire, keys: &k, player: &playerID{PID: 17, Username: "fixture", Title: 5760, Kind: "shadnet", Sub: "shadnet:17"}}, wire
 }
 func sharedTask(t *testing.T, l *lobbyConn, w *platformWire, p []byte) []byte {
 	t.Helper()
@@ -113,23 +113,23 @@ func TestSharedPS4AuthUsesInjectedVerifier(t *testing.T) {
 	}
 }
 func TestGlobalRedactionDefault(t *testing.T) {
-	if !redactLogs {
+	if !testDiagnostics.redactLogs {
 		t.Skip("explicit diagnostic opt-out")
 	}
-	if d := runDumpDir("platform-redaction-test"); d != "" {
+	if d := testDiagnostics.runDumpDir("platform-redaction-test"); d != "" {
 		t.Fatal("raw dumps enabled under global redaction")
 	}
 }
 
 func TestRedactedLogsKeepNumbersAndHideSecrets(t *testing.T) {
-	if !redactLogs {
+	if !testDiagnostics.redactLogs {
 		t.Skip("explicit diagnostic opt-out")
 	}
 	var out bytes.Buffer
 	old := log.Writer()
 	log.SetOutput(&out)
 	defer log.SetOutput(old)
-	diagnosticLogf("task=%d ok=%t key=%X name=%q", 145, true, []byte{0xAB, 0xCD}, "player")
+	testDiagnostics.diagnosticLogf("task=%d ok=%t key=%X name=%q", 145, true, []byte{0xAB, 0xCD}, "player")
 	if got := out.String(); !strings.Contains(got, "task=145 ok=true key=<redacted> name=<redacted>") || strings.Contains(got, "ABCD") || strings.Contains(got, "player") {
 		t.Fatal("unexpected redaction: " + got)
 	}
@@ -140,7 +140,7 @@ func TestRedactedLogsKeepNumbersAndHideSecrets(t *testing.T) {
 	}
 	addr := &net.TCPAddr{IP: net.IPv4(203, 0, 113, 7), Port: 3074}
 	err := &net.OpError{Op: "read", Net: "tcp", Addr: addr, Err: errors.New("reset")}
-	diagnosticLogf("hits=%v map=%v from=%s err=%v", []hit{{1, "player"}}, map[string]int{"player": 1}, addr, err)
+	testDiagnostics.diagnosticLogf("hits=%v map=%v from=%s err=%v", []hit{{1, "player"}}, map[string]int{"player": 1}, addr, err)
 	if got := out.String(); strings.Contains(got, "player") || strings.Contains(got, "203.0.113.7") || !strings.Contains(got, "err=<*net.OpError>") {
 		t.Fatal("structured values or error text leaked: " + got)
 	}

@@ -3,18 +3,24 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"reflect"
 )
 
 // NEXTENDO_REDACT_LOGS, on unless set to 0 or false (config.go).
-var redactLogs = true
+type diagnostics struct {
+	redactLogs         bool
+	verbose            bool
+	dumpRoot, runStamp string
+}
 
 // diagnosticLogf keeps numbers and booleans, which identify tasks, sizes and
 // outcomes, and the type of an error. Everything else is withheld: strings,
 // byte slices, structs, maps, addresses and error texts can carry tickets,
 // keys, tokens, request bodies, addresses and names.
-func diagnosticLogf(format string, args ...any) {
-	if redactLogs {
+func (d *diagnostics) diagnosticLogf(format string, args ...any) {
+	if d.redactLogs {
 		safe := make([]any, len(args))
 		for i, arg := range args {
 			safe[i] = redactArg(arg)
@@ -41,3 +47,17 @@ type redacted struct{ marker string }
 
 // Format prints the marker for every verb, including %X and %q.
 func (r redacted) Format(f fmt.State, _ rune) { _, _ = f.Write([]byte(r.marker)) }
+
+// runDumpDir returns this run's capture directory for one component, "" when
+// captures are off.
+func (d *diagnostics) runDumpDir(component string) string {
+	if d.redactLogs || d.dumpRoot == "off" || d.dumpRoot == "0" {
+		return ""
+	}
+	dir := filepath.Join(d.dumpRoot, d.runStamp, component)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		d.diagnosticLogf("[D3] dumps %s: %v", dir, err)
+		return ""
+	}
+	return dir
+}

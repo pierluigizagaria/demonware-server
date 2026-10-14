@@ -26,50 +26,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 )
-
-// Defaults; applyConfig replaces them with the validated settings (config.go).
-var (
-	// NEXTENDO_HOST: the server's IPv4 address as the players see it,
-	// announced in NAT discovery replies.
-	nextendoHost = "127.0.0.1"
-	authPort     = 8460
-	lobbyPorts   = "3074,3075,3076,3077,3078,3079,3080"
-	natPort      = 3074
-	certFile     = "cert.pem"
-	keyFile      = "key.pem"
-	// BIND_ADDR restricts the network listeners (default: all interfaces).
-	bindAddr string
-
-	// DATA_DIR: persistent state, ctrnf.db (economy, leaderboards, player names).
-	dataDir = "data"
-	// D3_PUBFILES_CONFIG drives the three files written to D3_PUBFILES.
-	pubConfigPath = "pubfiles.json"
-	pubDir        = "pubfiles"
-
-	// D3_DUMPS: raw captures (auth bodies, every lobby frame) under
-	// <D3_DUMPS>/<start>/. off disables them.
-	dumpRoot = "off"
-	// D3_VERBOSE logs every decrypted lobby message as a hex dump.
-	verbose bool
-
-	runStamp = time.Now().Format("20060102-150405")
-)
-
-// runDumpDir returns this run's capture directory for one component, "" when
-// captures are off.
-func runDumpDir(component string) string {
-	if redactLogs || dumpRoot == "off" || dumpRoot == "0" {
-		return ""
-	}
-	dir := filepath.Join(dumpRoot, runStamp, component)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		diagnosticLogf("[D3] dumps %s: %v", dir, err)
-		return ""
-	}
-	return dir
-}
 
 func main() {
 	// Logs on stdout like the other game servers (the launchers redirect it to
@@ -91,10 +50,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("[D3] configuration:\n%v", err)
 	}
-	applyConfig(cfg)
+	diag := &diagnostics{redactLogs: cfg.redactLogs, verbose: cfg.verbose, dumpRoot: cfg.dumps, runStamp: time.Now().Format("20060102-150405")}
+	files := &publisherFiles{diagnostics: diag, pubDir: cfg.pubfilesDir, pubConfigPath: cfg.pubfilesConfig, riftDir: cfg.riftData}
 
 	if pubfilesOnly {
-		if err := writePubfiles(pubConfigPath, pubDir); err != nil {
+		if err := files.writePubfiles(cfg.pubfilesConfig, cfg.pubfilesDir); err != nil {
 			log.Fatalf("[D3 Pubfiles] %v", err)
 		}
 		return
@@ -105,12 +65,12 @@ func main() {
 		log.Fatalf("[D3] publisher admission: %v", err)
 	}
 	log.Printf("[D3] admission: %s", cfg.admission)
-	if err := writePubfiles(pubConfigPath, pubDir); err != nil {
-		diagnosticLogf("[D3 Pubfiles] %v", err)
+	if err := files.writePubfiles(cfg.pubfilesConfig, cfg.pubfilesDir); err != nil {
+		diag.diagnosticLogf("[D3 Pubfiles] %v", err)
 	}
 	economy := &economyStore{initialBalance: func() int64 { return cfg.startBalance }}
 	economy.loadWallets(cfg.dataDir)
-	store, err := openCTRSQLite(filepath.Join(dataDir, ctrDB), cfg.unlockAll, trustID)
+	store, err := openCTRSQLite(filepath.Join(cfg.dataDir, ctrDB), cfg.unlockAll, trustID)
 	if err != nil {
 		log.Fatalf("[D3] CTR database: %v", err)
 	}
@@ -128,13 +88,17 @@ func main() {
 	}
 
 	tickets := newTicketStore()
-	go startDashboard(presence, matchmaker, registry)
-	go serveNAT(natPort)
-	startCTRRelay(cfg.relayLow, cfg.relayHigh, nextendoHost, presence.onlinePIDs)
+	ids := &atomic.Uint64{}
+	nat := &natServer{diagnostics: diag, bindAddr: cfg.bindAddr, nextendoHost: cfg.publicIP, connNum: ids, natSeen: map[string]int{}}
+	monitor := newTelemetry(cfg, nat.natIntros.Load)
+	go monitor.startDashboard(presence, matchmaker, registry, diag, files)
+	go nat.serveNAT(cfg.natPort)
+	relay := newRelayTable(diag, cfg.bindAddr, cfg.relayPIDs)
+	relay.startCTRRelay(cfg.relayLow, cfg.relayHigh, cfg.publicIP, presence.onlinePIDs)
 	go registry.reapSessions()
-	startLobby(tickets, presence, &replyCounter{}, ctr, matchmaker, registry)
+	startLobby(tickets, presence, &replyCounter{}, ctr, matchmaker, registry, cfg, diag, files, relay, ids, monitor)
 
-	if err := serveAuth(platform, tickets, presence); err != nil {
+	if err := serveAuth(platform, tickets, presence, cfg, diag, monitor); err != nil {
 		log.Fatalf("[D3 Auth] stopped: %v", err)
 	}
 }

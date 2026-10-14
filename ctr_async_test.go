@@ -16,7 +16,7 @@ func (m *ctrMatchmaker) testCTRSearch(t *testing.T, pid uint64, playlist int) *c
 	info.Listen.ID = base64.StdEncoding.EncodeToString(make([]byte, 8))
 	info.Listen.Key = base64.StdEncoding.EncodeToString(make([]byte, 16))
 	raw, _ := json.Marshal(info)
-	l := &lobbyConn{matchmaker: m, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: pid, player: &playerID{PID: pid}, lobbyDoc: string(raw)}
+	l := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: m, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: pid, player: &playerID{PID: pid}, lobbyDoc: string(raw)}
 	search, err := m.parseCTRSearch(l, fmt.Sprintf(`{"members":[%d],"lobby_slots":{"min":2,"max":8},"ruleset_payload":{"filter":{"playlist_id":%d,"matchmaking_version":200}}}`, pid, playlist))
 	if err != nil {
 		t.Fatal(err)

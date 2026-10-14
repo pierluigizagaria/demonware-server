@@ -102,7 +102,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 		}
 		return
 	}
-	noteTask(l, service, task)
+	l.telemetry.noteTask(l, service, task)
 
 	var reply []byte
 	switch {
@@ -304,10 +304,10 @@ func (l *lobbyConn) onTask(payload []byte) {
 // publisherFile looks the file up in the pubfiles folder, ignoring case (the
 // game asks for "Config.txt", the generator writes "config.txt").
 func (l *lobbyConn) publisherFile(name string) ([]byte, string) {
-	if data, path, ok := riftFile(name, l.now()); ok {
+	if data, path, ok := l.files.riftFile(name, l.now()); ok {
 		return data, path
 	}
-	if data, path, ok := generatedPubfile(name, l.now()); ok {
+	if data, path, ok := l.files.generatedPubfile(name, l.now()); ok {
 		return data, path
 	}
 	base := filepath.Base(name)

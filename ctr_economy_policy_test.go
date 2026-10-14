@@ -97,12 +97,12 @@ func TestPlatformMarketplaceUnlockAllInventory(t *testing.T) {
 }
 
 func TestSQLiteUsesDataDir(t *testing.T) {
-	old, oldDir := testCTR.economy, dataDir
-	t.Cleanup(func() { testCTR.economy, dataDir = old, oldDir })
+	old, oldDir := testCTR.economy, testConfig.dataDir
+	t.Cleanup(func() { testCTR.economy, testConfig.dataDir = old, oldDir })
 	for _, ns := range []string{"", "nested"} {
 		t.Run(ns, func(t *testing.T) {
 			root := t.TempDir()
-			testCTR.economy, dataDir = &economyStore{initialBalance: func() int64 { return testStartBalance }}, filepath.Join(root, ns)
+			testCTR.economy, testConfig.dataDir = &economyStore{initialBalance: func() int64 { return testStartBalance }}, filepath.Join(root, ns)
 			testLoadWallets()
 			if testCTR.economy.dir != filepath.Join(root, ns) {
 				t.Fatalf("wallet dir = %s", testCTR.economy.dir)

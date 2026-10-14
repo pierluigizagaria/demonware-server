@@ -10,7 +10,7 @@ import (
 )
 
 func TestMarketplaceRejectsShortTaskHeaders(t *testing.T) {
-	l := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets}
+	l := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets}
 	for _, task := range []byte{taskGetInventoryPaginated, taskPurchaseSkus} {
 		request := []byte{80, 3, task}
 		for n := 0; n <= len(request); n++ {
@@ -161,7 +161,7 @@ func TestAmountSurvivesZigzagRoundTrip(t *testing.T) {
 // Both achievements responses end on a string read and return its result, so a missing
 // string field fails the whole deserialize. That is what broke the Pit Stop refresh.
 func TestAchievementsRepliesCarryTheirStringField(t *testing.T) {
-	l := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets}
+	l := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets}
 
 	states := l.onAchievements(taskGetAchievementStates, nil)
 	if !hasField(structBodyOf(t, states), 2) {

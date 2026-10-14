@@ -155,7 +155,7 @@ func effectiveConfig(c pubConfig, now time.Time) pubConfig {
 // generatedPubfile builds Seasons.txt and Config.txt from pubfiles.json on every
 // request, so a change (or a rotation) applies without a restart. Other names
 // fall through to the files on disk.
-func generatedPubfile(name string, now time.Time) ([]byte, string, bool) {
+func (provider *publisherFiles) generatedPubfile(name string, now time.Time) ([]byte, string, bool) {
 	name = strings.ToLower(name)
 	var build func(pubConfig) string
 	switch name {
@@ -166,20 +166,20 @@ func generatedPubfile(name string, now time.Time) ([]byte, string, bool) {
 	default:
 		return nil, "", false
 	}
-	cfg, err := loadPubConfig(pubConfigPath)
+	cfg, err := provider.loadPubConfig(provider.pubConfigPath)
 	if err != nil {
-		diagnosticLogf("[D3 Season] %s: %v", pubConfigPath, err)
+		provider.diagnosticLogf("[D3 Season] %s: %v", provider.pubConfigPath, err)
 		return nil, "", false
 	}
 	eff := effectiveConfig(cfg, now)
-	logGenerated(name, eff)
+	provider.logGenerated(name, eff)
 	return []byte(build(eff)), "generated from pubfiles.json", true
 }
 
 // logGenerated records what a generated file was served with.
-func logGenerated(name string, c pubConfig) {
+func (provider *publisherFiles) logGenerated(name string, c pubConfig) {
 	if strings.Contains(name, "season") {
-		diagnosticLogf("[D3 Season] %s -> season %d, start %s, end %s", name, c.Season, c.SeasonStart, c.SeasonEnd)
+		provider.diagnosticLogf("[D3 Season] %s -> season %d, start %s, end %s", name, c.Season, c.SeasonStart, c.SeasonEnd)
 		return
 	}
 	var on []string
@@ -188,5 +188,5 @@ func logGenerated(name string, c pubConfig) {
 			on = append(on, e)
 		}
 	}
-	diagnosticLogf("[D3 Season] %s -> season %d, %d events on: %s", name, c.Season, len(on), strings.Join(on, " "))
+	provider.diagnosticLogf("[D3 Season] %s -> season %d, %d events on: %s", name, c.Season, len(on), strings.Join(on, " "))
 }

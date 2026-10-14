@@ -18,9 +18,9 @@ func setStartBalance(t *testing.T, n int64) {
 
 func setRelayPIDs(t *testing.T, list string) {
 	t.Helper()
-	old := relayPIDs
-	relayPIDs = list
-	t.Cleanup(func() { relayPIDs = old })
+	old := testRelay.pids
+	testRelay.pids = list
+	t.Cleanup(func() { testRelay.pids = old })
 }
 
 func lookupFrom(env map[string]string) func(string) string {
@@ -61,8 +61,8 @@ func TestConfigDefaultsNeedNoEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.publicIP != nextendoHost || c.authPort != authPort || c.lobbyPorts != lobbyPorts || c.dataDir != dataDir ||
-		c.dashPort != dashPort || !c.redactLogs || c.unlockAll || c.startBalance != 0 || c.relayLow != 0 {
+	if c.publicIP != testConfig.publicIP || c.authPort != testConfig.authPort || c.lobbyPorts != testConfig.lobbyPorts || c.dataDir != testConfig.dataDir ||
+		c.dashPort != testConfig.dashPort || !c.redactLogs || c.unlockAll || c.startBalance != 0 || c.relayLow != 0 {
 		t.Fatalf("unexpected defaults: %+v", c)
 	}
 }
@@ -80,8 +80,8 @@ func TestConfigDefaultsDoNotReadInstalledSettings(t *testing.T) {
 	changed.dataDir, changed.pubfilesConfig, changed.pubfilesDir, changed.riftData = "other-data", "other-config", "other-files", "other-rifts"
 	changed.dumps, changed.verbose, changed.proxyProtocol, changed.migrate, changed.redactLogs = "other-dumps", true, true, true, false
 	changed.dashToken, changed.sniHost = "synthetic-dashboard-value", "synthetic-host"
-	applyConfig(changed)
-	t.Cleanup(func() { applyConfig(want) })
+	testApplyConfig(changed)
+	t.Cleanup(func() { testApplyConfig(want) })
 	got, err := loadConfig(lookupFrom(nil), nil, false)
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatal("configuration defaults inherited prior instance settings")

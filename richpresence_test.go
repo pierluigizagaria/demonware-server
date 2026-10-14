@@ -83,7 +83,7 @@ func TestRichPresenceSetAndGet(t *testing.T) {
 	alice := &playerID{Username: "player1", PID: 1800000101}
 	bob := &playerID{Username: "player2", PID: 1800000102}
 	withOnline(t, map[uint64]*playerID{1: alice, 2: bob})
-	la, lb := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 1, player: alice}, &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 2, player: bob}
+	la, lb := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 1, player: alice}, &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 2, player: bob}
 
 	// player1 sets a presence, as the game does (id 0 = me)
 	la.onRichPresence(rpSet, demonware.NewReader(rpSetRequest("", 0, "", 1, []byte("hello"))))
@@ -109,7 +109,7 @@ func TestRichPresenceGoneWhenThePlayerLeaves(t *testing.T) {
 	alice := &playerID{Username: "player1", PID: 1800000101}
 	bob := &playerID{Username: "player2", PID: 1800000102}
 	withOnline(t, map[uint64]*playerID{1: alice, 2: bob})
-	la, lb := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 1, player: alice}, &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 2, player: bob}
+	la, lb := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 1, player: alice}, &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 2, player: bob}
 	la.onRichPresence(rpSet, demonware.NewReader(rpSetRequest("", 0, "", 1, []byte("x"))))
 
 	testPresence.dropOnline(1)
@@ -129,7 +129,7 @@ func TestRichPresenceFromTheRealLog(t *testing.T) {
 	raw := []byte{0x10, 0x00, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x00, 0x03, 0x01, 0x13, 0x08, 0x04, 0, 0, 0, 0xde, 0xad, 0xbe, 0xef}
 	alice := &playerID{Username: "player1", PID: 1800000101}
 	withOnline(t, map[uint64]*playerID{1: alice})
-	l := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 1, player: alice}
+	l := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 1, player: alice}
 	l.onRichPresence(rpSet, demonware.NewReader(raw))
 	testPresence.richMu.Lock()
 	p, ok := testPresence.rich[alice.PID]
@@ -141,7 +141,7 @@ func TestRichPresenceFromTheRealLog(t *testing.T) {
 
 func TestRichPresenceNeedsAPlayer(t *testing.T) {
 	withOnline(t, map[uint64]*playerID{})
-	guest := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 9} // no identity
+	guest := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 9} // no identity
 	guest.onRichPresence(rpSet, demonware.NewReader(rpSetRequest("", 0, "", 1, []byte("x"))))
 	testPresence.richMu.Lock()
 	n := len(testPresence.rich)

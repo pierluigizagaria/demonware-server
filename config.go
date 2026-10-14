@@ -22,16 +22,6 @@ import (
 // variable with one of this server's prefixes, stops the server with every
 // problem listed instead of falling back to a default. Defaults are fresh values, independent of any running instance.
 
-// Settings without a home in an upstream file.
-var (
-	proxyProtocol  bool   // NEXTENDO_PROXY_PROTOCOL
-	signingKeyFile string // CTR_AUTH_SIGNING_KEY
-	relayPIDs      string // CTR_RELAY_PIDS
-	dashPort       = 8093
-	dashToken      string
-	sniHost        string // NEXTENDO_SNI_HOST
-)
-
 var settingPrefixes = []string{"CTR_", "D3_", "DASH_", "NEXTENDO_", "SHADNET_"}
 
 // Read by the integration test only, never by the server.
@@ -161,16 +151,6 @@ func loadConfig(lookup func(string) string, check []string, serving bool) (serve
 		}
 	}
 	return c, errors.Join(r.errs...)
-}
-
-// applyConfig installs a validated configuration before anything starts.
-func applyConfig(c serverConfig) {
-	nextendoHost, bindAddr, authPort, lobbyPorts, natPort = c.publicIP, c.bindAddr, c.authPort, c.lobbyPorts, c.natPort
-	proxyProtocol, certFile, keyFile = c.proxyProtocol, c.certFile, c.keyFile
-	dashPort, dashToken, sniHost = c.dashPort, c.dashToken, c.sniHost
-	pubConfigPath, pubDir, dumpRoot, verbose, riftDir = c.pubfilesConfig, c.pubfilesDir, c.dumps, c.verbose, c.riftData
-	signingKeyFile, dataDir, migrateEnabled = c.signingKey, c.dataDir, c.migrate
-	relayPIDs, redactLogs = c.relayPIDs, c.redactLogs
 }
 
 type envReader struct {

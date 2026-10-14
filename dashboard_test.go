@@ -8,19 +8,19 @@ import (
 
 func TestDashboardCTRMembershipAndTitleSplit(t *testing.T) {
 	oldOnline := testPresence.online
-	oldStats := connStats
+	oldStats := testTelemetry.connStats
 	oldRooms := testMatchmaker.rooms
 	oldSessions := testRegistry.sessions
 	defer func() {
 		testPresence.online = oldOnline
-		connStats = oldStats
+		testTelemetry.connStats = oldStats
 		testMatchmaker.rooms = oldRooms
 		testRegistry.sessions = oldSessions
 	}()
 	testPresence.online = map[uint64]*playerID{1: {PID: 101, Username: "host", Title: 5760}, 2: {PID: 102, Username: "joined", Title: 5760}, 3: {PID: 103, Username: "pending", Title: 5760}, 4: {PID: 104, Username: "diablo"}}
-	connStats = map[uint64]*connStat{}
+	testTelemetry.connStats = map[uint64]*connStat{}
 	for id := range testPresence.online {
-		connStats[id] = &connStat{first: time.Now(), last: time.Now()}
+		testTelemetry.connStats[id] = &connStat{first: time.Now(), last: time.Now()}
 	}
 	host := &ctrSearch{pid: 101, doc: ctrSearchDoc{Members: []uint64{101}}}
 	guest := &ctrSearch{pid: 102, doc: ctrSearchDoc{Members: []uint64{102, 103}}}

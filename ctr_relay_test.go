@@ -43,33 +43,33 @@ func TestParseRealHostAddr(t *testing.T) {
 // The gate is what keeps this away from the ~69% of rooms that already connect directly.
 func TestRelayGateDefaultsToNobody(t *testing.T) {
 	b := realAddr(t)
-	relay.low, relay.high, relay.ip = 3100, 3139, net.IPv4(1, 2, 3, 4)
-	defer func() { relay.low, relay.high = 0, 0 }()
+	testRelay.low, testRelay.high, testRelay.ip = 3100, 3139, net.IPv4(1, 2, 3, 4)
+	defer func() { testRelay.low, testRelay.high = 0, 0 }()
 
 	setRelayPIDs(t, "")
-	if got := withRelay(b, 111, 222); !bytes.Equal(got, b) {
+	if got := testRelay.withRelay(b, 111, 222); !bytes.Equal(got, b) {
 		t.Fatal("an empty CTR_RELAY_PIDS must leave hostAddr untouched")
 	}
 	setRelayPIDs(t, "999")
-	if got := withRelay(b, 111, 222); !bytes.Equal(got, b) {
+	if got := testRelay.withRelay(b, 111, 222); !bytes.Equal(got, b) {
 		t.Fatal("a non-matching pid must leave hostAddr untouched")
 	}
 }
 
 func TestRelayInjectsIntoFirstFreeSlotOnly(t *testing.T) {
 	b := realAddr(t)
-	relay.low, relay.high, relay.next, relay.ip = 3100, 3139, 3100, net.IPv4(203, 0, 113, 9)
-	relay.pairs, relay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
+	testRelay.low, testRelay.high, testRelay.next, testRelay.ip = 3100, 3139, 3100, net.IPv4(203, 0, 113, 9)
+	testRelay.pairs, testRelay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
 	defer func() {
-		for _, p := range relay.pairs {
+		for _, p := range testRelay.pairs {
 			_ = p.conn.Close()
 		}
-		relay.low, relay.high = 0, 0
-		relay.pairs, relay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
+		testRelay.low, testRelay.high = 0, 0
+		testRelay.pairs, testRelay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
 	}()
 
 	setRelayPIDs(t, "222")
-	got := withRelay(b, 111, 222)
+	got := testRelay.withRelay(b, 111, 222)
 	if bytes.Equal(got, b) {
 		t.Fatal("a matching pid should have had a relay address written in")
 	}
@@ -102,24 +102,24 @@ func TestRelayInjectsIntoFirstFreeSlotOnly(t *testing.T) {
 // since the session list is rebuilt on every friends query.
 func TestRelayReusesPortForSamePair(t *testing.T) {
 	b := realAddr(t)
-	relay.low, relay.high, relay.next, relay.ip = 3140, 3149, 3140, net.IPv4(203, 0, 113, 9)
-	relay.pairs, relay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
+	testRelay.low, testRelay.high, testRelay.next, testRelay.ip = 3140, 3149, 3140, net.IPv4(203, 0, 113, 9)
+	testRelay.pairs, testRelay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
 	defer func() {
-		for _, p := range relay.pairs {
+		for _, p := range testRelay.pairs {
 			_ = p.conn.Close()
 		}
-		relay.low, relay.high = 0, 0
-		relay.pairs, relay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
+		testRelay.low, testRelay.high = 0, 0
+		testRelay.pairs, testRelay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
 	}()
 	setRelayPIDs(t, "*")
 
-	first := parseAddrSlot(withRelay(b, 111, 222)[relayAddrLen : 2*relayAddrLen])
-	second := parseAddrSlot(withRelay(b, 111, 222)[relayAddrLen : 2*relayAddrLen])
+	first := parseAddrSlot(testRelay.withRelay(b, 111, 222)[relayAddrLen : 2*relayAddrLen])
+	second := parseAddrSlot(testRelay.withRelay(b, 111, 222)[relayAddrLen : 2*relayAddrLen])
 	if first == nil || second == nil || first.Port != second.Port {
 		t.Fatalf("port changed between calls: %v then %v", first, second)
 	}
-	if len(relay.pairs) != 1 {
-		t.Fatalf("%d pairs allocated for one pairing", len(relay.pairs))
+	if len(testRelay.pairs) != 1 {
+		t.Fatalf("%d pairs allocated for one pairing", len(testRelay.pairs))
 	}
 }
 
@@ -127,28 +127,28 @@ func TestRelayReusesPortForSamePair(t *testing.T) {
 // released as soon as either one leaves.
 func TestRelayReleasesPairsOnlyWhenAPlayerLeaves(t *testing.T) {
 	b := realAddr(t)
-	relay.low, relay.high, relay.next, relay.ip = 3150, 3159, 3150, net.IPv4(203, 0, 113, 9)
-	relay.pairs, relay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
+	testRelay.low, testRelay.high, testRelay.next, testRelay.ip = 3150, 3159, 3150, net.IPv4(203, 0, 113, 9)
+	testRelay.pairs, testRelay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
 	defer func() {
-		for _, p := range relay.pairs {
+		for _, p := range testRelay.pairs {
 			_ = p.conn.Close()
 		}
-		relay.low, relay.high = 0, 0
-		relay.pairs, relay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
+		testRelay.low, testRelay.high = 0, 0
+		testRelay.pairs, testRelay.byPort = map[string]*relayPair{}, map[int]*relayPair{}
 	}()
 	setRelayPIDs(t, "*")
-	withRelay(b, 111, 222)
-	withRelay(b, 111, 333)
-	relay.reapOffline(map[uint64]bool{111: true, 222: true, 333: true})
-	if len(relay.pairs) != 2 {
+	testRelay.withRelay(b, 111, 222)
+	testRelay.withRelay(b, 111, 333)
+	testRelay.reapOffline(map[uint64]bool{111: true, 222: true, 333: true})
+	if len(testRelay.pairs) != 2 {
 		t.Fatal("pair between connected players released")
 	}
-	relay.reapOffline(map[uint64]bool{111: true, 222: true})
-	if len(relay.pairs) != 1 || len(relay.byPort) != 1 || relay.pairs[pairKey(111, 222)] == nil {
+	testRelay.reapOffline(map[uint64]bool{111: true, 222: true})
+	if len(testRelay.pairs) != 1 || len(testRelay.byPort) != 1 || testRelay.pairs[pairKey(111, 222)] == nil {
 		t.Fatal("pair of a departed joiner kept or wrong pair released")
 	}
-	relay.reapOffline(map[uint64]bool{222: true})
-	if len(relay.pairs) != 0 || len(relay.byPort) != 0 {
+	testRelay.reapOffline(map[uint64]bool{222: true})
+	if len(testRelay.pairs) != 0 || len(testRelay.byPort) != 0 {
 		t.Fatal("pair of a departed host kept")
 	}
 }

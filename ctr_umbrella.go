@@ -28,18 +28,18 @@ func (v *jsonUint32) UnmarshalJSON(b []byte) error {
 
 // Umbrella is a separate API from /auth/. CTR's bdUmbrellaUserAccount
 // parser expects umbrellaID, accessToken, expires and accounts.
-func handleCTRUmbrella(tickets *ticketStore, w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
+func handleCTRUmbrella(diag *diagnostics, tickets *ticketStore, w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
 	deny := func(code int, reason string) {
 		preview := body
 		if len(preview) > 300 {
 			preview = preview[:300]
 		}
-		diagnosticLogf("[CTR Umbrella] #%d %s -> %d (%s) body=%s", n, r.URL.RequestURI(), code, reason, preview)
+		diag.diagnosticLogf("[CTR Umbrella] #%d %s -> %d (%s) body=%s", n, r.URL.RequestURI(), code, reason, preview)
 		http.Error(w, reason, code)
 	}
-	if !redactLogs && dumps != "" && len(body) > 0 {
+	if !diag.redactLogs && dumps != "" && len(body) > 0 {
 		if err := os.WriteFile(filepath.Join(dumps, fmt.Sprintf("%03d_umbrella.json", n)), body, 0o644); err != nil {
-			diagnosticLogf("[CTR Umbrella] dump: %v", err)
+			diag.diagnosticLogf("[CTR Umbrella] dump: %v", err)
 		}
 	}
 	if r.Method != http.MethodPost {
@@ -74,7 +74,7 @@ func handleCTRUmbrella(tickets *ticketStore, w http.ResponseWriter, r *http.Requ
 		deny(500, "token generation failed")
 		return
 	}
-	diagnosticLogf("[CTR Umbrella] #%d pid=%d -> 200 (lsg token issued)", n, id.PID)
+	diag.diagnosticLogf("[CTR Umbrella] #%d pid=%d -> 200 (lsg token issued)", n, id.PID)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
 		ID       uint64 `json:"umbrellaID"`

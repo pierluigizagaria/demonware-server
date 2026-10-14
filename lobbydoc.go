@@ -16,11 +16,8 @@ package main
 import (
 	"encoding/json"
 	"strconv"
-	"sync/atomic"
 	"time"
 )
-
-var lobbyDocUpdateID atomic.Uint64
 
 type lobbyHostDoc struct {
 	UpdateTime           uint64            `json:"update_time"`
@@ -62,7 +59,7 @@ func (l *lobbyConn) hostDocument() string {
 	pid := l.pid()
 	doc := lobbyHostDoc{
 		UpdateTime:           uint64(time.Now().Unix()),
-		UpdateID:             lobbyDocUpdateID.Add(1),
+		UpdateID:             l.options.lobbyDocUpdateID.Add(1),
 		GameID:               pid,
 		LobbyOpen:            true,
 		LobbyOpenForPresJoin: true,

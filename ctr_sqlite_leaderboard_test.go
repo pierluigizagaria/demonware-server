@@ -81,7 +81,7 @@ func TestSQLiteLeaderboardServesStatsTasks(t *testing.T) {
 	defer func() { testPresence.online = oldOnline; testCTR.stats = oldStore }()
 	testPresence.online = map[uint64]*playerID{9: {PID: 12, Username: "test", Title: 5760}}
 	testCTR.stats = openTestLeaderboard(t, filepath.Join(t.TempDir(), ctrDB))
-	l := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 9, player: testPresence.online[9]}
+	l := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 9, player: testPresence.online[9]}
 	if err := testCTR.stats.write([]ctrStatWrite{{ctrStat: ctrStat{Board: 1001, PID: 12, Score: 400, Name: "A"}, Operation: 4}, {ctrStat: ctrStat{Board: 1001, PID: 13, Score: 500, Name: "B"}, Operation: 4}}); err != nil {
 		t.Fatal(err)
 	}

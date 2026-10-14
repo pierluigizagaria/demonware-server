@@ -43,9 +43,19 @@ import (
 	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
-var serverIDs atomic.Uint64
+type lobbyOptions struct {
+	serverIDs        atomic.Uint64
+	lobbyDocUpdateID atomic.Uint64
+	migrateEnabled   bool
+	publicHost       string
+}
 
 type lobbyConn struct {
+	telemetry *telemetry
+	*diagnostics
+	options    *lobbyOptions
+	files      *publisherFiles
+	relay      *relayTable
 	matchmaker *ctrMatchmaker
 	registry   *sessionRegistry
 	ctr        *ctrServices
@@ -93,7 +103,7 @@ func (l *lobbyConn) random(p []byte) (int, error) {
 }
 
 func (l *lobbyConn) logf(format string, a ...any) {
-	diagnosticLogf("#%d "+format, append([]any{l.n}, a...)...)
+	l.diagnosticLogf("#%d "+format, append([]any{l.n}, a...)...)
 }
 
 func (l *lobbyConn) readFull(n int) ([]byte, error) {
@@ -120,7 +130,7 @@ func (l *lobbyConn) send(b []byte) error {
 }
 
 func (l *lobbyConn) dump(tag string, b []byte) {
-	if redactLogs || l.dumpDir == "" {
+	if l.redactLogs || l.dumpDir == "" {
 		return
 	}
 	name := fmt.Sprintf("lobby_%03d_%s.bin", l.n, tag)
@@ -151,7 +161,7 @@ func (l *lobbyConn) run() {
 
 	// 0x81: version | server identifier (conn+0x268, surfaced to the game in
 	// the "connected" event) | 8 bytes the client only skips over.
-	id := 0x0D3000000000 + serverIDs.Add(1)
+	id := 0x0D3000000000 + l.options.serverIDs.Add(1)
 	var pad [8]byte
 	_, _ = rand.Read(pad[:])
 	l.payload1 = demonware.ServerHelloPayload(id, pad)
@@ -228,7 +238,7 @@ func (l *lobbyConn) onClientAuth(raw []byte) bool {
 				l.logf("-> 0x83 chk=%X ; encrypted session established", k.ServerCheck)
 				// The 0x83 already sets [+0x258]=3, the only condition for getStatus()==2: the 0x87 adds
 				// nothing and makes the game wait for a migration (closes after ~12 s). Kept behind CTR_MIGRATE.
-				if migrateEnabled {
+				if l.options.migrateEnabled {
 					if err := l.sendEncrypted(demonware.MsgMigrateInit, []byte{1}); err != nil {
 						l.logf("send 0x87: %v", err)
 						return false
@@ -296,7 +306,7 @@ func (l *lobbyConn) onEncrypted(raw []byte) {
 	}
 	l.dump(fmt.Sprintf("in%02d_plain", l.msgSeen), message.Plaintext)
 	inner, n := message.Type, len(message.Payload)
-	if verbose {
+	if l.verbose {
 		l.logf("msg 0x%02X seq=%d inner_len=%d inner_type=0x%02X plaintext:\n%s", encrypted.Type, encrypted.Sequence, n, inner, hex.Dump(message.Plaintext))
 	}
 	if inner == demonware.InnerTaskRequest {
@@ -306,15 +316,15 @@ func (l *lobbyConn) onEncrypted(raw []byte) {
 
 	if inner == demonware.MsgMigrateAck {
 		// 0x88 closes 0x87: nothing is expected after it. A 0x89 would trigger a real migration.
-		if !migrateEnabled {
+		if !l.options.migrateEnabled {
 			l.logf("0x88 migrate-ack — LSG login complete")
 			return
 		}
-		if err := l.sendEncrypted(demonware.MsgMigrateGo, migrateGoPayload()); err != nil {
+		if err := l.sendEncrypted(demonware.MsgMigrateGo, l.options.migrateGoPayload()); err != nil {
 			l.logf("sending 0x89: %v", err)
 			return
 		}
-		l.logf("-> 0x89 migrate-go %s:%d", migrateIP(), migratePort)
+		l.logf("-> 0x89 migrate-go %s:%d", l.options.migrateIP(), migratePort)
 		return
 	}
 	l.logf("internal message 0x%02X ignored (%d bytes)", inner, n)
@@ -324,10 +334,8 @@ func (l *lobbyConn) onEncrypted(raw []byte) {
 // sent back to the usual listening port.
 const migratePort uint16 = 3074
 
-var migrateEnabled bool // CTR_MIGRATE (config.go)
-
-func migrateIP() net.IP {
-	ip := net.ParseIP(nextendoHost).To4()
+func (options *lobbyOptions) migrateIP() net.IP {
+	ip := net.ParseIP(options.publicHost).To4()
 	if ip == nil {
 		ip = net.IPv4(127, 0, 0, 1).To4()
 	}
@@ -340,9 +348,9 @@ func migrateIP() net.IP {
 const migrateAddrLen = 6
 const migrateDelayMS uint32 = 1000
 
-func migrateGoPayload() []byte {
+func (options *lobbyOptions) migrateGoPayload() []byte {
 	p := []byte{1, 2, migrateAddrLen}
-	p = append(p, migrateIP()...)
+	p = append(p, options.migrateIP()...)
 	p = append(p, byte(migratePort&0xFF), byte(migratePort>>8))
 	p = append(p, 0, 0)
 	d := migrateDelayMS

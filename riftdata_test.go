@@ -27,22 +27,22 @@ func TestPatchChallengeConfig(t *testing.T) {
 
 func TestRiftFileMapping(t *testing.T) {
 	dir := t.TempDir()
-	oldDir, oldCfg := riftDir, pubConfigPath
-	riftDir, pubConfigPath = dir, filepath.Join(dir, "pubfiles.json")
-	defer func() { riftDir, pubConfigPath = oldDir, oldCfg }()
+	oldDir, oldCfg := testFiles.riftDir, testFiles.pubConfigPath
+	testFiles.riftDir, testFiles.pubConfigPath = dir, filepath.Join(dir, "pubfiles.json")
+	defer func() { testFiles.riftDir, testFiles.pubConfigPath = oldDir, oldCfg }()
 	for _, n := range []string{"00", "01", "02"} {
 		if err := os.WriteFile(filepath.Join(dir, "challengerift_"+n+".dat"), []byte("rift"+n), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, _, ok := riftFile("challengerift_config.dat", time.Now()); ok {
+	if _, _, ok := testFiles.riftFile("challengerift_config.dat", time.Now()); ok {
 		t.Fatal("served a config that does not exist")
 	}
 	if err := os.WriteFile(filepath.Join(dir, "challengerift_config.dat"), []byte{0x08, 0x01, 0x28, 0x07}, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg, _, ok := riftFile("Challengerift_Config.dat", time.Now())
+	cfg, _, ok := testFiles.riftFile("Challengerift_Config.dat", time.Now())
 	if !ok || cfg[0] != 0x08 {
 		t.Fatalf("config not served: %v %x", ok, cfg)
 	}
@@ -52,12 +52,12 @@ func TestRiftFileMapping(t *testing.T) {
 		"challengerift_3.dat": "rift00", "challengerift_346.dat": "rift01",
 		"challengerift_02.dat": "rift02",
 	} {
-		data, _, ok := riftFile(req, time.Now())
+		data, _, ok := testFiles.riftFile(req, time.Now())
 		if !ok || string(data) != want {
 			t.Errorf("%s -> %q ok=%v, want %q", req, data, ok, want)
 		}
 	}
-	if _, _, ok := riftFile("Config.txt", time.Now()); ok {
+	if _, _, ok := testFiles.riftFile("Config.txt", time.Now()); ok {
 		t.Fatal("non-rift file claimed")
 	}
 }

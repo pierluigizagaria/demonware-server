@@ -192,7 +192,7 @@ func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context str
 	// which is a raw bdMatchMakingInfo.
 	return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, h := range found {
-			w.Blob(withRelay(h.s.hostAddr, h.s.ownerPID, l.pid()))
+			w.Blob(l.relay.withRelay(h.s.hostAddr, h.s.ownerPID, l.pid()))
 			w.Blob(h.s.id[:])
 			w.Uint32(h.s.gameType)
 			w.Uint32(h.s.maxPlayers)
@@ -346,7 +346,7 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		l.logf("matchmaking FIND query=%d start=%d max=%d -> %d game(s)", query, start, maxr, len(found))
 		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, s := range found {
-				w.Blob(withRelay(s.hostAddr, s.ownerPID, l.pid()))
+				w.Blob(l.relay.withRelay(s.hostAddr, s.ownerPID, l.pid()))
 				w.Blob(s.id[:])
 				w.Uint32(s.gameType)
 				w.Uint32(s.maxPlayers)

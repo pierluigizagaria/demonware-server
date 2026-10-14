@@ -12,19 +12,18 @@ import (
 	"sync/atomic"
 )
 
-var connNum atomic.Uint64
-
-func startLobby(tickets *ticketStore, presence *presenceStore, replies *replyCounter, ctr *ctrServices, matchmaker *ctrMatchmaker, registry *sessionRegistry) {
-	dumps := runDumpDir("lobby")
+func startLobby(tickets *ticketStore, presence *presenceStore, replies *replyCounter, ctr *ctrServices, matchmaker *ctrMatchmaker, registry *sessionRegistry, cfg serverConfig, diag *diagnostics, files *publisherFiles, relay *relayTable, connNum *atomic.Uint64, monitor *telemetry) {
+	options := &lobbyOptions{migrateEnabled: cfg.migrate, publicHost: cfg.publicIP}
+	dumps := diag.runDumpDir("lobby")
 	opened := 0
-	for _, p := range strings.Split(lobbyPorts, ",") {
+	for _, p := range strings.Split(cfg.lobbyPorts, ",") {
 		p = strings.TrimSpace(p)
 		if p == "" {
 			continue
 		}
-		ln, err := net.Listen("tcp", net.JoinHostPort(bindAddr, p))
+		ln, err := net.Listen("tcp", net.JoinHostPort(cfg.bindAddr, p))
 		if err != nil {
-			diagnosticLogf("[D3 Lobby] port %s unavailable: %v", p, err)
+			diag.diagnosticLogf("[D3 Lobby] port %s unavailable: %v", p, err)
 			continue
 		}
 		opened++
@@ -34,10 +33,10 @@ func startLobby(tickets *ticketStore, presence *presenceStore, replies *replyCou
 				if err != nil {
 					return
 				}
-				lc := &lobbyConn{matchmaker: matchmaker, registry: registry, ctr: ctr, replyCounter: replies, presence: presence, tickets: tickets, c: c, n: connNum.Add(1), dumpDir: dumps, pubDir: pubDir}
+				lc := &lobbyConn{telemetry: monitor, diagnostics: diag, options: options, files: files, relay: relay, matchmaker: matchmaker, registry: registry, ctr: ctr, replyCounter: replies, presence: presence, tickets: tickets, c: c, n: connNum.Add(1), dumpDir: dumps, pubDir: cfg.pubfilesDir}
 				go func() {
-					registerConn(lc)
-					defer unregisterConn(lc)
+					monitor.registerConn(lc)
+					defer monitor.unregisterConn(lc)
 					lc.run()
 				}()
 			}
@@ -46,5 +45,5 @@ func startLobby(tickets *ticketStore, presence *presenceStore, replies *replyCou
 	if opened == 0 {
 		log.Fatal("[D3 Lobby] no port could be opened")
 	}
-	diagnosticLogf("[D3 Lobby] listening TCP %s (%d port(s), dumps=%v)", lobbyPorts, opened, dumps != "")
+	diag.diagnosticLogf("[D3 Lobby] listening TCP %s (%d port(s), dumps=%v)", cfg.lobbyPorts, opened, dumps != "")
 }

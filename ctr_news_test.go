@@ -284,12 +284,12 @@ func TestCTRNewsRequiresAdmittedPS4Player(t *testing.T) {
 
 func TestCTRNewsViewedLogsOnlyCountsAndIDs(t *testing.T) {
 	var out bytes.Buffer
-	oldWriter, oldRedact := log.Writer(), redactLogs
+	oldWriter, oldRedact := log.Writer(), testDiagnostics.redactLogs
 	log.SetOutput(&out)
-	t.Cleanup(func() { log.SetOutput(oldWriter); redactLogs = oldRedact })
+	t.Cleanup(func() { log.SetOutput(oldWriter); testDiagnostics.redactLogs = oldRedact })
 	l, wire := sharedPS4Lobby()
 	for _, redact := range []bool{true, false} {
-		redactLogs = redact
+		testDiagnostics.redactLogs = redact
 		out.Reset()
 		request := newsViewed("private-key", "private-language", 123, 456)
 		newsReply(t, sharedTask(t, l, wire, request), 4, 0, 0)

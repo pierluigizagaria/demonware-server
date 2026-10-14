@@ -26,19 +26,22 @@ import (
 	"time"
 )
 
-var (
-	dashStart = time.Now()
+type telemetry struct {
+	dashStart                               time.Time
+	loginsTotal, tasksTotal, gatheringsMade atomic.Int64
+	statsMu                                 sync.Mutex
+	connStats                               map[uint64]*connStat
+	taskEvents                              []taskEvent
+	taskCount                               map[string]int64
+	peakConnected                           int
+	natIntros                               func() int64
+	authPort, natPort, dashPort             int
+	sniHost, dashToken, bindAddr            string
+}
 
-	loginsTotal    atomic.Int64 // successful auth logins
-	tasksTotal     atomic.Int64 // remote tasks served
-	gatheringsMade atomic.Int64 // bdMatchMaking sessions created
-
-	statsMu       sync.Mutex
-	connStats     = map[uint64]*connStat{} // lobby connection -> activity
-	taskEvents    []taskEvent
-	taskCount     = map[string]int64{}
-	peakConnected int
-)
+func newTelemetry(cfg serverConfig, natIntros func() int64) *telemetry {
+	return &telemetry{dashStart: time.Now(), connStats: map[uint64]*connStat{}, taskCount: map[string]int64{}, natIntros: natIntros, authPort: cfg.authPort, natPort: cfg.natPort, dashPort: cfg.dashPort, sniHost: cfg.sniHost, dashToken: cfg.dashToken, bindAddr: cfg.bindAddr}
+}
 
 type connStat struct {
 	addr       string
@@ -54,17 +57,17 @@ type taskEvent struct {
 	action string
 }
 
-func registerConn(l *lobbyConn) {
+func (monitor *telemetry) registerConn(l *lobbyConn) {
 	now := time.Now()
-	statsMu.Lock()
-	connStats[l.n] = &connStat{addr: l.c.RemoteAddr().String(), first: now, last: now}
-	statsMu.Unlock()
+	monitor.statsMu.Lock()
+	monitor.connStats[l.n] = &connStat{addr: l.c.RemoteAddr().String(), first: now, last: now}
+	monitor.statsMu.Unlock()
 }
 
-func unregisterConn(l *lobbyConn) {
-	statsMu.Lock()
-	delete(connStats, l.n)
-	statsMu.Unlock()
+func (monitor *telemetry) unregisterConn(l *lobbyConn) {
+	monitor.statsMu.Lock()
+	delete(monitor.connStats, l.n)
+	monitor.statsMu.Unlock()
 }
 
 // connPID returns the Nextendo PID of a lobby connection's player (0 if unknown).
@@ -78,26 +81,26 @@ func (state *presenceStore) connPID(conn uint64) uint64 {
 }
 
 // noteTask records one remote task for the dashboard (services.go onTask).
-func noteTask(l *lobbyConn, service, task byte) {
+func (monitor *telemetry) noteTask(l *lobbyConn, service, task byte) {
 	name := taskName(service, task)
-	tasksTotal.Add(1)
+	monitor.tasksTotal.Add(1)
 	if service == svcMatchMaking && task == mmCreateSession {
-		gatheringsMade.Add(1)
+		monitor.gatheringsMade.Add(1)
 	}
 	pid := l.presence.connPID(l.n)
 	now := time.Now()
-	statsMu.Lock()
-	if cs := connStats[l.n]; cs != nil {
+	monitor.statsMu.Lock()
+	if cs := monitor.connStats[l.n]; cs != nil {
 		cs.calls++
 		cs.last = now
 		cs.lastAction = name
 	}
-	taskEvents = append(taskEvents, taskEvent{t: now, pid: pid, action: name})
-	if len(taskEvents) > 100 {
-		taskEvents = taskEvents[len(taskEvents)-100:]
+	monitor.taskEvents = append(monitor.taskEvents, taskEvent{t: now, pid: pid, action: name})
+	if len(monitor.taskEvents) > 100 {
+		monitor.taskEvents = monitor.taskEvents[len(monitor.taskEvents)-100:]
 	}
-	taskCount[name]++
-	statsMu.Unlock()
+	monitor.taskCount[name]++
+	monitor.statsMu.Unlock()
 }
 
 // Service and task names as identified from the game binary (service map).
@@ -204,11 +207,11 @@ type apiStats struct {
 	Methods        []apiMethod    `json:"methods"`
 }
 
-func buildStats(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry) apiStats {
-	return buildGameStats(presence, matchmaker, registry, "")
+func (monitor *telemetry) buildStats(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry) apiStats {
+	return monitor.buildGameStats(presence, matchmaker, registry, "")
 }
 
-func buildGameStats(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry, game string) apiStats {
+func (monitor *telemetry) buildGameStats(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry, game string) apiStats {
 	presence.onlineMu.Lock()
 	who := make(map[uint64]playerID, len(presence.online))
 	for n, p := range presence.online {
@@ -291,13 +294,13 @@ func buildGameStats(presence *presenceStore, matchmaker *ctrMatchmaker, registry
 	}
 	sort.Slice(gs, func(i, j int) bool { return gs[i].ID < gs[j].ID })
 
-	statsMu.Lock()
-	defer statsMu.Unlock()
+	monitor.statsMu.Lock()
+	defer monitor.statsMu.Unlock()
 
 	// A player who reconnected can hold two lobby connections: keep the most
 	// recently active one.
 	byPID := map[uint64]apiPlayer{}
-	for n, cs := range connStats {
+	for n, cs := range monitor.connStats {
 		p, ok := who[n]
 		if !ok || p.PID == 0 {
 			continue
@@ -327,36 +330,36 @@ func buildGameStats(presence *presenceStore, matchmaker *ctrMatchmaker, registry
 		players = append(players, pl)
 	}
 	sort.Slice(players, func(i, j int) bool { return players[i].PID < players[j].PID })
-	if len(players) > peakConnected {
-		peakConnected = len(players)
+	if len(players) > monitor.peakConnected {
+		monitor.peakConnected = len(players)
 	}
 
-	ev := make([]apiEvent, 0, len(taskEvents))
-	for i := len(taskEvents) - 1; i >= 0; i-- {
-		e := taskEvents[i]
+	ev := make([]apiEvent, 0, len(monitor.taskEvents))
+	for i := len(monitor.taskEvents) - 1; i >= 0; i-- {
+		e := monitor.taskEvents[i]
 		ev = append(ev, apiEvent{Ago: int(time.Since(e.t).Seconds()), PID: e.pid, Action: e.action})
 	}
-	ms := make([]apiMethod, 0, len(taskCount))
-	for name, c := range taskCount {
+	ms := make([]apiMethod, 0, len(monitor.taskCount))
+	for name, c := range monitor.taskCount {
 		ms = append(ms, apiMethod{Name: name, Count: c})
 	}
 	sort.Slice(ms, func(i, j int) bool { return ms[i].Count > ms[j].Count })
 
 	return apiStats{
 		ServerTime:     time.Now().Format("15:04:05"),
-		UptimeSeconds:  int(time.Since(dashStart).Seconds()),
+		UptimeSeconds:  int(time.Since(monitor.dashStart).Seconds()),
 		Connected:      len(players),
 		InLobby:        inLobby,
 		ActiveLobbies:  len(gs),
-		TotalSessions:  loginsTotal.Load(),
-		TotalRMC:       tasksTotal.Load(),
-		GatheringsMade: gatheringsMade.Load(),
-		PeakConnected:  peakConnected,
-		NATIntros:      natIntros.Load(),
+		TotalSessions:  monitor.loginsTotal.Load(),
+		TotalRMC:       monitor.tasksTotal.Load(),
+		GatheringsMade: monitor.gatheringsMade.Load(),
+		PeakConnected:  monitor.peakConnected,
+		NATIntros:      monitor.natIntros(),
 		Server: apiServer{
 			AccessKey:  map[string]string{"ctr": "demonware-ctr", "d3": "demonware-d3"}[game],
-			NexVersion: "Demonware lobby 220", AuthPort: fmt.Sprint(authPort), SecurePort: natPort,
-			SNIHost: sniHost, SessionKey: 24, Stack: "demonware",
+			NexVersion: "Demonware lobby 220", AuthPort: fmt.Sprint(monitor.authPort), SecurePort: monitor.natPort,
+			SNIHost: monitor.sniHost, SessionKey: 24, Stack: "demonware",
 		},
 		Players:    players,
 		Gatherings: gs,
@@ -365,8 +368,8 @@ func buildGameStats(presence *presenceStore, matchmaker *ctrMatchmaker, registry
 	}
 }
 
-func startDashboard(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry) {
-	port, token := strconv.Itoa(dashPort), dashToken
+func (monitor *telemetry) startDashboard(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry, diag *diagnostics, files *publisherFiles) {
+	port, token := strconv.Itoa(monitor.dashPort), monitor.dashToken
 
 	authed := func(w http.ResponseWriter, r *http.Request) bool {
 		if token != "" && subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("key")), []byte(token)) == 1 {
@@ -383,13 +386,13 @@ func startDashboard(presence *presenceStore, matchmaker *ctrMatchmaker, registry
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(buildGameStats(presence, matchmaker, registry, r.URL.Query().Get("game")))
+		_ = json.NewEncoder(w).Encode(monitor.buildGameStats(presence, matchmaker, registry, r.URL.Query().Get("game")))
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
-	mux.HandleFunc("/pubfiles/", pubfilesHandler)
+	mux.HandleFunc("/pubfiles/", files.pubfilesHandler)
 
-	diagnosticLogf("[D3 Dashboard] stats API on :%s (token=%v)", port, token != "")
-	if err := http.ListenAndServe(net.JoinHostPort(bindAddr, port), mux); err != nil {
-		diagnosticLogf("[D3 Dashboard] HTTP error: %v", err)
+	diag.diagnosticLogf("[D3 Dashboard] stats API on :%s (token=%v)", port, token != "")
+	if err := http.ListenAndServe(net.JoinHostPort(monitor.bindAddr, port), mux); err != nil {
+		diag.diagnosticLogf("[D3 Dashboard] HTTP error: %v", err)
 	}
 }

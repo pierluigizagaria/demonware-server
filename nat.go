@@ -38,24 +38,27 @@ import (
 
 const natSeenMax = 4096
 
-var (
-	natSeenMu sync.Mutex
-	natSeen   = map[string]int{} // packet signature -> occurrences (bounded log)
-	natIntros atomic.Int64       // introductions relayed, for the dashboard
-)
+type natServer struct {
+	*diagnostics
+	bindAddr, nextendoHost string
+	connNum                *atomic.Uint64
+	natSeenMu              sync.Mutex
+	natSeen                map[string]int
+	natIntros              atomic.Int64
+}
 
-func serveNAT(port int) {
-	pc, err := net.ListenPacket("udp", net.JoinHostPort(bindAddr, strconv.Itoa(port)))
+func (s *natServer) serveNAT(port int) {
+	pc, err := net.ListenPacket("udp", net.JoinHostPort(s.bindAddr, strconv.Itoa(port)))
 	if err != nil {
-		diagnosticLogf("[D3 NAT] udp %d unavailable: %v", port, err)
+		s.diagnosticLogf("[D3 NAT] udp %d unavailable: %v", port, err)
 		return
 	}
-	serverIP := net.ParseIP(nextendoHost).To4()
+	serverIP := net.ParseIP(s.nextendoHost).To4()
 	if serverIP == nil {
-		diagnosticLogf("[D3 NAT] NEXTENDO_HOST=%q is not an IPv4 address: announcing 127.0.0.1", nextendoHost)
+		s.diagnosticLogf("[D3 NAT] NEXTENDO_HOST=%q is not an IPv4 address: announcing 127.0.0.1", s.nextendoHost)
 		serverIP = net.IPv4(127, 0, 0, 1).To4()
 	}
-	diagnosticLogf("[D3 NAT] listening UDP %d (announced server ip %s)", port, serverIP)
+	s.diagnosticLogf("[D3 NAT] listening UDP %d (announced server ip %s)", port, serverIP)
 
 	buf := make([]byte, 2048)
 	for {
@@ -68,13 +71,13 @@ func serveNAT(port int) {
 			continue
 		}
 		sig := fmt.Sprintf("%X", buf[:n])
-		natSeenMu.Lock()
-		if len(natSeen) >= natSeenMax {
-			natSeen = map[string]int{}
+		s.natSeenMu.Lock()
+		if len(s.natSeen) >= natSeenMax {
+			s.natSeen = map[string]int{}
 		}
-		cnt := natSeen[sig]
-		natSeen[sig] = cnt + 1
-		natSeenMu.Unlock()
+		cnt := s.natSeen[sig]
+		s.natSeen[sig] = cnt + 1
+		s.natSeenMu.Unlock()
 
 		if n == 29 && (buf[0] == 0x0A || buf[0] == 0x0E) {
 			if buf[0] == 0x0E {
@@ -84,15 +87,15 @@ func serveNAT(port int) {
 			dstIP := net.IPv4(dst[0], dst[1], dst[2], dst[3])
 			dstPort := int(binary.LittleEndian.Uint16(dst[4:6]))
 			if dstPort == 0 || dstIP.Equal(net.IPv4(0, 255, 0, 255)) {
-				diagnosticLogf("[D3 NAT] 0x0A from %s without destination: %X", addr, buf[:n])
+				s.diagnosticLogf("[D3 NAT] 0x0A from %s without destination: %X", addr, buf[:n])
 				continue
 			}
 			intro := append([]byte{0x0B}, buf[1:n]...)
 			to := &net.UDPAddr{IP: dstIP, Port: dstPort}
 			if _, err := pc.WriteTo(intro, to); err != nil {
-				diagnosticLogf("[D3 NAT] INTRO to %s: %v", to, err)
+				s.diagnosticLogf("[D3 NAT] INTRO to %s: %v", to, err)
 			} else {
-				natIntros.Add(1)
+				s.natIntros.Add(1)
 				// The host answers 0x0C to sourceAddress from INSIDE the packet, not to
 				// where we saw the request come from. A client that fills in its LAN
 				// address there is unreachable and the join fails with "failed to connect".
@@ -101,7 +104,7 @@ func serveNAT(port int) {
 					Port: int(binary.LittleEndian.Uint16(src[4:6]))}
 				ua, _ := addr.(*net.UDPAddr)
 				mismatch := ua == nil || !ua.IP.Equal(srcAddr.IP) || ua.Port != srcAddr.Port
-				diagnosticLogf("[D3 NAT] INTRO %s -> %s (id=%X) claimed_src=%s mismatch=%v",
+				s.diagnosticLogf("[D3 NAT] INTRO %s -> %s (id=%X) claimed_src=%s mismatch=%v",
 					addr, to, buf[3:13], srcAddr, mismatch)
 			}
 			continue
@@ -121,17 +124,17 @@ func serveNAT(port int) {
 			resp = binary.LittleEndian.AppendUint16(resp, uint16(port))
 		default:
 			if cnt < 2 {
-				diagnosticLogf("[D3 NAT] unknown packet from %s: %s", addr, hex.EncodeToString(buf[:n]))
-				if dir := runDumpDir("nat"); dir != "" {
-					_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("unknown_%d.bin", connNum.Add(1))), buf[:n], 0o644)
+				s.diagnosticLogf("[D3 NAT] unknown packet from %s: %s", addr, hex.EncodeToString(buf[:n]))
+				if dir := s.runDumpDir("nat"); dir != "" {
+					_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("unknown_%d.bin", s.connNum.Add(1))), buf[:n], 0o644)
 				}
 			}
 			continue
 		}
 		if _, err := pc.WriteTo(resp, addr); err != nil {
-			diagnosticLogf("[D3 NAT] reply to %s: %v", addr, err)
+			s.diagnosticLogf("[D3 NAT] reply to %s: %v", addr, err)
 		} else if cnt < 2 {
-			diagnosticLogf("[D3 NAT] %s type %d -> %X", addr, buf[0], resp)
+			s.diagnosticLogf("[D3 NAT] %s type %d -> %X", addr, buf[0], resp)
 		}
 	}
 }

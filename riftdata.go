@@ -33,8 +33,6 @@ import (
 	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
-var riftDir = "riftdata" // D3_RIFTDATA (config.go)
-
 // riftSettings is the "challenge_rifts" block of pubfiles.json.
 type riftSettings struct {
 	// Mode: "weekly" (default) advances to the next file every week,
@@ -62,8 +60,8 @@ func riftChallengeNumber(s riftSettings, now time.Time) uint32 {
 }
 
 // riftDataFiles lists the numbered data files, in numeric order.
-func riftDataFiles() []string {
-	entries, err := os.ReadDir(riftDir)
+func (provider *publisherFiles) riftDataFiles() []string {
+	entries, err := os.ReadDir(provider.riftDir)
 	if err != nil {
 		return nil
 	}
@@ -75,7 +73,7 @@ func riftDataFiles() []string {
 	for _, e := range entries {
 		if m := riftDataName.FindStringSubmatch(strings.ToLower(e.Name())); m != nil {
 			n, _ := strconv.Atoi(m[1])
-			found = append(found, nf{n, filepath.Join(riftDir, e.Name())})
+			found = append(found, nf{n, filepath.Join(provider.riftDir, e.Name())})
 		}
 	}
 	sort.Slice(found, func(i, j int) bool { return found[i].n < found[j].n })
@@ -120,17 +118,17 @@ func patchChallengeConfig(src []byte, number uint32) ([]byte, error) {
 }
 
 // riftFile answers a publisher-file request for a Challenge Rift file.
-func riftFile(name string, now time.Time) ([]byte, string, bool) {
+func (provider *publisherFiles) riftFile(name string, now time.Time) ([]byte, string, bool) {
 	name = strings.ToLower(filepath.Base(name))
 	if !strings.HasPrefix(name, "challengerift_") {
 		return nil, "", false
 	}
-	cfg, err := loadPubConfig(pubConfigPath)
+	cfg, err := provider.loadPubConfig(provider.pubConfigPath)
 	if err != nil {
 		return nil, "", false
 	}
 	if name == "challengerift_config.dat" {
-		p := filepath.Join(riftDir, name)
+		p := filepath.Join(provider.riftDir, name)
 		src, err := os.ReadFile(p)
 		if err != nil {
 			return nil, "", false
@@ -138,14 +136,14 @@ func riftFile(name string, now time.Time) ([]byte, string, bool) {
 		number := riftChallengeNumber(cfg.ChallengeRifts, now)
 		out, err := patchChallengeConfig(src, number)
 		if err != nil {
-			diagnosticLogf("[D3 Rift] %s: %v", p, err)
+			provider.diagnosticLogf("[D3 Rift] %s: %v", p, err)
 			return nil, "", false
 		}
-		diagnosticLogf("[D3 Rift] config -> challenge %d (mode %q), times never expire", number, cfg.ChallengeRifts.Mode)
+		provider.diagnosticLogf("[D3 Rift] config -> challenge %d (mode %q), times never expire", number, cfg.ChallengeRifts.Mode)
 		return out, p, true
 	}
 	m := riftDataName.FindStringSubmatch(name)
-	files := riftDataFiles()
+	files := provider.riftDataFiles()
 	if m == nil || len(files) == 0 {
 		return nil, "", false
 	}
@@ -153,9 +151,9 @@ func riftFile(name string, now time.Time) ([]byte, string, bool) {
 	p := files[n%len(files)]
 	data, err := os.ReadFile(p)
 	if err != nil {
-		diagnosticLogf("[D3 Rift] %s: %v", p, err)
+		provider.diagnosticLogf("[D3 Rift] %s: %v", p, err)
 		return nil, "", false
 	}
-	diagnosticLogf("[D3 Rift] %s -> %s (%d of %d files)", name, filepath.Base(p), n%len(files)+1, len(files))
+	provider.diagnosticLogf("[D3 Rift] %s -> %s (%d of %d files)", name, filepath.Base(p), n%len(files)+1, len(files))
 	return data, p, true
 }
