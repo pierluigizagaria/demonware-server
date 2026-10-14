@@ -13,7 +13,7 @@ import (
 func TestEconomyPurchaseRestartAndRetry(t *testing.T) {
 	setStartBalance(t, 10000)
 	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
-	sku := economyCatalog[200085]
+	sku := economyCatalogSnapshot()[200085]
 	debit, err := s.purchase(42, []uint32{200085})
 	if err != nil || debit != sku.Price {
 		t.Fatalf("purchase %d %v", debit, err)
@@ -39,7 +39,7 @@ func TestEconomyLegacyMigrationPreservesBalanceAndOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Balances[10] != 9876 || !ownsSKU(a, economyCatalog[200085]) {
+	if a.Balances[10] != 9876 || !ownsSKU(a, economyCatalogSnapshot()[200085]) {
 		t.Fatal("legacy data lost")
 	}
 	if a.Items[200085] {
@@ -72,7 +72,7 @@ func TestEconomyConcurrentRetry(t *testing.T) {
 	}
 	wg.Wait()
 	a, _ := s.snapshot(42)
-	if a.Balances[10] != 10000-economyCatalog[200085].Price {
+	if a.Balances[10] != 10000-economyCatalogSnapshot()[200085].Price {
 		t.Fatal("concurrent debit repeated")
 	}
 }
@@ -96,17 +96,17 @@ func TestEconomyWriteFailureDoesNotGrant(t *testing.T) {
 }
 func TestEconomyBundleOnlyChargesUnownedComponents(t *testing.T) {
 	a := &economyAccount{Items: map[uint32]bool{}}
-	for _, sku := range economyCatalog {
+	for _, sku := range economyCatalogSnapshot() {
 		if len(sku.Parts) < 2 {
 			continue
 		}
-		first := economyCatalog[sku.Parts[0]]
+		first := economyCatalogSnapshot()[sku.Parts[0]]
 		for _, i := range first.Items {
 			a.Items[i] = true
 		}
 		var expected int64
 		for _, id := range sku.Parts {
-			part := economyCatalog[id]
+			part := economyCatalogSnapshot()[id]
 			if !ownsSKU(a, part) {
 				expected += part.Price
 			}
@@ -120,7 +120,7 @@ func TestEconomyBundleOnlyChargesUnownedComponents(t *testing.T) {
 	t.Fatal("no bundle fixture")
 }
 func TestInventoryOwnerAndCatalogItem(t *testing.T) {
-	item := economyCatalog[200085].Items[0]
+	item := economyCatalogSnapshot()[200085].Items[0]
 	w := &demonware.Writer{}
 	writeInventoryItem(w, 42, item)
 	r := demonware.NewReader(w.Bytes())

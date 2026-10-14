@@ -231,7 +231,7 @@ func TestPlatformMarketplacePurchaseInventoryAndBalancePush(t *testing.T) {
 				t.Fatal("purchase must reply before balance push")
 			}
 			marketplaceOutcome(t, frames[0][1:], 0)
-			wantBalance := int64(10000) - economyCatalog[200597].Price
+			wantBalance := int64(10000) - economyCatalogSnapshot()[200597].Price
 			// Check the entire push, including nested owner identity and demonware.ZigZag amount.
 			owner := demonware.AppendVarintField(nil, 1, l.pid())
 			owner = demonware.AppendBytesField(owner, 2, []byte(tc.owner))
@@ -248,7 +248,7 @@ func TestPlatformMarketplacePurchaseInventoryAndBalancePush(t *testing.T) {
 			}
 			// Reload through a fresh store to prove the shared purchase was persisted.
 			a, err := (&economyStore{initialBalance: func() int64 { return testStartBalance }, dir: s.dir}).snapshot(l.pid())
-			if err != nil || a.Balances[10] != wantBalance || !ownsSKU(a, economyCatalog[200597]) {
+			if err != nil || a.Balances[10] != wantBalance || !ownsSKU(a, economyCatalogSnapshot()[200597]) {
 				t.Fatal("purchase debit/grant not persisted")
 			}
 			w := demonware.NewWriter([]byte{svcMarketplace, demonware.TagUint8, taskGetInventoryPaginated})
@@ -265,7 +265,7 @@ func TestPlatformMarketplacePurchaseInventoryAndBalancePush(t *testing.T) {
 			pid, e4 := r.Uint64()
 			kind, e5 := r.String()
 			item, e6 := r.Uint32()
-			if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil || e6 != nil || task != taskGetInventoryPaginated || count != 1 || total != 1 || pid != l.pid() || kind != tc.owner || len(kind) > 10 || item != economyCatalog[200597].Items[0] {
+			if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil || e6 != nil || task != taskGetInventoryPaginated || count != 1 || total != 1 || pid != l.pid() || kind != tc.owner || len(kind) > 10 || item != economyCatalogSnapshot()[200597].Items[0] {
 				t.Fatal("wrong inventory wire identity or catalog item")
 			}
 		})

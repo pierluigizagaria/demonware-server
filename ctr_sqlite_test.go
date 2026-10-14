@@ -120,7 +120,7 @@ func TestEconomyStoresAgree(t *testing.T) {
 		{"purchase batch", purchase(200597, 200085)},
 	}
 	// Buy one component first, then its bundle at the remaining component price.
-	for id, sku := range economyCatalog {
+	for id, sku := range economyCatalogSnapshot() {
 		if len(sku.Parts) > 1 {
 			steps = append(steps, step{"component", purchase(sku.Parts[0])}, step{"bundle", purchase(id)})
 			break
@@ -309,7 +309,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	if _, err := s.purchase(pid, []uint32{200085}); err != nil {
 		t.Fatal(err)
 	}
-	item := economyCatalog[200085].Items[0]
+	item := economyCatalogSnapshot()[200085].Items[0]
 	var source string
 	var stamp int64
 	if err := db.db.QueryRow("SELECT source, granted_at FROM inventory WHERE pid=? AND item=?", pid, item).Scan(&source, &stamp); err != nil || source != "purchase" || stamp <= 0 {
@@ -318,7 +318,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	var delta int64
 	var sku uint32
 	var skus string
-	if err := db.db.QueryRow("SELECT delta, sku, skus FROM ledger WHERE source='purchase' AND currency=10").Scan(&delta, &sku, &skus); err != nil || delta != -economyCatalog[200085].Price || sku != 200085 || skus != "[200085]" {
+	if err := db.db.QueryRow("SELECT delta, sku, skus FROM ledger WHERE source='purchase' AND currency=10").Scan(&delta, &sku, &skus); err != nil || delta != -economyCatalogSnapshot()[200085].Price || sku != 200085 || skus != "[200085]" {
 		t.Fatalf("purchase audit = %d %d %s, %v", delta, sku, skus, err)
 	}
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
@@ -396,7 +396,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 			t.Fatalf("currency %d: ledger %d balance %d, %v", currency, sum, amount, err)
 		}
 	}
-	if got := sqliteCount(t, db, "ledger"); got != 6+len(economyCatalog[200085].Items) {
+	if got := sqliteCount(t, db, "ledger"); got != 6+len(economyCatalogSnapshot()[200085].Items) {
 		t.Fatalf("unexpected ledger rows: %d", got)
 	}
 	before := sqliteCount(t, db, "ledger")
@@ -471,7 +471,7 @@ func TestSQLiteConcurrentPurchaseRetry(t *testing.T) {
 	}
 	wg.Wait()
 	a, err := s.snapshot(42)
-	if err != nil || a.Balances[10] != 10000-economyCatalog[200085].Price {
+	if err != nil || a.Balances[10] != 10000-economyCatalogSnapshot()[200085].Price {
 		t.Fatalf("concurrent purchase: %+v, %v", a, err)
 	}
 	if sqliteCount(t, db, "ledger") != 2+len(a.Items) {

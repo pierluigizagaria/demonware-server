@@ -206,13 +206,13 @@ func (state *presenceStore) pidOnline(id uint64) uint64 {
 func (h *presenceHandler) onGetUserIDs(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	count, err := r.Uint32()
 	if err != nil || count == 0 || count > 500 {
-		return h.taskReply(task, errUnhandled, nil)
+		return h.taskReply(task, presenceUnhandled, nil)
 	}
 	names := make([]string, 0, count)
 	for i := uint32(0); i < count; i++ {
 		name, err := r.String()
 		if err != nil || name == "" || len(name) > 63 {
-			return h.taskReply(task, errUnhandled, nil)
+			return h.taskReply(task, presenceUnhandled, nil)
 		}
 		names = append(names, name)
 	}

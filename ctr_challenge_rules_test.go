@@ -7,7 +7,7 @@ import (
 
 func ruleForTest(t *testing.T, name string) challengeRule {
 	t.Helper()
-	for _, r := range challengeRules.Rules {
+	for _, r := range challengeScheduleSnapshot().Rules {
 		if r.Name == name {
 			return r
 		}
@@ -16,7 +16,7 @@ func ruleForTest(t *testing.T, name string) challengeRule {
 	return challengeRule{}
 }
 func ruleTime(r challengeRule) time.Time {
-	return time.Unix(challengeRules.CycleStart+30*challengeRules.CycleSeconds+r.Periods[0].Start+60, 0)
+	return time.Unix(challengeScheduleSnapshot().CycleStart+30*challengeScheduleSnapshot().CycleSeconds+r.Periods[0].Start+60, 0)
 }
 func ruleEvent(r challengeRule, now time.Time) achievementEvent {
 	p := r.Periods[0]
@@ -27,16 +27,16 @@ func ruleEvent(r challengeRule, now time.Time) achievementEvent {
 	return e
 }
 func TestOriginalChallengeCatalog(t *testing.T) {
-	if len(challengeRules.Rules) != 59 {
-		t.Fatal(len(challengeRules.Rules))
+	if len(challengeScheduleSnapshot().Rules) != 59 {
+		t.Fatal(len(challengeScheduleSnapshot().Rules))
 	}
-	for _, r := range challengeRules.Rules {
+	for _, r := range challengeScheduleSnapshot().Rules {
 		expected := map[uint64]int64{3: 25, 4: 75, 5: 200}[r.Kind]
 		if r.Reward != expected || expected == 0 || len(r.Periods) == 0 {
 			t.Fatalf("invalid %s", r.Name)
 		}
 		for _, p := range r.Periods {
-			if p.Target == 0 || p.Start < 0 || p.End <= p.Start || p.End > challengeRules.CycleSeconds {
+			if p.Target == 0 || p.Start < 0 || p.End <= p.Start || p.End > challengeScheduleSnapshot().CycleSeconds {
 				t.Fatalf("bad period %s %+v", r.Name, p)
 			}
 		}
@@ -93,7 +93,7 @@ func TestWeeklyProgressCountsOccurrencesAndDeduplicatesReplay(t *testing.T) {
 		t.Fatalf("weekly completion %d %v", c, err)
 	}
 	// The next weekly occurrence must not inherit completed progress.
-	next := time.Unix(challengeRules.CycleStart+30*challengeRules.CycleSeconds+r.Periods[1].Start+60, 0)
+	next := time.Unix(challengeScheduleSnapshot().CycleStart+30*challengeScheduleSnapshot().CycleSeconds+r.Periods[1].Start+60, 0)
 	a, _ = s.snapshot(42)
 	st, _, active := r.current(a, next)
 	if !active || st.Progress != 0 || st.Completed != 0 {

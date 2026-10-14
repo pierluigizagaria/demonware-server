@@ -30,7 +30,7 @@ func TestCTRStatsPersistenceBestAndWire(t *testing.T) {
 	if err != nil || len(rows) != 2 || rows[0].PID != 13 || rows[1].Driver != 123 || rows[1].Rank != 2 {
 		t.Fatalf("bad persistent ranks: %+v %v", rows, err)
 	}
-	reply := testReplies.statsReply(4, rows[1:], 2)
+	reply := statsReply(testReplies, 4, rows[1:], 2)
 	r := demonware.NewReader(reply)
 	r.Uint64()
 	r.Uint32()
@@ -150,7 +150,7 @@ func TestRingRallyScoresAndDriverWire(t *testing.T) {
 		if err != nil || len(rows) != 1 || rows[0].Score != 123456 || rows[0].Driver != 77 {
 			t.Fatalf("bad saved score: %+v %v", rows, err)
 		}
-		r := demonware.NewReader(testReplies.statsReply(4, rows, 1))
+		r := demonware.NewReader(statsReply(testReplies, 4, rows, 1))
 		r.Uint64()
 		r.Uint32()
 		r.Uint8()

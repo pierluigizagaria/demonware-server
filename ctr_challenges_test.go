@@ -9,7 +9,7 @@ import (
 func TestWindowShoppingOriginalScheduleAndReward(t *testing.T) {
 	now := time.Date(2026, 9, 23, 3, 29, 0, 0, time.UTC)
 	state, active := windowShoppingState(&economyAccount{}, now)
-	if !active || state.Target != 1 || state.ID != 11 || windowShopping.Reward != 25 {
+	if !active || state.Target != 1 || state.ID != 11 || windowShoppingSnapshot().Reward != 25 {
 		t.Fatalf("wrong original rule: %+v %v", state, active)
 	}
 	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
@@ -40,7 +40,7 @@ func TestWindowShoppingOriginalScheduleAndReward(t *testing.T) {
 func TestWindowShoppingInactiveAndStaleEvents(t *testing.T) {
 	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	// Original cycle day 2 has no Window Shopping challenge.
-	now := time.Unix(windowShopping.CycleStart, 0).Add(2 * 24 * time.Hour)
+	now := time.Unix(windowShoppingSnapshot().CycleStart, 0).Add(2 * 24 * time.Hour)
 	e := achievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
 	credit, p, err := s.awardWindowShopping(42, []achievementEvent{e}, now)
 	if err != nil || credit != 0 || len(p) != 0 {

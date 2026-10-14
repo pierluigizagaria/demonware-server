@@ -200,7 +200,7 @@ func (handler *contextHandler) onFriendSessions(peer taskSession, task byte, r *
 }
 
 // onMatchMaking handles service 21. Returns nil if the task isn't handled.
-func (handler *contextHandler) onMatchMaking(peer taskSession, task byte, r *demonware.Reader) []byte {
+func (handler *diabloMatchHandler) onMatchMaking(peer taskSession, task byte, r *demonware.Reader) []byte {
 	return handler.onMatchMakingContext(peer, task, r, "d3")
 }
 

@@ -23,6 +23,7 @@ type contextHandler struct {
 	relay    *relayTable
 }
 type diabloMatchHandler struct{ *contextHandler }
+type ctrContextHandler struct{ *contextHandler }
 type asyncHandler struct {
 	*replyCounter
 	matchmaker *ctrMatchmaker
@@ -144,7 +145,7 @@ func (handler *userDataHandler) Handle(peer taskSession, request taskRequest) (r
 	return result
 }
 
-func (handler *contextHandler) Handle(peer taskSession, request taskRequest) (result taskResult) {
+func (handler *ctrContextHandler) Handle(peer taskSession, request taskRequest) (result taskResult) {
 	service, task, r := request.Service, request.Task, request.Args
 	var reply []byte
 	switch {
@@ -379,7 +380,7 @@ func newCTRServiceTable(replies *replyCounter, ctr *ctrServices, presence *prese
 		80:  economy,
 		104: &newsHandler{replyCounter: replies, news: ctr.news},
 		125: economy,
-		138: context,
+		138: &ctrContextHandler{context},
 		145: async,
 		194: &httpProxyHandler{replies},
 	}}

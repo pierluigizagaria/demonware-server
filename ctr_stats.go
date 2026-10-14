@@ -175,7 +175,7 @@ func (s *ctrStatsStore) read(board uint32) ([]ctrStat, error) {
 	}
 	return rows, nil
 }
-func (replies *replyCounter) statsReply(task byte, rows []ctrStat, total uint32) []byte {
+func statsReply(replies *replyCounter, task byte, rows []ctrStat, total uint32) []byte {
 	w := &demonware.Writer{}
 	for _, r := range rows {
 		w.Uint64(r.PID)
@@ -191,7 +191,7 @@ func (replies *replyCounter) statsReply(task byte, rows []ctrStat, total uint32)
 			w.Uint32(r.Driver)
 		}
 	}
-	return demonware.ListReply(replies.transactions.Add(1), task, 0, uint32(len(rows)), total, w.Bytes())
+	return demonware.ListReply(replies.nextTransaction(), task, 0, uint32(len(rows)), total, w.Bytes())
 }
 func (h *statsHandler) onCTRStats(peer taskSession, task byte, r *demonware.Reader) []byte {
 	pid := peer.PID()
@@ -266,5 +266,5 @@ func (h *statsHandler) onCTRStats(peer taskSession, task byte, r *demonware.Read
 		return fail(err)
 	}
 	peer.Logf("CTR stats read task=%d board=%d rows=%d total=%d", task, board, len(rows), total)
-	return h.statsReply(task, rows, total)
+	return statsReply(h.replyCounter, task, rows, total)
 }

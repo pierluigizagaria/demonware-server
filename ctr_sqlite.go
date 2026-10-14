@@ -547,7 +547,7 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *economyAccount, ex
 		}
 		var sku any
 		for _, id := range change.skus {
-			for _, granted := range economyCatalog[id].Items {
+			for _, granted := range economySKUItems(id) {
 				if granted == item {
 					sku = id
 					break

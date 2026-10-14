@@ -82,7 +82,7 @@ func TestLoadPubConfigOverDefaults(t *testing.T) {
 	if err := os.WriteFile(p, []byte("// mine\n{ \"season\": 37, /* extra */ \"events\": { \"SoulShards\": true } }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c, err := testFiles.loadPubConfig(p)
+	c, err := diabloTestFiles.loadPubConfig(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestLoadPubConfigOverDefaults(t *testing.T) {
 	}
 	// a missing file is created from the shipped one, comments and all
 	missing := filepath.Join(dir, "new.json")
-	if _, err := testFiles.loadPubConfig(missing); err != nil {
+	if _, err := diabloTestFiles.loadPubConfig(missing); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(missing)
@@ -121,7 +121,7 @@ func TestDatesPastTheGameLimitAreClamped(t *testing.T) {
 	if err := os.WriteFile(p, []byte(`{"season_end": "Sat, 01 Jan 2050 00:00:00 GMT", "buff_end": "Sat, 01 Jan 2060 00:00:00 GMT"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c, err := testFiles.loadPubConfig(p)
+	c, err := diabloTestFiles.loadPubConfig(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,3 +129,5 @@ func TestDatesPastTheGameLimitAreClamped(t *testing.T) {
 		t.Errorf("loaded season_end %q buff_end %q", c.SeasonEnd, c.BuffEnd)
 	}
 }
+
+var diabloTestFiles = &publisherFiles{diagnostics: &diagnostics{redactLogs: true}}

@@ -86,7 +86,7 @@ func (l *lobbySession) processTask(payload []byte) {
 		if len(payload) >= 3 {
 			task = payload[2]
 		}
-		if service == svcMarketplace || service == svcMarketingComms {
+		if service == 80 || service == 104 {
 			_ = l.sendEncrypted(demonware.InnerTaskReply, l.taskReply(task, errUnhandled, nil))
 			return
 		}
@@ -134,3 +134,5 @@ func (replies *replyCounter) httpProxyReply(task byte, status uint32, body []byt
 func (replies *replyCounter) structTaskReply(task byte, body []byte) []byte {
 	return demonware.StructReply(replies.transactions.Add(1), task, body)
 }
+
+func (replies *replyCounter) nextTransaction() uint64 { return replies.transactions.Add(1) }

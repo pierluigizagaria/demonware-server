@@ -15,15 +15,15 @@ func TestSQLiteUnlockAllOwnsCatalogWithoutWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(a.Items, catalogItems) || len(catalogItems) == 0 {
+	if !reflect.DeepEqual(a.Items, catalogItemsSnapshot()) || len(catalogItemsSnapshot()) == 0 {
 		t.Fatal("inventory differs from catalog")
 	}
-	for _, sku := range economyCatalog {
+	for _, sku := range economyCatalogSnapshot() {
 		if !ownsSKU(a, sku) {
 			t.Fatal("catalog SKU not owned")
 		}
 	}
-	if got := inventoryPage(a, 1, 4096); len(got) != len(catalogItems) {
+	if got := inventoryPage(a, 1, 4096); len(got) != len(catalogItemsSnapshot()) {
 		t.Fatalf("first page = %d items", len(got))
 	}
 	before := sqliteChanges(t, db)
@@ -54,7 +54,7 @@ func TestSQLiteNormalInventoryIsPersisted(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, err = s.inventory(42)
-	if err != nil || len(a.Items) != len(economyCatalog[200085].Items) || a.Balances[wumpaCurrency] != 10000-economyCatalog[200085].Price {
+	if err != nil || len(a.Items) != len(economyCatalogSnapshot()[200085].Items) || a.Balances[wumpaCurrency] != 10000-economyCatalogSnapshot()[200085].Price {
 		t.Fatal("inventory does not reflect persisted purchases")
 	}
 }
@@ -91,7 +91,7 @@ func TestPlatformMarketplaceUnlockAllInventory(t *testing.T) {
 	r := demonware.NewReader(reply[14:])
 	task, e1 := r.Uint8()
 	count, e2 := r.Uint32()
-	if e1 != nil || e2 != nil || task != taskGetInventoryPaginated || int(count) != len(catalogItems) {
+	if e1 != nil || e2 != nil || task != taskGetInventoryPaginated || int(count) != len(catalogItemsSnapshot()) {
 		t.Fatalf("inventory count = %d", count)
 	}
 }

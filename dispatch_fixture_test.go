@@ -44,7 +44,7 @@ func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context str
 	return (&contextHandler{readInfo: readInfo, replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onFriendSessions(l, task, r, context)
 }
 func (l *lobbyConn) onMatchMaking(task byte, r *demonware.Reader) []byte {
-	return (&contextHandler{readInfo: readInfo, replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onMatchMaking(l, task, r)
+	return (&diabloMatchHandler{&contextHandler{readInfo: readInfo, replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}}).onMatchMaking(l, task, r)
 }
 func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context string) []byte {
 	readInfo := readInfo
