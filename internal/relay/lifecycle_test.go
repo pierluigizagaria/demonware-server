@@ -15,9 +15,9 @@ func TestRelayShutdownJoinsReaperAndSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pair := &Pair{table: r, Conn: conn}
+	pair := &Pair{table: r, conn: conn}
 	r.mu.Lock()
-	r.Pairs["fixture"] = pair
+	r.pairs["fixture"] = pair
 	r.workers.Add(1)
 	r.mu.Unlock()
 	go func() { defer r.workers.Done(); pair.serve() }()

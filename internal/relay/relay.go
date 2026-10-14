@@ -73,7 +73,7 @@ type Pair struct {
 	hostPID, joinerPID uint64
 	host               *net.UDPAddr // the host's public endpoint, from its own hostAddr
 	joiner             *net.UDPAddr // learned from the first packet that is not the host
-	Conn               *net.UDPConn
+	conn               *net.UDPConn
 }
 
 type Table struct {
@@ -84,19 +84,19 @@ type Table struct {
 	*diagnostics.Diagnostics
 	BindAddr, PIDs string
 	mu             sync.Mutex
-	Pairs          map[string]*Pair // "hostPID:joinerPID" -> pair
-	ByPort         map[int]*Pair
-	Low            int
-	High           int
-	Next           int
-	IP             net.IP
+	pairs          map[string]*Pair // "hostPID:joinerPID" -> pair
+	byPort         map[int]*Pair
+	low            int
+	high           int
+	next           int
+	ip             net.IP
 }
 
 func NewTable(diag *diagnostics.Diagnostics, bindAddr, pids string) *Table {
-	return &Table{Diagnostics: diag, BindAddr: bindAddr, PIDs: pids, Pairs: map[string]*Pair{}, ByPort: map[int]*Pair{}}
+	return &Table{Diagnostics: diag, BindAddr: bindAddr, PIDs: pids, pairs: map[string]*Pair{}, byPort: map[int]*Pair{}}
 }
 
-func (relay *Table) relayEnabled() bool { return relay.High >= relay.Low && relay.Low > 0 }
+func (relay *Table) relayEnabled() bool { return relay.high >= relay.low && relay.low > 0 }
 
 func (relay *Table) Start(low, high int, host string, onlinePIDs func() []uint64) {
 	ip := net.ParseIP(host).To4()
@@ -112,7 +112,7 @@ func (relay *Table) Start(low, high int, host string, onlinePIDs func() []uint64
 	relay.reaperStarted = true
 	relay.stop = make(chan struct{})
 	relay.workers.Add(1)
-	relay.Low, relay.High, relay.Next, relay.IP = low, high, low, ip
+	relay.low, relay.high, relay.next, relay.ip = low, high, low, ip
 	relay.mu.Unlock()
 	relay.DiagnosticLogf("[relay] enabled on %s:%d-%d", ip, low, high)
 	go func() { defer relay.workers.Done(); relay.reap(onlinePIDs) }()
@@ -172,7 +172,7 @@ func (relay *Table) WithRelay(hostAddr []byte, hostPID, joinerPID uint64) []byte
 		if ParseAddrSlot(out[off:off+RelayAddrLen]) != nil {
 			continue // already occupied
 		}
-		writeAddrSlot(out[off:off+RelayAddrLen], &net.UDPAddr{IP: relay.IP, Port: p.port})
+		writeAddrSlot(out[off:off+RelayAddrLen], &net.UDPAddr{IP: relay.ip, Port: p.port})
 		relay.DiagnosticLogf("[relay] offered :%d to pid=%d for host=%d (slot %d)", p.port, joinerPID, hostPID, slot)
 		return out
 	}
@@ -191,25 +191,25 @@ func (t *Table) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *Pair {
 	if t.stopped {
 		return nil
 	}
-	if p, ok := t.Pairs[key]; ok {
+	if p, ok := t.pairs[key]; ok {
 		p.host = host
 		return p
 	}
-	for tries := 0; tries <= t.High-t.Low; tries++ {
-		port := t.Next
-		t.Next++
-		if t.Next > t.High {
-			t.Next = t.Low
+	for tries := 0; tries <= t.high-t.low; tries++ {
+		port := t.next
+		t.next++
+		if t.next > t.high {
+			t.next = t.low
 		}
-		if _, busy := t.ByPort[port]; busy {
+		if _, busy := t.byPort[port]; busy {
 			continue
 		}
 		conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP(t.BindAddr), Port: port})
 		if err != nil {
 			continue
 		}
-		p := &Pair{table: t, port: port, hostPID: hostPID, joinerPID: joinerPID, host: host, Conn: conn}
-		t.Pairs[key], t.ByPort[port] = p, p
+		p := &Pair{table: t, port: port, hostPID: hostPID, joinerPID: joinerPID, host: host, conn: conn}
+		t.pairs[key], t.byPort[port] = p, p
 		t.workers.Add(1)
 		go func() { defer t.workers.Done(); p.serve() }()
 		t.DiagnosticLogf("[relay] pair %d<->%d on :%d (host %s)", hostPID, joinerPID, port, host)
@@ -224,7 +224,7 @@ func (t *Table) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *Pair {
 func (p *Pair) serve() {
 	buf := make([]byte, 2048)
 	for {
-		n, src, err := p.Conn.ReadFromUDP(buf)
+		n, src, err := p.conn.ReadFromUDP(buf)
 		if err != nil {
 			return
 		}
@@ -247,7 +247,7 @@ func (p *Pair) serve() {
 		if to == nil {
 			continue
 		}
-		_, _ = p.Conn.WriteToUDP(buf[:n], to)
+		_, _ = p.conn.WriteToUDP(buf[:n], to)
 	}
 }
 
@@ -274,13 +274,13 @@ func (t *Table) reap(onlinePIDs func() []uint64) {
 func (t *Table) ReapOffline(online map[uint64]bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	for key, p := range t.Pairs {
+	for key, p := range t.pairs {
 		if online[p.hostPID] && online[p.joinerPID] {
 			continue
 		}
-		_ = p.Conn.Close()
-		delete(t.Pairs, key)
-		delete(t.ByPort, p.port)
+		_ = p.conn.Close()
+		delete(t.pairs, key)
+		delete(t.byPort, p.port)
 	}
 }
 
@@ -294,8 +294,8 @@ func (t *Table) Close() {
 	if t.stop != nil {
 		close(t.stop)
 	}
-	for _, pair := range t.Pairs {
-		_ = pair.Conn.Close()
+	for _, pair := range t.pairs {
+		_ = pair.conn.Close()
 	}
 }
 func (t *Table) Wait() { t.workers.Wait() }
