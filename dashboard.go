@@ -68,10 +68,10 @@ func unregisterConn(l *lobbyConn) {
 }
 
 // connPID returns the Nextendo PID of a lobby connection's player (0 if unknown).
-func connPID(conn uint64) uint64 {
-	onlineMu.Lock()
-	defer onlineMu.Unlock()
-	if p := online[conn]; p != nil {
+func (state *presenceStore) connPID(conn uint64) uint64 {
+	state.onlineMu.Lock()
+	defer state.onlineMu.Unlock()
+	if p := state.online[conn]; p != nil {
 		return p.PID
 	}
 	return 0
@@ -84,7 +84,7 @@ func noteTask(l *lobbyConn, service, task byte) {
 	if service == svcMatchMaking && task == mmCreateSession {
 		gatheringsMade.Add(1)
 	}
-	pid := connPID(l.n)
+	pid := l.presence.connPID(l.n)
 	now := time.Now()
 	statsMu.Lock()
 	if cs := connStats[l.n]; cs != nil {
@@ -204,18 +204,18 @@ type apiStats struct {
 	Methods        []apiMethod    `json:"methods"`
 }
 
-func buildStats() apiStats { return buildGameStats("") }
+func buildStats(presence *presenceStore) apiStats { return buildGameStats(presence, "") }
 
-func buildGameStats(game string) apiStats {
-	onlineMu.Lock()
-	who := make(map[uint64]playerID, len(online))
-	for n, p := range online {
+func buildGameStats(presence *presenceStore, game string) apiStats {
+	presence.onlineMu.Lock()
+	who := make(map[uint64]playerID, len(presence.online))
+	for n, p := range presence.online {
 		if (game == "ctr" && !isCTRTitle(p.Title)) || (game == "d3" && isCTRTitle(p.Title)) {
 			continue
 		}
 		who[n] = *p
 	}
-	onlineMu.Unlock()
+	presence.onlineMu.Unlock()
 
 	type sessSnap struct {
 		id                               [8]byte
@@ -363,7 +363,7 @@ func buildGameStats(game string) apiStats {
 	}
 }
 
-func startDashboard() {
+func startDashboard(presence *presenceStore) {
 	port, token := strconv.Itoa(dashPort), dashToken
 
 	authed := func(w http.ResponseWriter, r *http.Request) bool {
@@ -381,7 +381,7 @@ func startDashboard() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(buildGameStats(r.URL.Query().Get("game")))
+		_ = json.NewEncoder(w).Encode(buildGameStats(presence, r.URL.Query().Get("game")))
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 	mux.HandleFunc("/pubfiles/", pubfilesHandler)

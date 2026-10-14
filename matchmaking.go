@@ -163,7 +163,7 @@ func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context str
 	}
 	var found []hit
 	for _, id := range ids {
-		pid := pidOnline(id)
+		pid := l.presence.pidOnline(id)
 		if pid == 0 {
 			// On Citron the friend id IS the PID; the host may be
 			// reconnecting and so missing from the online list.

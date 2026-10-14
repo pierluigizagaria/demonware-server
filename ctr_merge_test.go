@@ -8,7 +8,7 @@ import (
 )
 
 func mergeTestRooms(t *testing.T) (*ctrMatchmaker, *ctrRoom, *ctrRoom) {
-	m := &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	m := &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
 	a := fillTestRoom(t, m, 10000, 3)
 	a.hostDoc["lobby_open"] = false
 	b := fillTestRoom(t, m, 20000, 3)

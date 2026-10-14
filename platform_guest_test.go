@@ -150,10 +150,10 @@ func TestGuestTicketsReachLobbyAndUmbrella(t *testing.T) {
 		if l.keys == nil || l.player == nil || l.player.Kind != "guest" || l.player.PID != want {
 			t.Fatal("anonymous lobby handshake failed")
 		}
-		if nicknameOnline(want) != id.Username {
+		if testPresence.nicknameOnline(want) != id.Username {
 			t.Fatal("publisher name lookup lost the random nickname")
 		}
-		dropOnline(l.n)
+		testPresence.dropOnline(l.n)
 		umbrella, _ := json.Marshal(map[string]any{"ticket": response.ServerTicket, "titleID": ctrTitle})
 		uw := httptest.NewRecorder()
 		handler.ServeHTTP(uw, httptest.NewRequest("POST", "/v1.0/tokens/lsg/", bytes.NewReader(umbrella)))

@@ -87,7 +87,7 @@ var relay = &relayTable{pairs: map[string]*relayPair{}, byPort: map[int]*relayPa
 
 func relayEnabled() bool { return relay.high >= relay.low && relay.low > 0 }
 
-func startCTRRelay(low, high int, host string) {
+func startCTRRelay(low, high int, host string, onlinePIDs func() []uint64) {
 	ip := net.ParseIP(host).To4()
 	if ip == nil || low <= 0 || high < low {
 		diagnosticLogf("[CTR Relay] disabled (host=%q ports %d-%d)", host, low, high)
@@ -97,7 +97,7 @@ func startCTRRelay(low, high int, host string) {
 	relay.low, relay.high, relay.next, relay.ip = low, high, low, ip
 	relay.mu.Unlock()
 	diagnosticLogf("[CTR Relay] enabled on %s:%d-%d", ip, low, high)
-	go relay.reap()
+	go relay.reap(onlinePIDs)
 }
 
 // parseAddrSlot reads one bdCommonAddr slot. The port is little-endian, as in nat.go.
@@ -232,7 +232,7 @@ func (p *relayPair) serve() {
 // reap releases a pair's port once either player has no lobby connection.
 // A quiet pair between connected players is kept: races and menus may be
 // idle for any length of time.
-func (t *relayTable) reap() {
+func (t *relayTable) reap(onlinePIDs func() []uint64) {
 	for range time.Tick(30 * time.Second) {
 		connected := map[uint64]bool{}
 		for _, pid := range onlinePIDs() {

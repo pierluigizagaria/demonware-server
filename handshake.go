@@ -46,13 +46,14 @@ import (
 var serverIDs atomic.Uint64
 
 type lobbyConn struct {
-	tickets *ticketStore
-	clock   func() time.Time
-	entropy io.Reader
-	c       net.Conn
-	n       uint64
-	dumpDir string
-	pubDir  string
+	presence *presenceStore
+	tickets  *ticketStore
+	clock    func() time.Time
+	entropy  io.Reader
+	c        net.Conn
+	n        uint64
+	dumpDir  string
+	pubDir   string
 
 	maxLen   uint32
 	nonce    []byte
@@ -126,7 +127,7 @@ func (l *lobbyConn) run() {
 	defer l.c.Close()
 	defer dropSessionsOf(l.n)
 	defer func() { sendCTRNotices(ctrMM.leave(l, 0)) }()
-	defer dropOnline(l.n)
+	defer l.presence.dropOnline(l.n)
 	l.logf("==== CONNECT from=%s", l.c.RemoteAddr())
 
 	hello, err := l.readFull(demonware.HelloLen)

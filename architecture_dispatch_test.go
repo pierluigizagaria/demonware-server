@@ -87,25 +87,25 @@ type architectureSnapshot struct {
 // replaced registries; the instance refactor must retain these observations.
 func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *ctrSQLite) {
 	t.Helper()
-	oldSessions, oldOnline, oldUserData, oldRich := sessions, online, userData, rich
-	oldEconomy, oldStats, oldNames, oldNews := economy, ctrStats, playerNames, ctrNews
+	oldSessions, oldOnline, oldUserData, oldRich := sessions, testPresence.online, testPresence.userData, testPresence.rich
+	oldEconomy, oldStats, oldNames, oldNews := economy, ctrStats, testPresence.playerNames, ctrNews
 	oldWaiting, oldPending, oldRooms := ctrMM.waiting, ctrMM.pending, ctrMM.rooms
 	oldTx, oldIDs := transactions.Load(), ctrIDs.Load()
-	sessions, online, userData, rich = map[[8]byte]*mmSession{}, map[uint64]*playerID{}, map[string][]byte{}, map[uint64]richPresence{}
+	sessions, testPresence.online, testPresence.userData, testPresence.rich = map[[8]byte]*mmSession{}, map[uint64]*playerID{}, map[string][]byte{}, map[uint64]richPresence{}
 	ctrMM.waiting, ctrMM.pending, ctrMM.rooms = nil, nil, map[uint64]*ctrRoom{}
 	transactions.Store(0)
 	ctrIDs.Store(0)
 	e, db := newTestEconomy(t, false)
-	economy, ctrStats, playerNames, ctrNews = e, db, db, ctrNewsConfig{}
+	economy, ctrStats, testPresence.playerNames, ctrNews = e, db, db, ctrNewsConfig{}
 	setStartBalance(t, 10000)
 	l, _ := sharedPS4Lobby()
 	w := &architectureWire{}
 	l.c = w
 	l.pubDir = t.TempDir()
-	online[l.n] = l.player
+	testPresence.online[l.n] = l.player
 	t.Cleanup(func() {
-		sessions, online, userData, rich = oldSessions, oldOnline, oldUserData, oldRich
-		economy, ctrStats, playerNames, ctrNews = oldEconomy, oldStats, oldNames, oldNews
+		sessions, testPresence.online, testPresence.userData, testPresence.rich = oldSessions, oldOnline, oldUserData, oldRich
+		economy, ctrStats, testPresence.playerNames, ctrNews = oldEconomy, oldStats, oldNames, oldNews
 		ctrMM.waiting, ctrMM.pending, ctrMM.rooms = oldWaiting, oldPending, oldRooms
 		transactions.Store(oldTx)
 		ctrIDs.Store(oldIDs)
@@ -151,7 +151,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *ctrS
 			frames[i].Payload = hex.EncodeToString(p)
 		}
 	}
-	return architectureSnapshot{frames, transactions.Load(), len(sessions), len(userData), len(rich), len(ctrMM.waiting), len(ctrMM.pending), len(ctrMM.rooms), l.lobbyDoc,
+	return architectureSnapshot{frames, transactions.Load(), len(sessions), len(testPresence.userData), len(testPresence.rich), len(ctrMM.waiting), len(ctrMM.pending), len(ctrMM.rooms), l.lobbyDoc,
 		sqliteCount(t, db, "accounts"), sqliteCount(t, db, "inventory"), sqliteCount(t, db, "ledger"), l.afterReply != nil, l.replyErr != nil}
 }
 

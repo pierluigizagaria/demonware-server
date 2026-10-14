@@ -9,8 +9,8 @@ import (
 )
 
 func TestCTRFriendBeyondFirstTwenty(t *testing.T) {
-	host := &lobbyConn{tickets: testTickets, n: 90343, player: &playerID{PID: 90343}}
-	guest := &lobbyConn{tickets: testTickets, n: 99000, player: &playerID{PID: 99000}}
+	host := &lobbyConn{presence: testPresence, tickets: testTickets, n: 90343, player: &playerID{PID: 90343}}
+	guest := &lobbyConn{presence: testPresence, tickets: testTickets, n: 99000, player: &playerID{PID: 99000}}
 	defer func() {
 		sessionsMu.Lock()
 		defer sessionsMu.Unlock()
@@ -42,8 +42,8 @@ func TestCTRFriendBeyondFirstTwenty(t *testing.T) {
 }
 
 func TestCTRFriendResultUnpacksUploadedAttributes(t *testing.T) {
-	host := &lobbyConn{tickets: testTickets, n: 89011, player: &playerID{PID: 89011}}
-	guest := &lobbyConn{tickets: testTickets, n: 89012, player: &playerID{PID: 89012}}
+	host := &lobbyConn{presence: testPresence, tickets: testTickets, n: 89011, player: &playerID{PID: 89011}}
+	guest := &lobbyConn{presence: testPresence, tickets: testTickets, n: 89012, player: &playerID{PID: 89012}}
 	defer func() {
 		sessionsMu.Lock()
 		defer sessionsMu.Unlock()
@@ -89,8 +89,8 @@ func TestCTRFriendResultUnpacksUploadedAttributes(t *testing.T) {
 }
 
 func TestCTRReservedSessionLifecycle(t *testing.T) {
-	host := &lobbyConn{tickets: testTickets, n: 89001, player: &playerID{PID: 89001}}
-	guest := &lobbyConn{tickets: testTickets, n: 89002, player: &playerID{PID: 89002}}
+	host := &lobbyConn{presence: testPresence, tickets: testTickets, n: 89001, player: &playerID{PID: 89001}}
+	guest := &lobbyConn{presence: testPresence, tickets: testTickets, n: 89002, player: &playerID{PID: 89002}}
 	defer func() {
 		sessionsMu.Lock()
 		defer sessionsMu.Unlock()

@@ -86,11 +86,11 @@ func TestCTRStatsCapturedInitializationAndOwnership(t *testing.T) {
 	}
 }
 func TestCTRStatsRankAndFriendsRequests(t *testing.T) {
-	oldOnline, oldStore := online, ctrStats
-	defer func() { online = oldOnline; ctrStats = oldStore }()
-	online = map[uint64]*playerID{9: {PID: 12, Username: "test", Title: 5760}}
+	oldOnline, oldStore := testPresence.online, ctrStats
+	defer func() { testPresence.online = oldOnline; ctrStats = oldStore }()
+	testPresence.online = map[uint64]*playerID{9: {PID: 12, Username: "test", Title: 5760}}
 	ctrStats = &ctrStatsStore{dir: t.TempDir()}
-	l := &lobbyConn{tickets: testTickets, n: 9, player: online[9]}
+	l := &lobbyConn{presence: testPresence, tickets: testTickets, n: 9, player: testPresence.online[9]}
 	if err := ctrStats.write([]ctrStatWrite{{ctrStat: ctrStat{Board: 1001, PID: 12, Score: 400, Name: "A"}, Operation: 4}, {ctrStat: ctrStat{Board: 1001, PID: 13, Score: 500, Name: "B"}, Operation: 4}}); err != nil {
 		t.Fatal(err)
 	}

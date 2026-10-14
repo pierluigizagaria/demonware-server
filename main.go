@@ -116,7 +116,8 @@ func main() {
 	defer store.Close()
 	economy.backend, economy.unlockAll = store, cfg.unlockAll
 	ctrStats = store
-	playerNames = store
+	presence := newPresenceStore(store)
+	ctrMM.onlinePIDs = presence.onlinePIDs
 	if cfg.unlockAll {
 		log.Print("[D3] unlock-all: on")
 	} else {
@@ -124,13 +125,13 @@ func main() {
 	}
 
 	tickets := newTicketStore()
-	go startDashboard()
+	go startDashboard(presence)
 	go serveNAT(natPort)
-	startCTRRelay(cfg.relayLow, cfg.relayHigh, nextendoHost)
+	startCTRRelay(cfg.relayLow, cfg.relayHigh, nextendoHost, presence.onlinePIDs)
 	go reapSessions()
-	startLobby(tickets)
+	startLobby(tickets, presence)
 
-	if err := serveAuth(platform, tickets); err != nil {
+	if err := serveAuth(platform, tickets, presence); err != nil {
 		log.Fatalf("[D3 Auth] stopped: %v", err)
 	}
 }

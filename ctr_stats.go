@@ -196,14 +196,14 @@ func statsReply(task byte, rows []ctrStat, total uint32) []byte {
 }
 func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
 	pid := l.pid()
-	onlineMu.Lock()
-	p := online[l.n]
+	l.presence.onlineMu.Lock()
+	p := l.presence.online[l.n]
 	name := ""
 	allowed := p != nil && isCTRTitle(p.Title) && pid != 0
 	if allowed {
 		name = p.Username
 	}
-	onlineMu.Unlock()
+	l.presence.onlineMu.Unlock()
 	fail := func(err error) []byte {
 		l.logf("CTR stats task=%d failed: %v", task, err)
 		return taskReply(task, errUnhandled, nil)

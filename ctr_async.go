@@ -83,10 +83,11 @@ type ctrRoom struct {
 	mergeTarget uint64
 }
 type ctrMatchmaker struct {
-	clock   func() time.Time
-	mu      sync.Mutex
-	waiting []*ctrSearch
-	rooms   map[uint64]*ctrRoom
+	onlinePIDs func() []uint64
+	clock      func() time.Time
+	mu         sync.Mutex
+	waiting    []*ctrSearch
+	rooms      map[uint64]*ctrRoom
 	// Searches accepted but not yet matched, by search ID: their reply is
 	// still being sent. They hold their members' seats but are not offered to
 	// anyone. A follower's own search may shrink one before it is activated.
@@ -438,7 +439,7 @@ func (m *ctrMatchmaker) cancel(conn *lobbyConn, id uint64) bool {
 // connection's own online entry before it calls leave.)
 func (m *ctrMatchmaker) leave(conn *lobbyConn, id uint64) []ctrNotice {
 	pid := conn.pid()
-	stale := id == 0 && pid != 0 && slices.Contains(onlinePIDs(), pid)
+	stale := id == 0 && pid != 0 && slices.Contains(m.onlinePIDs(), pid)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	seats := map[uint64]bool{}

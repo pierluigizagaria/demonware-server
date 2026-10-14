@@ -40,13 +40,11 @@ type playerNameStore interface {
 	namedPlayers(names []string) (map[string]*playerID, error)
 }
 
-var playerNames playerNameStore
-
-func rememberPlayerName(id playerID, at time.Time) error {
-	if playerNames == nil || id.PID == 0 || id.Username == "" {
+func (state *presenceStore) rememberPlayerName(id playerID, at time.Time) error {
+	if state.playerNames == nil || id.PID == 0 || id.Username == "" {
 		return nil
 	}
-	return playerNames.rememberName(id.PID, id.Username, at)
+	return state.playerNames.rememberName(id.PID, id.Username, at)
 }
 
 // rankedLeaderboard answers stats reads without loading a whole board.

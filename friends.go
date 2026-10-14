@@ -30,13 +30,19 @@ type playerID struct {
 	Title uint32 `json:"-"`
 }
 
-var (
-	onlineMu sync.Mutex
-	online   = map[uint64]*playerID{} // connection number -> player
+type presenceStore struct {
+	onlineMu    sync.Mutex
+	online      map[uint64]*playerID
+	userDataMu  sync.Mutex
+	userData    map[string][]byte
+	richMu      sync.Mutex
+	rich        map[uint64]richPresence
+	playerNames playerNameStore
+}
 
-	userDataMu sync.Mutex
-	userData   = map[string][]byte{} // nickname|context -> 29/1 blob
-)
+func newPresenceStore(names playerNameStore) *presenceStore {
+	return &presenceStore{online: map[uint64]*playerID{}, userData: map[string][]byte{}, rich: map[uint64]richPresence{}, playerNames: names}
+}
 
 // loadIdentity names the connection's player after the identity its ticket
 // was issued to; the handshake has already admitted that ticket.
@@ -47,42 +53,42 @@ func (l *lobbyConn) loadIdentity(ticket []byte) {
 		return
 	}
 	l.player = id
-	onlineMu.Lock()
-	online[l.n] = id
-	onlineMu.Unlock()
+	l.presence.onlineMu.Lock()
+	l.presence.online[l.n] = id
+	l.presence.onlineMu.Unlock()
 	l.logf("player %q pid=%d", id.Username, id.PID)
 }
 
 // dropPresence forgets a player's rich presence (ctr_presence.go keeps the store).
-func dropPresence(pid uint64) {
-	richMu.Lock()
-	delete(rich, pid)
-	richMu.Unlock()
+func (state *presenceStore) dropPresence(pid uint64) {
+	state.richMu.Lock()
+	delete(state.rich, pid)
+	state.richMu.Unlock()
 }
 
-func dropOnline(conn uint64) {
-	onlineMu.Lock()
+func (state *presenceStore) dropOnline(conn uint64) {
+	state.onlineMu.Lock()
 	var pid uint64
-	if p := online[conn]; p != nil {
+	if p := state.online[conn]; p != nil {
 		pid = p.PID
-		for other, q := range online {
+		for other, q := range state.online {
 			if other != conn && q.PID == pid { // still connected on another connection
 				pid = 0
 			}
 		}
 	}
-	delete(online, conn)
-	onlineMu.Unlock()
+	delete(state.online, conn)
+	state.onlineMu.Unlock()
 	if pid != 0 {
-		dropPresence(pid) // a player who left must not look joinable
+		state.dropPresence(pid) // a player who left must not look joinable
 	}
 }
 
 // onlinePlayerFor returns the connected player whose account ID is id, or nil.
-func onlinePlayerFor(id uint64) *playerID {
-	onlineMu.Lock()
-	defer onlineMu.Unlock()
-	for _, p := range online {
+func (state *presenceStore) onlinePlayerFor(id uint64) *playerID {
+	state.onlineMu.Lock()
+	defer state.onlineMu.Unlock()
+	for _, p := range state.online {
 		if p.PID != 0 && p.PID == id {
 			return p
 		}
@@ -91,12 +97,12 @@ func onlinePlayerFor(id uint64) *playerID {
 }
 
 // onlinePIDs returns every connected player's PID once.
-func onlinePIDs() []uint64 {
-	onlineMu.Lock()
-	defer onlineMu.Unlock()
+func (state *presenceStore) onlinePIDs() []uint64 {
+	state.onlineMu.Lock()
+	defer state.onlineMu.Unlock()
 	seen := map[uint64]bool{}
 	out := []uint64{}
-	for _, p := range online {
+	for _, p := range state.online {
 		if p.PID != 0 && !seen[p.PID] {
 			seen[p.PID] = true
 			out = append(out, p.PID)
@@ -106,8 +112,8 @@ func onlinePIDs() []uint64 {
 }
 
 // nicknameOnline returns the nickname of a connected player identified by id.
-func nicknameOnline(id uint64) string {
-	if p := onlinePlayerFor(id); p != nil {
+func (state *presenceStore) nicknameOnline(id uint64) string {
+	if p := state.onlinePlayerFor(id); p != nil {
 		return p.Username
 	}
 	return ""
@@ -122,7 +128,7 @@ func (l *lobbyConn) onGetUserNames(task byte, r *demonware.Reader) []byte {
 	}
 	var hits []hit
 	for _, id := range ids {
-		if name := nicknameOnline(id); name != "" {
+		if name := l.presence.nicknameOnline(id); name != "" {
 			hits = append(hits, hit{id, name})
 		}
 	}
@@ -146,9 +152,9 @@ func (l *lobbyConn) onUserData(task byte, r *demonware.Reader) []byte {
 			l.logf("userdata SET ctx=%q ignored (%v, player=%v)", ctx, err, l.player != nil)
 			return taskReply(task, 0, nil)
 		}
-		userDataMu.Lock()
-		userData[strings.ToLower(l.player.Username)+"|"+ctx] = data
-		userDataMu.Unlock()
+		l.presence.userDataMu.Lock()
+		l.presence.userData[strings.ToLower(l.player.Username)+"|"+ctx] = data
+		l.presence.userDataMu.Unlock()
 		l.logf("userdata SET %s ctx=%q %d bytes", l.player.Username, ctx, len(data))
 		return taskReply(task, 0, nil)
 	case 4:
@@ -162,13 +168,13 @@ func (l *lobbyConn) onUserData(task byte, r *demonware.Reader) []byte {
 		}
 		var hits []hit
 		for _, id := range ids {
-			name := nicknameOnline(id)
+			name := l.presence.nicknameOnline(id)
 			if name == "" {
 				continue
 			}
-			userDataMu.Lock()
-			d, ok := userData[strings.ToLower(name)+"|"+ctx]
-			userDataMu.Unlock()
+			l.presence.userDataMu.Lock()
+			d, ok := l.presence.userData[strings.ToLower(name)+"|"+ctx]
+			l.presence.userDataMu.Unlock()
 			if ok {
 				hits = append(hits, hit{id, d})
 			}
@@ -187,8 +193,8 @@ func (l *lobbyConn) onUserData(task byte, r *demonware.Reader) []byte {
 
 // pidOnline returns the PID of a connected player identified by id, or 0.
 // Used by the Crash Team Racing code.
-func pidOnline(id uint64) uint64 {
-	if p := onlinePlayerFor(id); p != nil {
+func (state *presenceStore) pidOnline(id uint64) uint64 {
+	if p := state.onlinePlayerFor(id); p != nil {
 		return p.PID
 	}
 	return 0
@@ -213,19 +219,19 @@ func (l *lobbyConn) onGetUserIDs(task byte, r *demonware.Reader) []byte {
 		names = append(names, name)
 	}
 	known := map[string]*playerID{}
-	if playerNames != nil {
-		recorded, err := playerNames.namedPlayers(names)
+	if l.presence.playerNames != nil {
+		recorded, err := l.presence.playerNames.namedPlayers(names)
 		if err != nil {
 			l.logf("friends getUserIDs: player names: %v", err)
 		} else {
 			known = recorded
 		}
 	}
-	onlineMu.Lock()
-	for _, p := range online {
+	l.presence.onlineMu.Lock()
+	for _, p := range l.presence.online {
 		known[strings.ToLower(p.Username)] = p
 	}
-	onlineMu.Unlock()
+	l.presence.onlineMu.Unlock()
 	var found []*playerID
 	for _, name := range names {
 		if p := known[strings.ToLower(name)]; p != nil && p.PID != 0 {

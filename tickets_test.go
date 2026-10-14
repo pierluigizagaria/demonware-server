@@ -21,9 +21,9 @@ func issuedTicketCount() int {
 func withTestPlayerNames(t *testing.T) *ctrSQLite {
 	t.Helper()
 	db := openTestCTR(t, filepath.Join(t.TempDir(), ctrDB), false)
-	old := playerNames
-	playerNames = db
-	t.Cleanup(func() { playerNames = old })
+	old := testPresence.playerNames
+	testPresence.playerNames = db
+	t.Cleanup(func() { testPresence.playerNames = old })
 	return db
 }
 

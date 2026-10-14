@@ -16,7 +16,7 @@ func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctrSearch {
 	info.Listen.ID = base64.StdEncoding.EncodeToString(make([]byte, 8))
 	info.Listen.Key = base64.StdEncoding.EncodeToString(make([]byte, 16))
 	raw, _ := json.Marshal(info)
-	l := &lobbyConn{tickets: testTickets, n: pid, player: &playerID{PID: pid}, lobbyDoc: string(raw)}
+	l := &lobbyConn{presence: testPresence, tickets: testTickets, n: pid, player: &playerID{PID: pid}, lobbyDoc: string(raw)}
 	search, err := parseCTRSearch(l, fmt.Sprintf(`{"members":[%d],"lobby_slots":{"min":2,"max":8},"ruleset_payload":{"filter":{"playlist_id":%d,"matchmaking_version":200}}}`, pid, playlist))
 	if err != nil {
 		t.Fatal(err)
@@ -24,7 +24,7 @@ func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctrSearch {
 	return search
 }
 func TestCTRPublicPairingAndDocuments(t *testing.T) {
-	m := ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	m := ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
 	a, b, c := testCTRSearch(t, 101, 0), testCTRSearch(t, 102, 0), testCTRSearch(t, 103, 1)
 	if len(m.enqueue(a)) != 0 || len(m.enqueue(c)) != 0 {
 		t.Fatal("matched incompatible searches")
@@ -109,7 +109,7 @@ func TestCTRPublicPairingAndDocuments(t *testing.T) {
 	}
 }
 func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
-	m := ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	m := ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
 	a := testCTRSearch(t, 201, 0)
 	m.enqueue(a)
 	retry := testCTRSearch(t, 201, 0)

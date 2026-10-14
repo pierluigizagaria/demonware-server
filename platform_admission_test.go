@@ -91,7 +91,7 @@ func TestPS4LobbyAdmitsOnlyFreshIssuedTickets(t *testing.T) {
 	fresh := psnTicket(time.Now())
 	issueTestTicket(fresh, playerID{PID: 17, Username: "fixture", Sub: "shadnet:17", Kind: "shadnet", Title: 5760})
 	l := handshake(t, fresh)
-	defer dropOnline(l.n)
+	defer testPresence.dropOnline(l.n)
 	if l.keys == nil || l.player == nil || l.player.PID != 17 || l.player.Title != 5760 {
 		t.Fatal("fresh issued ticket refused or identity lost")
 	}
@@ -140,11 +140,11 @@ func TestPS4UmbrellaUsesFreshIssuedTicket(t *testing.T) {
 func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
 	l, w := sharedPS4Lobby()
 	withTestPlayerNames(t)
-	onlineMu.Lock()
-	online[l.n] = l.player
-	onlineMu.Unlock()
-	defer dropOnline(l.n)
-	if err := rememberPlayerName(playerID{PID: 42, Username: "OfflineFriend", Kind: "shadnet"}, time.Now().Add(-time.Hour)); err != nil {
+	testPresence.onlineMu.Lock()
+	testPresence.online[l.n] = l.player
+	testPresence.onlineMu.Unlock()
+	defer testPresence.dropOnline(l.n)
+	if err := testPresence.rememberPlayerName(playerID{PID: 42, Username: "OfflineFriend", Kind: "shadnet"}, time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	req := demonware.NewWriter([]byte{12, demonware.TagUint8, 10})
@@ -163,12 +163,12 @@ func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
 }
 
 func TestCTRFollowerLeaveKeepsPartyAndNotifiesHost(t *testing.T) {
-	m := &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+	m := &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
 	r := fillTestRoom(t, m, 30000, 2)
 	leader := r.players[1]
 	leader.doc.Members = []uint64{leader.pid, 30009}
 	leader.seats = 2
-	follower := &lobbyConn{tickets: testTickets, n: 30009, player: &playerID{PID: 30009}}
+	follower := &lobbyConn{presence: testPresence, tickets: testTickets, n: 30009, player: &playerID{PID: 30009}}
 	version := r.version
 	out := m.leave(follower, 0)
 	if len(out) != 1 || out[0].conn != r.host.conn || out[0].event != ctrUpdateLobby || r.version != version+1 {

@@ -112,7 +112,7 @@ func TestShadNetPublisherInterop(t *testing.T) {
 			t.Fatal("issued ticket does not carry the verified identity")
 		}
 		l := handshake(t, ticket)
-		dropOnline(l.n)
+		testPresence.dropOnline(l.n)
 		if l.keys == nil || l.player == nil || l.player.PID != user.ID {
 			t.Fatal("lobby did not admit the issued ticket")
 		}
