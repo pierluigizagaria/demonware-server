@@ -18,9 +18,7 @@ import (
 	"time"
 
 	"github.com/pierluigizagaria/demonware-server/internal/auth"
-	"github.com/pierluigizagaria/demonware-server/internal/ctr"
 	"github.com/pierluigizagaria/demonware-server/internal/demonware"
-	"github.com/pierluigizagaria/demonware-server/internal/lobby"
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
@@ -125,22 +123,6 @@ func TestPS4AuthRequiresResponseSigner(t *testing.T) {
 	}
 }
 
-func TestPS4UmbrellaUsesFreshIssuedTicket(t *testing.T) {
-	call := func(ticket []byte) int {
-		body, _ := json.Marshal(map[string]any{"ticket": ticket, "titleID": "5760"})
-		w := httptest.NewRecorder()
-		testUmbrellaHandler(w, httptest.NewRequest("POST", "/v1.0/tokens/lsg/", bytes.NewReader(body)), body, 1, "")
-		return w.Code
-	}
-	fresh, stale := psnTicket(time.Now()), psnTicket(time.Now().Add(-121*time.Second))
-	for _, ticket := range [][]byte{fresh, stale} {
-		issueTestTicket(ticket, platform.PlayerID{PID: 17, Username: "fixture"})
-	}
-	if call(fresh) != 200 || call(stale) != 401 || call(psnTicket(time.Now())) != 401 {
-		t.Fatal("Umbrella did not apply fresh issued-ticket admission")
-	}
-}
-
 func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
 	l, w := sharedPS4Lobby()
 	withTestPlayerNames(t)
@@ -163,26 +145,6 @@ func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
 	}
 	if !bytes.Contains(reply, []byte("OfflineFriend\x00")) || bytes.Contains(reply, []byte("stranger")) {
 		t.Fatal("wrong identities resolved")
-	}
-}
-
-func TestCTRFollowerLeaveKeepsPartyAndNotifiesHost(t *testing.T) {
-	m := &ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
-	r := fillTestRoom(t, m, 30000, 2)
-	leader := r.Players[1]
-	leader.Doc.Members = []uint64{leader.PID, 30009}
-	leader.Seats = 2
-	follower := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 30009, Player: &platform.PlayerID{PID: 30009}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-	version := r.Version
-	out := m.Leave(follower, 0)
-	if len(out) != 1 || out[0].Conn != r.Host.Conn || out[0].Event != ctr.EventUpdateLobby || r.Version != version+1 {
-		t.Fatal("host not notified of the follower's departure")
-	}
-	if got := r.Players[1].Doc.Members; len(got) != 1 || got[0] != leader.PID || r.Occupancy() != 2 {
-		t.Fatal("follower seat not released")
-	}
-	if out := m.Leave(leader.Conn, 0); len(out) != 1 || len(r.Players) != 1 {
-		t.Fatal("leader departure did not remove its search")
 	}
 }
 

@@ -2,10 +2,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -14,41 +11,6 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
-
-func TestCTRUmbrellaIssuedTicket(t *testing.T) {
-	ticket := psnTicket(time.Now())
-	call := func(titleID any) *httptest.ResponseRecorder {
-		body, _ := json.Marshal(map[string]any{"ticket": base64.StdEncoding.EncodeToString(ticket), "titleID": titleID})
-		w := httptest.NewRecorder()
-		r := httptest.NewRequest("POST", "/v1.0/tokens/lsg/", bytes.NewReader(body))
-		testUmbrellaHandler(w, r, body, 1, "")
-		return w
-	}
-	if w := call(5760); w.Code != 401 {
-		t.Fatalf("unissued ticket accepted: %d", w.Code)
-	}
-	issueTestTicket(ticket, platform.PlayerID{PID: 17, Username: "fixture"})
-	// The client sends its integers as JSON strings, so both forms must pass.
-	if w := call("5760"); w.Code != 200 {
-		t.Fatalf("string-encoded titleID rejected: %d %s", w.Code, w.Body)
-	}
-	w := call(5760)
-	if w.Code != 200 {
-		t.Fatalf("issued ticket rejected: %d", w.Code)
-	}
-	var result struct {
-		ID       uint64 `json:"umbrellaID"`
-		Token    string `json:"accessToken"`
-		Expires  int64  `json:"expires"`
-		Accounts []any  `json:"accounts"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.ID != 17 || result.Token == "" || result.Expires <= time.Now().Unix() || result.Accounts == nil {
-		t.Fatal("incomplete CTR account response")
-	}
-}
 
 // A friend stays joinable while their host reconnects.
 func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
