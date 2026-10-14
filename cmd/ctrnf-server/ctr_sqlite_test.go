@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"path/filepath"
 	"testing"
 
@@ -45,30 +44,4 @@ func sqliteChanges(t *testing.T, db *store.SQLite) int {
 		t.Fatal(err)
 	}
 	return n
-}
-
-func sqliteExec(t *testing.T, db *store.SQLite, query string, args ...any) {
-	t.Helper()
-	if _, err := db.DB.Exec(query, args...); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func accountJSON(t *testing.T, s *ctr.EconomyStore, pid uint64) []byte {
-	t.Helper()
-	a, err := s.Snapshot(pid)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := json.Marshal(a)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
-
-type economyResult struct {
-	credit int64
-	update []byte
-	failed bool
 }

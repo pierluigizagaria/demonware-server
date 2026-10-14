@@ -32,6 +32,3 @@ func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctr.Search {
 }
 
 var testSearchConns atomic.Uint64
-
-// A view of the same connection is a distinct Go object with the same ConnID.
-type peerView struct{ ctr.Peer }

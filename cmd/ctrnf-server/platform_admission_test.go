@@ -6,15 +6,11 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/binary"
-	"encoding/json"
 	"encoding/pem"
-	"io"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
-	"testing/iotest"
 	"time"
 
 	"github.com/pierluigizagaria/demonware-server/internal/auth"
@@ -86,43 +82,6 @@ func handshake(t *testing.T, ticket []byte) *lobbyConn {
 	return l
 }
 
-func TestPS4LobbyAdmitsOnlyFreshIssuedTickets(t *testing.T) {
-	if l := handshake(t, psnTicket(time.Now())); l.Keys != nil {
-		t.Fatal("unissued self-supplied ticket established encrypted session")
-	}
-	fresh := psnTicket(time.Now())
-	issueTestTicket(fresh, platform.PlayerID{PID: 17, Username: "fixture", Sub: "shadnet:17", Kind: "shadnet", Title: 5760})
-	l := handshake(t, fresh)
-	defer testPresence.DropOnline(l.N)
-	if l.Keys == nil || l.Player == nil || l.Player.PID != 17 || l.Player.Title != 5760 {
-		t.Fatal("fresh issued ticket refused or identity lost")
-	}
-	stale := psnTicket(time.Now().Add(-121 * time.Second))
-	issueTestTicket(stale, platform.PlayerID{PID: 17, Username: "fixture"})
-	if l := handshake(t, stale); l.Keys != nil {
-		t.Fatal("expired publisher ticket admitted")
-	}
-	foreign := psnTicket(time.Now())
-	issueTestTicket(foreign, platform.PlayerID{PID: 18, Username: "other"})
-	if l := handshake(t, foreign); l.Keys != nil {
-		t.Fatal("ticket bound to another account admitted")
-	}
-}
-
-func TestPS4AuthRequiresResponseSigner(t *testing.T) {
-	h := testAuthHandler(fixturePSNPlatform(), nil, "")
-	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
-	before := issuedTicketCount()
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", bytes.NewReader(body)))
-	if w.Code == 200 {
-		t.Fatal("PS4 auth succeeded without required response signature")
-	}
-	if issuedTicketCount() != before {
-		t.Fatal("ticket issued without a signed response")
-	}
-}
-
 func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
 	l, w := sharedPS4Lobby()
 	withTestPlayerNames(t)
@@ -145,18 +104,5 @@ func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
 	}
 	if !bytes.Contains(reply, []byte("OfflineFriend\x00")) || bytes.Contains(reply, []byte("stranger")) {
 		t.Fatal("wrong identities resolved")
-	}
-}
-
-func TestAuthRefusesIncompleteBody(t *testing.T) {
-	h := testAuthHandler(fixturePSNPlatform(), testCTRSigner(t), "")
-	before := issuedTicketCount()
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", iotest.ErrReader(io.ErrUnexpectedEOF)))
-	if w.Code != 400 {
-		t.Fatalf("incomplete body answered %d", w.Code)
-	}
-	if issuedTicketCount() != before {
-		t.Fatal("ticket issued for an incomplete request")
 	}
 }

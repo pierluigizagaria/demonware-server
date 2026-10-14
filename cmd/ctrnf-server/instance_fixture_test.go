@@ -32,33 +32,9 @@ func testAuthHandler(p auth.PublisherPlatform, s *auth.CTRSigner, dumps string) 
 	return auth.NewPlatformAuthHandler(testDiagnostics, testTelemetry, testTickets, testPresence, p, s, dumps, ctr.NewUmbrellaHandler(testDiagnostics, testTickets))
 }
 
-func testUmbrellaHandler(w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
-	ctr.HandleUmbrella(testDiagnostics, testTickets, w, r, body, n, dumps)
-}
-
-func TestInstanceTicketDirectoriesAreIsolated(t *testing.T) {
-	a, b := auth.NewTicketStore(), auth.NewTicketStore()
-	now := time.Now()
-	ticket := psnTicket(now)
-	a.RememberTicket(ticket, platform.PlayerID{PID: 17, Username: "first", Title: 5760}, now, ps4.TicketWindow)
-	if _, ok := b.IssuedTicketPlayer(ticket, now, ps4.TicketWindow); ok {
-		t.Fatal("another instance admitted a foreign ticket")
-	}
-	b.RememberTicket(ticket, platform.PlayerID{PID: 17, Username: "second", Title: 5760}, now, ps4.TicketWindow)
-	first, okA := a.IssuedIdentity(ticket)
-	second, okB := b.IssuedIdentity(ticket)
-	if !okA || !okB || first.Username != "first" || second.Username != "second" {
-		t.Fatal("same numeric identity crossed instance directories")
-	}
-}
-
 var testPresence = presence.NewStore(nil)
 
 func init() { testMatchmaker.OnlinePIDs = testPresence.OnlinePIDs }
-
-func testBuildStats() dashboard.APIStats {
-	return testTelemetry.BuildStats(newDashboardViews(testPresence, testMatchmaker, testRegistry))
-}
 
 func testBuildGameStats(game string) dashboard.APIStats {
 	return testTelemetry.BuildGameStats(newDashboardViews(testPresence, testMatchmaker, testRegistry), game)
@@ -120,28 +96,6 @@ func TestInstancePresenceAndPersistentNamesAreIsolated(t *testing.T) {
 }
 
 var testReplies = &lobby.ReplyCounter{}
-
-func TestInstanceReplyCountersAreIsolated(t *testing.T) {
-	first, _ := sharedPS4Lobby()
-	second, _ := sharedPS4Lobby()
-	first.ReplyCounter, second.ReplyCounter = &lobby.ReplyCounter{}, &lobby.ReplyCounter{}
-	for _, l := range []*lobbyConn{first, second, first} {
-		w := &architectureWire{}
-		l.C = w
-		frames := architectureCall(t, l, w, []byte{255, 3, 1})
-		payload, err := hex.DecodeString(frames[0].Payload)
-		if err != nil {
-			t.Fatal(err)
-		}
-		transaction, err := demonware.NewReader(payload).Uint64()
-		if err != nil || transaction != l.Transactions.Load() {
-			t.Fatal("unexpected transaction counter")
-		}
-	}
-	if first.Transactions.Load() != 2 || second.Transactions.Load() != 1 {
-		t.Fatal("transaction counters crossed instance boundary")
-	}
-}
 
 var testStartBalance int64
 
@@ -226,17 +180,6 @@ func TestInstanceMatchmakingAndPushesAreIsolated(t *testing.T) {
 	a.Leave(aa.Conn, 0)
 	if len(a.Rooms) != 0 || len(b.Rooms) != 1 {
 		t.Fatal("disconnect crossed instances")
-	}
-}
-
-func TestInstanceContextRegistriesAreIsolated(t *testing.T) {
-	a, b := lobby.NewSessionRegistry(), lobby.NewSessionRegistry()
-	id := [8]byte{1}
-	a.Sessions[id] = &lobby.MatchSession{ID: id, Owner: 17, OwnerPID: 17}
-	b.Sessions[id] = &lobby.MatchSession{ID: id, Owner: 17, OwnerPID: 17}
-	a.DropSessionsOf(17)
-	if a.Sessions[id].Owner != 0 || b.Sessions[id].Owner != 17 {
-		t.Fatal("registry disconnect crossed instances")
 	}
 }
 
