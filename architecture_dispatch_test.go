@@ -211,6 +211,12 @@ func TestArchitectureDispatcherBaseline(t *testing.T) {
 			name := fmt.Sprintf("%s/write-fail-%d", name, fail)
 			t.Run(name, func(t *testing.T) {
 				l, w, db := architectureBaseline(t)
+				if len(payload) >= 3 && payload[0] == 125 && payload[1] == 3 && payload[2] == 3 {
+					// Recorded on 2026-10-14 before the 15:00 UTC period boundary.
+					// An empty structured request selects active achievements too.
+					// Keep their exact recorded dates; do not normalize the reply.
+					l.clock = func() time.Time { return time.Date(2026, 10, 14, 14, 0, 0, 0, time.UTC) }
+				}
 				w.fail = fail
 				before := time.Now()
 				l.onTask(payload)

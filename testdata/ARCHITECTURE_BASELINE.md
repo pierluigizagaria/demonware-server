@@ -22,6 +22,10 @@ The only normalization in this baseline is:
 
 Transactions start from a known fixture-owned counter and are not normalized.
 Reward timestamps are never normalized. No global entropy source is replaced.
+125/3 uses the component clock fixed to the recorded 2026-10-14 pre-15:00 UTC
+period. Even empty/malformed task arguments select active achievement states in
+the existing implementation. A later run crossing that daily boundary exposed
+this missing fixture clock; the original expected bytes were retained verbatim.
 `architecture_workflows_test.go` additionally checks successful dispatcher paths:
 stats persistence and reads, exact reward receipts and audit timestamps, callbacks
 after failed replies, context-registry lifecycle, search/cancel, pair creation,
