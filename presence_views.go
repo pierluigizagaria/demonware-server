@@ -23,3 +23,18 @@ func (state *presenceStore) snapshot(game string) map[uint64]playerID {
 
 	return who
 }
+
+func (state *presenceStore) registerOnline(conn uint64, id *playerID) {
+	state.onlineMu.Lock()
+	state.online[conn] = id
+	state.onlineMu.Unlock()
+}
+func (state *presenceStore) connectionPlayer(conn uint64) *playerID {
+	state.onlineMu.Lock()
+	defer state.onlineMu.Unlock()
+	if p := state.online[conn]; p != nil {
+		id := *p
+		return &id
+	}
+	return nil
+}

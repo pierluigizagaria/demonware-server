@@ -195,14 +195,12 @@ func (replies *replyCounter) statsReply(task byte, rows []ctrStat, total uint32)
 }
 func (h *statsHandler) onCTRStats(peer taskSession, task byte, r *demonware.Reader) []byte {
 	pid := peer.PID()
-	h.presence.onlineMu.Lock()
-	p := h.presence.online[peer.ConnID()]
+	p := h.presence.connectionPlayer(peer.ConnID())
 	name := ""
 	allowed := p != nil && isCTRTitle(p.Title) && pid != 0
 	if allowed {
 		name = p.Username
 	}
-	h.presence.onlineMu.Unlock()
 	fail := func(err error) []byte {
 		peer.Logf("CTR stats task=%d failed: %v", task, err)
 		return h.taskReply(task, errUnhandled, nil)

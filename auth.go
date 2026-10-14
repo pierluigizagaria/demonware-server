@@ -31,7 +31,7 @@ import (
 // bdAuth ticket magic, read from the NSO (rodata 0xF07FB8): bytes DE AD BD EF.
 const ticketMagic uint32 = 0xEFBDADDE
 
-func serveAuth(platform publisherPlatform, tickets *ticketStore, presence *presenceStore, cfg serverConfig, diag *diagnostics, monitor *telemetry) error {
+func serveAuth(platform publisherPlatform, tickets *ticketStore, presence *presenceStore, cfg serverConfig, diag *diagnostics, monitor *telemetry, umbrella auxiliaryAuthHandler) error {
 	ctrSigner, err := loadCTRAuthSigner(cfg.signingKey)
 	if err != nil {
 		return err
@@ -42,7 +42,7 @@ func serveAuth(platform publisherPlatform, tickets *ticketStore, presence *prese
 	diag.diagnosticLogf("[CTR Auth] signed replies enabled (client trust mod required)")
 	dumps := diag.runDumpDir("auth")
 
-	h := newPlatformAuthHandler(diag, monitor, tickets, presence, platform, ctrSigner, dumps)
+	h := newPlatformAuthHandler(diag, monitor, tickets, presence, platform, ctrSigner, dumps, umbrella)
 
 	srv := &http.Server{
 		Addr:    net.JoinHostPort(cfg.bindAddr, strconv.Itoa(cfg.authPort)),
@@ -67,7 +67,7 @@ func serveAuth(platform publisherPlatform, tickets *ticketStore, presence *prese
 	return srv.ServeTLS(ln, cfg.certFile, cfg.keyFile)
 }
 
-func newPlatformAuthHandler(diag *diagnostics, monitor *telemetry, tickets *ticketStore, presence *presenceStore, platform publisherPlatform, ctrSigner *ctrAuthSigner, dumps string) http.Handler {
+func newPlatformAuthHandler(diag *diagnostics, monitor *telemetry, tickets *ticketStore, presence *presenceStore, platform publisherPlatform, ctrSigner *ctrAuthSigner, dumps string, umbrella auxiliaryAuthHandler) http.Handler {
 	var authReqNum atomic.Uint64
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := authReqNum.Add(1)
@@ -79,7 +79,7 @@ func newPlatformAuthHandler(diag *diagnostics, monitor *telemetry, tickets *tick
 			return
 		}
 		if r.URL.Path == "/v1.0/tokens/lsg/" {
-			handleCTRUmbrella(diag, tickets, w, r, body, n, dumps)
+			umbrella(w, r, body, n, dumps)
 			return
 		}
 
@@ -245,3 +245,5 @@ func newPlatformAuthHandler(diag *diagnostics, monitor *telemetry, tickets *tick
 	})
 
 }
+
+type auxiliaryAuthHandler func(http.ResponseWriter, *http.Request, []byte, uint64, string)

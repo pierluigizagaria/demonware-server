@@ -10,7 +10,7 @@ import (
 	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
-func (m *ctrMatchmaker) testCTRSearch(t *testing.T, pid uint64, playlist int) *ctrSearch {
+func testCTRSearchFor(m *ctrMatchmaker, t *testing.T, pid uint64, playlist int) *ctrSearch {
 	t.Helper()
 	info := ctrPlayerInfo{}
 	info.Listen.Address = base64.StdEncoding.EncodeToString(make([]byte, 67))
@@ -26,7 +26,7 @@ func (m *ctrMatchmaker) testCTRSearch(t *testing.T, pid uint64, playlist int) *c
 }
 func TestCTRPublicPairingAndDocuments(t *testing.T) {
 	m := ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
-	a, b, c := m.testCTRSearch(t, 101, 0), m.testCTRSearch(t, 102, 0), m.testCTRSearch(t, 103, 1)
+	a, b, c := testCTRSearchFor(&m, t, 101, 0), testCTRSearchFor(&m, t, 102, 0), testCTRSearchFor(&m, t, 103, 1)
 	if len(m.enqueue(a)) != 0 || len(m.enqueue(c)) != 0 {
 		t.Fatal("matched incompatible searches")
 	}
@@ -111,9 +111,9 @@ func TestCTRPublicPairingAndDocuments(t *testing.T) {
 }
 func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
 	m := ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
-	a := m.testCTRSearch(t, 201, 0)
+	a := testCTRSearchFor(&m, t, 201, 0)
 	m.enqueue(a)
-	retry := m.testCTRSearch(t, 201, 0)
+	retry := testCTRSearchFor(&m, t, 201, 0)
 	if len(m.enqueue(retry)) != 0 || len(m.waiting) != 1 {
 		t.Fatal("duplicate account matched")
 	}
@@ -124,7 +124,7 @@ func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
 }
 
 func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctrSearch {
-	return testMatchmaker.testCTRSearch(t, pid, playlist)
+	return testCTRSearchFor(testMatchmaker, t, pid, playlist)
 }
 
 var testSearchConns atomic.Uint64
@@ -134,14 +134,14 @@ type peerView struct{ ctrPeer }
 
 func TestCTRPeerOwnershipUsesConnectionID(t *testing.T) {
 	m := &ctrMatchmaker{onlinePIDs: func() []uint64 { return []uint64{17, 18} }, rooms: map[uint64]*ctrRoom{}}
-	a, b := m.testCTRSearch(t, 17, 0), m.testCTRSearch(t, 18, 0)
+	a, b := testCTRSearchFor(m, t, 17, 0), testCTRSearchFor(m, t, 18, 0)
 	m.enqueue(a)
 	notices := m.enqueue(b)
 	room := notices[0].ids[1]
 	if _, _, ok := m.documents(&peerView{a.conn}, room); !ok {
 		t.Fatal("another view of the owner connection was refused")
 	}
-	replacement := m.testCTRSearch(t, 17, 0)
+	replacement := testCTRSearchFor(m, t, 17, 0)
 	if _, _, ok := m.documents(replacement.conn, room); ok {
 		t.Fatal("same PID on another connection became the owner")
 	}

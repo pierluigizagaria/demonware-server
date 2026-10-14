@@ -79,7 +79,7 @@ func main() {
 	go instance.registry.reapSessions()
 	instance.lobby.start()
 
-	if err := serveAuth(platform, instance.tickets, instance.presence, cfg, instance.diagnostics, instance.monitor); err != nil {
+	if err := serveAuth(platform, instance.tickets, instance.presence, cfg, instance.diagnostics, instance.monitor, newUmbrellaHandler(instance.diagnostics, instance.tickets)); err != nil {
 		log.Fatalf("[D3 Auth] stopped: %v", err)
 	}
 }

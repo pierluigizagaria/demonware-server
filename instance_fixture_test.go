@@ -16,7 +16,7 @@ import (
 var testTickets = newTicketStore()
 
 func testAuthHandler(p publisherPlatform, s *ctrAuthSigner, dumps string) http.Handler {
-	return newPlatformAuthHandler(testDiagnostics, testTelemetry, testTickets, testPresence, p, s, dumps)
+	return newPlatformAuthHandler(testDiagnostics, testTelemetry, testTickets, testPresence, p, s, dumps, newUmbrellaHandler(testDiagnostics, testTickets))
 }
 
 func testUmbrellaHandler(w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
@@ -178,7 +178,7 @@ func TestInstanceMatchmakingAndPushesAreIsolated(t *testing.T) {
 	a := &ctrMatchmaker{onlinePIDs: func() []uint64 { return []uint64{17, 18} }, rooms: map[uint64]*ctrRoom{}}
 	b := &ctrMatchmaker{onlinePIDs: func() []uint64 { return []uint64{17, 18} }, rooms: map[uint64]*ctrRoom{}}
 	prepare := func(m *ctrMatchmaker, pid uint64) (*ctrSearch, *architectureWire) {
-		s := m.testCTRSearch(t, pid, 0)
+		s := testCTRSearchFor(m, t, pid, 0)
 		l, _ := sharedPS4Lobby()
 		l.n, l.player.PID, l.matchmaker = pid, pid, m
 		w := &architectureWire{}

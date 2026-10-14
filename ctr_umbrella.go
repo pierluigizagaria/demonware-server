@@ -83,3 +83,9 @@ func handleCTRUmbrella(diag *diagnostics, tickets *ticketStore, w http.ResponseW
 		Accounts []any  `json:"accounts"`
 	}{id.PID, base64.RawURLEncoding.EncodeToString(token), time.Now().Add(time.Hour).Unix(), []any{}})
 }
+
+func newUmbrellaHandler(diag *diagnostics, tickets *ticketStore) auxiliaryAuthHandler {
+	return func(w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
+		handleCTRUmbrella(diag, tickets, w, r, body, n, dumps)
+	}
+}

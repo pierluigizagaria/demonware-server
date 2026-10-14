@@ -22,19 +22,19 @@ func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
 	return (&statsHandler{replyCounter: l.replyCounter, stats: l.ctr.stats, presence: l.presence}).onCTRStats(l, task, r)
 }
 func (l *lobbyConn) onGetUserNames(task byte, r *demonware.Reader) []byte {
-	return (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onGetUserNames(l, task, r)
+	return (&presenceHandler{presenceReplies: l.replyCounter, presence: l.presence}).onGetUserNames(l, task, r)
 }
 func (l *lobbyConn) onUserData(task byte, r *demonware.Reader) []byte {
-	return (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onUserData(l, task, r)
+	return (&presenceHandler{presenceReplies: l.replyCounter, presence: l.presence}).onUserData(l, task, r)
 }
 func (l *lobbyConn) onGetUserIDs(task byte, r *demonware.Reader) []byte {
-	return (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onGetUserIDs(l, task, r)
+	return (&presenceHandler{presenceReplies: l.replyCounter, presence: l.presence}).onGetUserIDs(l, task, r)
 }
 func (l *lobbyConn) onPlatformIdentityReport(task byte, r *demonware.Reader) []byte {
 	return (&platformHandler{replyCounter: l.replyCounter}).onPlatformIdentityReport(l, task, r)
 }
 func (l *lobbyConn) onRichPresence(task byte, r *demonware.Reader) []byte {
-	return (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onRichPresence(l, task, r)
+	return (&presenceHandler{presenceReplies: l.replyCounter, presence: l.presence}).onRichPresence(l, task, r)
 }
 
 func (l *lobbyConn) owns(s *mmSession) bool {

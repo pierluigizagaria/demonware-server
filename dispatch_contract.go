@@ -65,7 +65,7 @@ type newsHandler struct {
 	news ctrNewsConfig
 }
 type presenceHandler struct {
-	*replyCounter
+	presenceReplies
 	presence *presenceStore
 }
 type platformHandler struct{ *replyCounter }
@@ -88,4 +88,8 @@ func (table *serviceTable) CloseSession(peer taskSession) {
 	if table.closeSession != nil {
 		table.closeSession(peer)
 	}
+}
+
+type taskReplies interface {
+	taskReply(byte, uint32, func(*demonware.Writer) uint32) []byte
 }

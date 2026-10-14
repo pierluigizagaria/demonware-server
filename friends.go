@@ -53,9 +53,7 @@ func (l *lobbySession) loadIdentity(ticket []byte) {
 		return
 	}
 	l.player = id
-	l.presence.onlineMu.Lock()
-	l.presence.online[l.n] = id
-	l.presence.onlineMu.Unlock()
+	l.presence.registerOnline(l.n, id)
 	l.logf("player %q pid=%d", id.Username, id.PID)
 }
 
@@ -120,7 +118,7 @@ func (state *presenceStore) nicknameOnline(id uint64) string {
 }
 
 // onGetUserNames: 12/9.
-func (h *presenceHandler) onGetUserNames(peer taskSession, task byte, r *demonware.Reader) []byte {
+func (h *presenceHandler) onGetUserNames(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	ids := r.Uint64s()
 	type hit struct {
 		id   uint64
@@ -143,7 +141,7 @@ func (h *presenceHandler) onGetUserNames(peer taskSession, task byte, r *demonwa
 }
 
 // onUserData: service 29. 1 = write own data, 4 = read a list's.
-func (h *presenceHandler) onUserData(peer taskSession, task byte, r *demonware.Reader) []byte {
+func (h *presenceHandler) onUserData(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	ctx, _ := r.String()
 	switch task {
 	case 1:
@@ -205,7 +203,7 @@ func (state *presenceStore) pidOnline(id uint64) uint64 {
 // last issued a ticket under still resolves (player_names in ctrnf.db), so
 // a friend is found even before they connect to the lobby. Resolving an
 // identity does not make it joinable: only live sessions are advertised.
-func (h *presenceHandler) onGetUserIDs(peer taskSession, task byte, r *demonware.Reader) []byte {
+func (h *presenceHandler) onGetUserIDs(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	count, err := r.Uint32()
 	if err != nil || count == 0 || count > 500 {
 		return h.taskReply(task, errUnhandled, nil)

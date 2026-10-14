@@ -59,7 +59,7 @@ func (state *presenceStore) onlinePIDSet() map[uint64]bool {
 	return out
 }
 
-func (h *presenceHandler) onRichPresence(peer taskSession, task byte, r *demonware.Reader) []byte {
+func (h *presenceHandler) onRichPresence(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	ctx, _ := r.String()
 	switch task {
 	case rpSet:

@@ -157,7 +157,7 @@ func TestCTRRequeueDuringMergeReleasesReservation(t *testing.T) {
 	}
 	version := a.version
 	leaver := b.players[2]
-	out := m.enqueue(m.testCTRSearch(t, leaver.pid, 1))
+	out := m.enqueue(testCTRSearchFor(m, t, leaver.pid, 1))
 	if a.mergeSource != nil || b.mergeTarget != 0 || a.version != version+1 || b.occupancy() != 2 {
 		t.Fatal("reservation kept after the source membership changed")
 	}

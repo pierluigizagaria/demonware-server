@@ -42,7 +42,7 @@ func (h *asyncHandler) setPlayerInfo(id uint64, info string) {
 }
 func (h *asyncHandler) forget(id uint64) { h.mu.Lock(); defer h.mu.Unlock(); delete(h.info, id) }
 
-func defaultTask(replies *replyCounter, peer taskSession, request taskRequest) taskResult {
+func defaultTask(replies taskReplies, peer taskSession, request taskRequest) taskResult {
 	reply := replies.taskReply(request.Task, 0, nil)
 	peer.Logf("task UNHANDLED service=%d task=%d (empty success) args:\n%s", request.Service, request.Task, hex.Dump(request.Payload))
 	return taskResult{Reply: reply}
@@ -92,7 +92,7 @@ func (handler *utilityHandler) Handle(peer taskSession, request taskRequest) (re
 		reply = handler.onGetUserIDs(peer, task, r)
 
 	default:
-		return defaultTask(handler.replyCounter, peer, request)
+		return defaultTask(handler.presenceReplies, peer, request)
 	}
 	result.Reply = reply
 	return result
@@ -138,7 +138,7 @@ func (handler *userDataHandler) Handle(peer taskSession, request taskRequest) (r
 		}
 
 	default:
-		return defaultTask(handler.replyCounter, peer, request)
+		return defaultTask(handler.presenceReplies, peer, request)
 	}
 	result.Reply = reply
 	return result
@@ -178,7 +178,7 @@ func (handler *richPresenceHandler) Handle(peer taskSession, request taskRequest
 		reply = handler.onRichPresence(peer, task, r)
 
 	default:
-		return defaultTask(handler.replyCounter, peer, request)
+		return defaultTask(handler.presenceReplies, peer, request)
 	}
 	result.Reply = reply
 	return result
@@ -365,7 +365,7 @@ func (handler *diabloMatchHandler) Handle(peer taskSession, request taskRequest)
 }
 
 func newCTRServiceTable(replies *replyCounter, ctr *ctrServices, presence *presenceStore, registry *sessionRegistry, matchmaker *ctrMatchmaker, pubDir string, relay *relayTable) (*serviceTable, *asyncHandler) {
-	friends := &presenceHandler{replyCounter: replies, presence: presence}
+	friends := &presenceHandler{presenceReplies: replies, presence: presence}
 	economy := &economyHandler{replyCounter: replies, economy: ctr.economy}
 	context := &contextHandler{readInfo: readCTRInfo, replyCounter: replies, registry: registry, presence: presence, relay: relay}
 	async := &asyncHandler{replyCounter: replies, matchmaker: matchmaker, info: map[uint64]string{}}
