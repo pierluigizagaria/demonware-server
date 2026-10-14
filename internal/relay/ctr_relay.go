@@ -76,6 +76,10 @@ type RelayPair struct {
 }
 
 type RelayTable struct {
+	stopped       bool
+	stop          chan struct{}
+	workers       sync.WaitGroup
+	reaperStarted bool
 	*diagnosticspkg.Diagnostics
 	BindAddr, Pids string
 	mu             sync.Mutex
@@ -100,10 +104,17 @@ func (relay *RelayTable) StartCTRRelay(low, high int, host string, onlinePIDs fu
 		return
 	}
 	relay.mu.Lock()
+	if relay.stopped || relay.reaperStarted {
+		relay.mu.Unlock()
+		return
+	}
+	relay.reaperStarted = true
+	relay.stop = make(chan struct{})
+	relay.workers.Add(1)
 	relay.Low, relay.High, relay.Next, relay.Ip = low, high, low, ip
 	relay.mu.Unlock()
 	relay.DiagnosticLogf("[CTR Relay] enabled on %s:%d-%d", ip, low, high)
-	go relay.reap(onlinePIDs)
+	go func() { defer relay.workers.Done(); relay.reap(onlinePIDs) }()
 }
 
 // parseAddrSlot reads one bdCommonAddr slot. The port is little-endian, as in nat.go.
@@ -176,6 +187,9 @@ func (t *RelayTable) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *Rela
 	key := PairKey(hostPID, joinerPID)
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.stopped {
+		return nil
+	}
 	if p, ok := t.Pairs[key]; ok {
 		p.host = host
 		return p
@@ -195,7 +209,8 @@ func (t *RelayTable) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *Rela
 		}
 		p := &RelayPair{table: t, port: port, hostPID: hostPID, joinerPID: joinerPID, host: host, Conn: conn}
 		t.Pairs[key], t.ByPort[port] = p, p
-		go p.serve()
+		t.workers.Add(1)
+		go func() { defer t.workers.Done(); p.serve() }()
 		t.DiagnosticLogf("[CTR Relay] pair %d<->%d on :%d (host %s)", hostPID, joinerPID, port, host)
 		return p
 	}
@@ -239,7 +254,14 @@ func (p *RelayPair) serve() {
 // A quiet pair between connected players is kept: races and menus may be
 // idle for any length of time.
 func (t *RelayTable) reap(onlinePIDs func() []uint64) {
-	for range time.Tick(30 * time.Second) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-t.stop:
+			return
+		case <-ticker.C:
+		}
 		connected := map[uint64]bool{}
 		for _, pid := range onlinePIDs() {
 			connected[pid] = true
@@ -260,3 +282,19 @@ func (t *RelayTable) ReapOffline(online map[uint64]bool) {
 		delete(t.ByPort, p.port)
 	}
 }
+
+func (t *RelayTable) Close() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped {
+		return
+	}
+	t.stopped = true
+	if t.stop != nil {
+		close(t.stop)
+	}
+	for _, pair := range t.Pairs {
+		_ = pair.Conn.Close()
+	}
+}
+func (t *RelayTable) Wait() { t.workers.Wait() }

@@ -40,6 +40,10 @@ import (
 const natSeenMax = 4096
 
 type NatServer struct {
+	lifeMu  sync.Mutex
+	stopped bool
+	conn    net.PacketConn
+	workers sync.WaitGroup
 	*diagnosticspkg.Diagnostics
 	BindAddr, NextendoHost string
 	ConnNum                *atomic.Uint64
@@ -49,11 +53,46 @@ type NatServer struct {
 }
 
 func (s *NatServer) ServeNAT(port int) {
-	pc, err := net.ListenPacket("udp", net.JoinHostPort(s.BindAddr, strconv.Itoa(port)))
-	if err != nil {
-		s.DiagnosticLogf("[D3 NAT] udp %d unavailable: %v", port, err)
+	if err := s.Start(port); err != nil {
+		s.DiagnosticLogf("[nat] start: %v", err)
 		return
 	}
+	s.Wait()
+}
+
+func (s *NatServer) Start(port int) error {
+	pc, err := net.ListenPacket("udp", net.JoinHostPort(s.BindAddr, strconv.Itoa(port)))
+	if err != nil {
+		return err
+	}
+	return s.startPacket(pc, port)
+}
+
+func (s *NatServer) startPacket(pc net.PacketConn, port int) error {
+	s.lifeMu.Lock()
+	defer s.lifeMu.Unlock()
+	if s.stopped || s.conn != nil {
+		pc.Close()
+		return net.ErrClosed
+	}
+	s.conn = pc
+	s.workers.Add(1)
+	go func() { defer s.workers.Done(); s.servePacket(pc, port) }()
+	return nil
+}
+
+func (s *NatServer) Close() {
+	s.lifeMu.Lock()
+	s.stopped = true
+	if s.conn != nil {
+		_ = s.conn.Close()
+	}
+	s.lifeMu.Unlock()
+}
+func (s *NatServer) Wait() { s.workers.Wait() }
+
+func (s *NatServer) servePacket(pc net.PacketConn, port int) {
+	defer pc.Close()
 	serverIP := net.ParseIP(s.NextendoHost).To4()
 	if serverIP == nil {
 		s.DiagnosticLogf("[D3 NAT] NEXTENDO_HOST=%q is not an IPv4 address: announcing 127.0.0.1", s.NextendoHost)
@@ -64,7 +103,10 @@ func (s *NatServer) ServeNAT(port int) {
 	buf := make([]byte, 2048)
 	for {
 		n, addr, err := pc.ReadFrom(buf)
-		if err != nil || n < 3 {
+		if err != nil {
+			return
+		}
+		if n < 3 {
 			continue
 		}
 		ua, ok := addr.(*net.UDPAddr)

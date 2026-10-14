@@ -1,6 +1,7 @@
 package shadnet
 
 import (
+	"context"
 	"crypto/rsa"
 	"errors"
 	"io"
@@ -19,9 +20,13 @@ const keyRefreshAhead = time.Minute
 // Only the backend's configured endpoint supplies keys. Concurrent refreshes
 // share one request; unknown key IDs cannot trigger an unbounded request stream.
 type remoteKeys struct {
-	url    string
-	client *http.Client
-	clock  func() time.Time
+	ctx     context.Context
+	cancel  context.CancelFunc
+	closed  bool
+	workers sync.WaitGroup
+	url     string
+	client  *http.Client
+	clock   func() time.Time
 
 	mu      sync.Mutex
 	keys    map[string]*rsa.PublicKey
@@ -44,9 +49,11 @@ func newRemoteVerifier(policy Policy, endpoint string, client *http.Client) (*Ve
 	bounded := *client
 	bounded.Timeout = 5 * time.Second
 	bounded.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	r := &remoteKeys{url: endpoint, client: &bounded, clock: time.Now}
+	ctx, cancel := context.WithCancel(context.Background())
+	r := &remoteKeys{ctx: ctx, cancel: cancel, url: endpoint, client: &bounded, clock: time.Now}
 	keys, err := r.fetch()
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	r.keys, r.expires = keys, r.clock().Add(keyCacheLifetime)
@@ -65,7 +72,11 @@ func checkEndpoint(endpoint string) error {
 }
 
 func (r *remoteKeys) fetch() (map[string]*rsa.PublicKey, error) {
-	request, err := http.NewRequest(http.MethodGet, r.url, nil)
+	ctx := r.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, r.url, nil)
 	if err != nil {
 		return nil, errors.New("invalid JWKS request")
 	}
@@ -90,6 +101,10 @@ func (r *remoteKeys) fetch() (map[string]*rsa.PublicKey, error) {
 func (r *remoteKeys) key(id string) *rsa.PublicKey {
 	for {
 		r.mu.Lock()
+		if r.closed {
+			r.mu.Unlock()
+			return nil
+		}
 		now := r.clock()
 		if key := r.keys[id]; key != nil && now.Before(r.expires) {
 			// Renew shortly before expiry in the background, so admission never
@@ -120,6 +135,7 @@ func (r *remoteKeys) key(id string) *rsa.PublicKey {
 
 // beginRefresh claims the single refresh; r.mu must be held.
 func (r *remoteKeys) beginRefresh(now time.Time) {
+	r.workers.Add(1)
 	r.loading = make(chan struct{})
 	r.retryAt = now.Add(keyRefreshInterval)
 }
@@ -127,6 +143,7 @@ func (r *remoteKeys) beginRefresh(now time.Time) {
 // refresh downloads the key set and releases waiting admissions. A failure
 // keeps the current keys until they expire; the lifetime counts from started.
 func (r *remoteKeys) refresh(started time.Time) bool {
+	defer r.workers.Done()
 	keys, err := r.fetch()
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -136,4 +153,22 @@ func (r *remoteKeys) refresh(started time.Time) bool {
 	close(r.loading)
 	r.loading = nil
 	return err == nil
+}
+
+// Close prevents further refreshes, cancels the owned HTTP request and joins
+// any synchronous or background refresh before the instance releases resources.
+func (v *Verifier) Close() error {
+	if v.remote == nil {
+		return nil
+	}
+	r := v.remote
+	r.mu.Lock()
+	r.closed = true
+	if r.cancel != nil {
+		r.cancel()
+	}
+	r.mu.Unlock()
+	r.workers.Wait()
+	r.client.CloseIdleConnections()
+	return nil
 }

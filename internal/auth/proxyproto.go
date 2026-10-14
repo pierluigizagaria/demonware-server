@@ -16,6 +16,7 @@ import (
 	net "net"
 	strconv "strconv"
 	strings "strings"
+	"sync"
 	time "time"
 )
 
@@ -39,42 +40,96 @@ func (c *proxyConn) RemoteAddr() net.Addr {
 
 type proxyListener struct {
 	net.Listener
-	conns chan net.Conn
-	errc  chan error
+	conns   chan net.Conn
+	errc    chan error
+	done    chan struct{}
+	mu      sync.Mutex
+	closed  bool
+	pending map[net.Conn]struct{}
+	workers sync.WaitGroup
 }
 
 func NewProxyListener(ln net.Listener) *proxyListener {
-	l := &proxyListener{Listener: ln, conns: make(chan net.Conn), errc: make(chan error, 1)}
+	l := &proxyListener{Listener: ln, conns: make(chan net.Conn), errc: make(chan error, 1), done: make(chan struct{}), pending: map[net.Conn]struct{}{}}
+	l.workers.Add(1)
 	go l.acceptLoop()
 	return l
 }
 
 func (l *proxyListener) acceptLoop() {
+	defer l.workers.Done()
 	for {
 		c, err := l.Listener.Accept()
 		if err != nil {
-			l.errc <- err
+			select {
+			case l.errc <- err:
+			case <-l.done:
+			}
 			return
 		}
-		go func() {
+		l.mu.Lock()
+		if l.closed {
+			l.mu.Unlock()
+			c.Close()
+			return
+		}
+		l.pending[c] = struct{}{}
+		l.workers.Add(1)
+		l.mu.Unlock()
+		go func(c net.Conn) {
+			defer l.workers.Done()
+			defer func() { l.mu.Lock(); delete(l.pending, c); l.mu.Unlock() }()
 			pc, err := readProxyHeader(c)
 			if err != nil {
 				c.Close()
 				return
 			}
-			l.conns <- pc
-		}()
+			select {
+			case l.conns <- pc:
+			case <-l.done:
+				c.Close()
+			}
+		}(c)
 	}
 }
 
 func (l *proxyListener) Accept() (net.Conn, error) {
 	select {
 	case c := <-l.conns:
+		l.mu.Lock()
+		delete(l.pending, c.(*proxyConn).Conn)
+		closed := l.closed
+		l.mu.Unlock()
+		if closed {
+			c.Close()
+			return nil, net.ErrClosed
+		}
 		return c, nil
 	case err := <-l.errc:
 		return nil, err
+	case <-l.done:
+		return nil, net.ErrClosed
 	}
 }
+
+// Close interrupts headers and undelivered handoffs, never an accepted HTTP
+// connection. Wait joins both the accept loop and every header worker.
+func (l *proxyListener) Close() error {
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		return nil
+	}
+	l.closed = true
+	close(l.done)
+	for c := range l.pending {
+		_ = c.Close()
+	}
+	l.mu.Unlock()
+	return l.Listener.Close()
+}
+
+func (l *proxyListener) Wait() { l.workers.Wait() }
 
 // readProxyHeader consumes a PROXY v1 line if the connection starts with one.
 func readProxyHeader(c net.Conn) (*proxyConn, error) {

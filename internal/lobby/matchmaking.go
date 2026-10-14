@@ -74,11 +74,43 @@ func (handler *ContextHandler) Owns(peer TaskSession, s *MmSession) bool {
 }
 
 // reapSessions removes games whose host never came back.
-func (registry *SessionRegistry) ReapSessions() {
-	for range time.Tick(30 * time.Second) {
-		registry.ReapSessionsOnce()
+func (registry *SessionRegistry) ReapSessions() { registry.StartReaper(); registry.WaitReaper() }
+
+func (registry *SessionRegistry) StartReaper() {
+	registry.Mu.Lock()
+	defer registry.Mu.Unlock()
+	if registry.reaperStopped || registry.reaperStarted {
+		return
+	}
+	registry.reaperStarted = true
+	registry.reaperStop = make(chan struct{})
+	registry.reaperWorkers.Add(1)
+	go func() {
+		defer registry.reaperWorkers.Done()
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-registry.reaperStop:
+				return
+			case <-ticker.C:
+				registry.ReapSessionsOnce()
+			}
+		}
+	}()
+}
+func (registry *SessionRegistry) StopReaper() {
+	registry.Mu.Lock()
+	defer registry.Mu.Unlock()
+	if registry.reaperStopped {
+		return
+	}
+	registry.reaperStopped = true
+	if registry.reaperStop != nil {
+		close(registry.reaperStop)
 	}
 }
+func (registry *SessionRegistry) WaitReaper() { registry.reaperWorkers.Wait() }
 
 func (registry *SessionRegistry) ReapSessionsOnce() {
 	registry.Mu.Lock()
@@ -91,8 +123,11 @@ func (registry *SessionRegistry) ReapSessionsOnce() {
 }
 
 type SessionRegistry struct {
-	Mu       sync.Mutex
-	Sessions map[[8]byte]*MmSession
+	reaperStop                   chan struct{}
+	reaperWorkers                sync.WaitGroup
+	reaperStarted, reaperStopped bool
+	Mu                           sync.Mutex
+	Sessions                     map[[8]byte]*MmSession
 }
 
 func NewSessionRegistry() *SessionRegistry {

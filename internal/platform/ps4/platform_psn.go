@@ -107,3 +107,10 @@ func decodePSNObject(raw []byte, out any, required ...string) bool {
 	}
 	return json.Unmarshal(raw, out) == nil
 }
+
+func (p PsnPlatform) Close() error {
+	if closer, ok := p.Verifier.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+	return nil
+}
