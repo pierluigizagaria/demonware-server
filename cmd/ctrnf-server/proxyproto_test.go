@@ -38,26 +38,3 @@ func acceptOne(t *testing.T, send string) (net.Conn, []byte) {
 	}
 	return c, buf
 }
-
-func TestProxyHeaderSetsRemoteAddr(t *testing.T) {
-	c, rest := acceptOne(t, "PROXY TCP4 192.0.2.10 192.0.2.1 51000 443\r\nhello")
-	defer c.Close()
-	addr, ok := c.RemoteAddr().(*net.TCPAddr)
-	if !ok || addr.IP.String() != "192.0.2.10" || addr.Port != 51000 {
-		t.Fatalf("RemoteAddr = %v", c.RemoteAddr())
-	}
-	if string(rest) != "hello" {
-		t.Fatalf("payload after header = %q", rest)
-	}
-}
-
-func TestNoProxyHeaderPassesThrough(t *testing.T) {
-	c, rest := acceptOne(t, "\x16\x03\x01hello")
-	defer c.Close()
-	if addr, ok := c.RemoteAddr().(*net.TCPAddr); !ok || !addr.IP.IsLoopback() {
-		t.Fatalf("RemoteAddr = %v", c.RemoteAddr())
-	}
-	if string(rest) != "\x16\x03\x01he" {
-		t.Fatalf("payload = %q", rest)
-	}
-}

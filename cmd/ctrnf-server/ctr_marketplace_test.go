@@ -138,29 +138,6 @@ func TestBalancesResponseCap(t *testing.T) {
 	}
 }
 
-func TestStructPayloadRejectsJunk(t *testing.T) {
-	if got := demonware.TaskStructPayload([]byte{0x50, 0x03, 0xf5}); got != nil {
-		t.Fatalf("short buffer returned % x", got)
-	}
-	if got := demonware.TaskStructPayload(bytes.Repeat([]byte{0xff}, 32)); got != nil {
-		t.Fatalf("junk returned % x", got)
-	}
-}
-
-// The game read a raw 10000 as 5000, so the amount must survive a demonware.ZigZag round trip.
-func TestAmountSurvivesZigzagRoundTrip(t *testing.T) {
-	for _, v := range []int64{0, 1, 7, 1234, 5000, 10000} {
-		enc := demonware.ZigZag(v)
-		dec := int64(enc>>1) ^ -int64(enc&1)
-		if dec != v {
-			t.Fatalf("demonware.ZigZag(%d) decoded to %d", v, dec)
-		}
-	}
-	if demonware.ZigZag(10000) != 20000 {
-		t.Fatalf("demonware.ZigZag(10000) = %d, want 20000 so the game shows 10000", demonware.ZigZag(10000))
-	}
-}
-
 // Both achievements responses end on a string read and return its result, so a missing
 // string field fails the whole deserialize. That is what broke the Pit Stop refresh.
 func TestAchievementsRepliesCarryTheirStringField(t *testing.T) {

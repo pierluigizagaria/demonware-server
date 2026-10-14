@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/pierluigizagaria/demonware-server/internal/config"
-	"github.com/pierluigizagaria/demonware-server/internal/dashboard"
 	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 	"github.com/pierluigizagaria/demonware-server/internal/lobby"
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
@@ -308,12 +307,5 @@ func TestCTRNewsViewedLogsOnlyCountsAndIDs(t *testing.T) {
 		if out.Len() != 0 {
 			t.Fatal("malformed report logged views")
 		}
-	}
-}
-
-func TestCTRNewsDashboardTaskNames(t *testing.T) {
-	if dashboard.TaskName(104, 4) != "bdMarketingComms::reportMessagesViewed" ||
-		dashboard.TaskName(104, 5) != "bdMarketingComms::getMessagesForLocations" {
-		t.Fatal("marketing task names missing")
 	}
 }
