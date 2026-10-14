@@ -36,19 +36,11 @@ func sharedTask(t *testing.T, l *lobbyConn, w *platformWire, p []byte) []byte {
 	t.Helper()
 	w.Reset()
 	l.onTask(p)
-	raw := w.Bytes()
-	if len(raw) < 50 {
+	frames := marketplaceFrames(t, l, w)
+	if len(frames) == 0 || frames[0][0] != demonware.InnerTaskReply {
 		t.Fatal("shared dispatcher did not reply")
 	}
-	plain, err := demonware.DecryptCBC(l.keys.S2CAES, raw[10:26], raw[26:len(raw)-8])
-	if err != nil {
-		t.Fatal(err)
-	}
-	n := binary.LittleEndian.Uint32(plain)
-	if int(n) > len(plain)-5 {
-		t.Fatal("bad response frame")
-	}
-	return plain[5 : 5+n]
+	return frames[0][1:]
 }
 func TestSharedPS4DispatcherStartup(t *testing.T) {
 	l, w := sharedPS4Lobby()

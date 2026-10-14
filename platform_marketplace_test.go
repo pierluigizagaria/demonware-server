@@ -183,6 +183,7 @@ func TestPS4MarketplaceRejectsMalformedBalances(t *testing.T) {
 func marketplaceFrames(t *testing.T, l *lobbyConn, wire *platformWire) [][]byte {
 	t.Helper()
 	var frames [][]byte
+	var previous uint32
 	for raw := wire.Bytes(); len(raw) != 0; {
 		if len(raw) < 4 {
 			t.Fatal("truncated frame")
@@ -191,16 +192,23 @@ func marketplaceFrames(t *testing.T, l *lobbyConn, wire *platformWire) [][]byte 
 		if size < 50 || size > len(raw) {
 			t.Fatal("bad frame length")
 		}
-		plain, err := demonware.DecryptCBC(l.keys.S2CAES, raw[10:26], raw[26:size-8])
-		if err != nil || len(plain) < 5 {
-			t.Fatalf("frame decrypt: %v", err)
+		frame, err := demonware.ParseEncryptedFrame(raw[:size])
+		if err != nil || !frame.Verify(l.keys.S2CMAC) {
+			t.Fatal("invalid frame or server MAC")
 		}
-		n := int(binary.LittleEndian.Uint32(plain))
-		if n > len(plain)-5 {
-			t.Fatal("bad inner length")
+		if len(frames) != 0 && frame.Sequence != previous+1 {
+			t.Fatal("nonconsecutive server sequence")
 		}
-		frames = append(frames, plain[4:5+n])
+		previous = frame.Sequence
+		message, err := frame.Decrypt(l.keys.S2CAES)
+		if err != nil {
+			t.Fatal("invalid encrypted reply")
+		}
+		frames = append(frames, append([]byte{message.Type}, message.Payload...))
 		raw = raw[size:]
+	}
+	if len(frames) != 0 && previous != l.s2cSeq {
+		t.Fatal("last server sequence not recorded")
 	}
 	return frames
 }
