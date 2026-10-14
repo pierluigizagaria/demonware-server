@@ -2,7 +2,7 @@ package main
 
 import (
 	bytes "bytes"
-	configpkg "github.com/NextendoNetwork/nextendo-demonware/internal/config"
+	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
 	os "os"
 	filepath "path/filepath"
 	reflect "reflect"

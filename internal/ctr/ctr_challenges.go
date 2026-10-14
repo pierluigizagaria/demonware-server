@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	json "encoding/json"
 	fmt "fmt"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
 	time "time"
 )
 

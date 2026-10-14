@@ -2,7 +2,7 @@ package nat
 
 import (
 	"errors"
-	"github.com/NextendoNetwork/nextendo-demonware/internal/diagnostics"
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	"net"
 	"sync/atomic"
 	"testing"

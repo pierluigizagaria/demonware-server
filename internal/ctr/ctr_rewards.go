@@ -5,9 +5,9 @@ import (
 	_ "embed"
 	json "encoding/json"
 	fmt "fmt"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
-	ps4pkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/ps4"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 	time "time"
 )
 

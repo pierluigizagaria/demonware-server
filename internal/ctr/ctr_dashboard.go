@@ -1,7 +1,7 @@
 package ctr
 
 import (
-	dashboardpkg "github.com/NextendoNetwork/nextendo-demonware/internal/dashboard"
+	dashboardpkg "github.com/pierluigizagaria/demonware-server/internal/dashboard"
 )
 
 func (matchmaker *CtrMatchmaker) DashboardRooms(names map[uint64]string) ([]dashboardpkg.ApiGathering, map[uint64]dashboardpkg.ApiGathering) {

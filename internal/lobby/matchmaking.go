@@ -22,7 +22,7 @@ package lobby
 
 import (
 	hex "encoding/hex"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
 	sync "sync"
 	time "time"
 )

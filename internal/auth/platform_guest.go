@@ -1,7 +1,7 @@
 package auth
 
 import (
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
 // Admission is selected once per instance, never as a verification fallback.

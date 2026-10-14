@@ -1,8 +1,8 @@
 package ctr
 
 import (
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
 )
 
 // Extended identity metadata is parsed after platform admission, without an idle deadline.

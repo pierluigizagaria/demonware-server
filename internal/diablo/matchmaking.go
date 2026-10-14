@@ -21,8 +21,8 @@
 package diablo
 
 import (
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
 )
 
 // readInfo reads a bdMatchMakingInfo sent by the client.

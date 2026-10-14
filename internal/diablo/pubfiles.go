@@ -19,7 +19,7 @@ import (
 	_ "embed"
 	json "encoding/json"
 	fmt "fmt"
-	diagnosticspkg "github.com/NextendoNetwork/nextendo-demonware/internal/diagnostics"
+	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	http "net/http"
 	os "os"
 	filepath "path/filepath"

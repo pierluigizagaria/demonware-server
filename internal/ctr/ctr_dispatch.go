@@ -2,11 +2,11 @@ package ctr
 
 import (
 	hex "encoding/hex"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
-	ps4pkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/ps4"
-	presencepkg "github.com/NextendoNetwork/nextendo-demonware/internal/presence"
-	relaypkg "github.com/NextendoNetwork/nextendo-demonware/internal/relay"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
+	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
+	relaypkg "github.com/pierluigizagaria/demonware-server/internal/relay"
 	strconv "strconv"
 	sync "sync"
 )

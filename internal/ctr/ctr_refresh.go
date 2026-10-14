@@ -2,7 +2,7 @@ package ctr
 
 import (
 	json "encoding/json"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
 	time "time"
 )
 

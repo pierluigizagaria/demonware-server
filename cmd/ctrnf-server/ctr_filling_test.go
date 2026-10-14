@@ -2,9 +2,9 @@ package main
 
 import (
 	json "encoding/json"
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
 	slices "slices"
 	strconv "strconv"
 	testing "testing"

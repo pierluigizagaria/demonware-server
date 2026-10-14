@@ -7,10 +7,10 @@ package lobby
 
 import (
 	"errors"
-	authpkg "github.com/NextendoNetwork/nextendo-demonware/internal/auth"
-	configpkg "github.com/NextendoNetwork/nextendo-demonware/internal/config"
-	diagnosticspkg "github.com/NextendoNetwork/nextendo-demonware/internal/diagnostics"
-	presencepkg "github.com/NextendoNetwork/nextendo-demonware/internal/presence"
+	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
+	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
+	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
+	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
 	net "net"
 	strings "strings"
 	"sync"

@@ -1,7 +1,7 @@
 package presence
 
 import (
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
 	time "time"
 )
 

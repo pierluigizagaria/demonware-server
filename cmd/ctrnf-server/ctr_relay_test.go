@@ -3,7 +3,7 @@ package main
 import (
 	bytes "bytes"
 	base64 "encoding/base64"
-	relaypkg "github.com/NextendoNetwork/nextendo-demonware/internal/relay"
+	relaypkg "github.com/pierluigizagaria/demonware-server/internal/relay"
 	net "net"
 	testing "testing"
 )

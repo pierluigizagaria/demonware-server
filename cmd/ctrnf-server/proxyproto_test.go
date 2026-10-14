@@ -1,7 +1,7 @@
 package main
 
 import (
-	authpkg "github.com/NextendoNetwork/nextendo-demonware/internal/auth"
+	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
 	io "io"
 	net "net"
 	testing "testing"

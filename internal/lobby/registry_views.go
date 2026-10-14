@@ -1,7 +1,7 @@
 package lobby
 
 import (
-	dashboardpkg "github.com/NextendoNetwork/nextendo-demonware/internal/dashboard"
+	dashboardpkg "github.com/pierluigizagaria/demonware-server/internal/dashboard"
 )
 
 func (registry *SessionRegistry) Snapshot() []dashboardpkg.SessionSnapshot {

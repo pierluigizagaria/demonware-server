@@ -1,100 +1,138 @@
-# CTR:NF PS4 publisher server
+# Demonware Server
 
-A detached fork of Nextendo for Crash Team Racing Nitro-Fueled on PS4
-(CUSA13795 01.21, Demonware title **5760**), used with shadPS4. One Go module
-and executable provide publisher authentication, encrypted lobby tasks,
-matchmaking, economy, leaderboards, NAT and the existing dashboard API.
-There are no additional services introduced by the architecture refactor.
+A game publisher server for **Crash Team Racing Nitro-Fueled on PS4**, built
+around a reusable Demonware protocol implementation. The supported client is
+**CUSA13795 01.21**, Demonware title **5760**, running with shadPS4.
 
-Normal instances verify ID tokens from an independent shadNet service through
-its configured public JWKS endpoint. An explicit anonymous provider is available
-only with `CTR_ADMISSION=guest` and `CTR_UNLOCK_ALL=1`. Normal and unlock-all
-instances keep separate databases, listeners and matchmaking state. Unlock-all
-does not control save-owned single-player unlocks. See [FORK.md](FORK.md) for
-admission, client prerequisites, economy policy and the two-instance setup.
+One Go executable handles publisher authentication, encrypted lobby requests,
+matchmaking, economy, leaderboards and NAT discovery. Player accounts belong to
+an independent shadNet service; race traffic remains separate from publisher
+services. The current executable admits CTR:NF only.
 
-This project is unofficial and is not affiliated with Sony, Activision,
-Demonware, Nintendo, Nextendo Network or the shadPS4 project.
+This is an independent repository derived from the Nextendo Demonware server.
+Original authors, contributions and research references are listed in
+[CREDITS.md](CREDITS.md). It is unofficial and is not affiliated with Sony,
+Activision, Demonware, Nintendo, Nextendo Network or the shadPS4 project.
 
-## Status and evidence
+## Features
 
-The user accepted protocol baseline `33dc1c6` on 2026-10-14 with shadNet A/B:
-shared lobby and races through results, with matching server-log evidence for
-matchmaking, lobby sync, leaderboard uploads and persisted rewards, without
-MAC errors. Guest C/D remained on the previous build. Profile B crashed once
-on `Game:Main` (`0xc0000005`) shortly after a match notification; it did not recur
-after restart and the cause remains unattributed.
+- PS4 publisher login using shadNet ID tokens and a configured public JWKS endpoint.
+- Signed authentication replies, locally issued tickets and encrypted lobby sessions.
+- Async matchmaking, contextual friend sessions, rich presence and lobby synchronization.
+- PS4 marketplace, race rewards, challenges, leaderboards and configurable menu news.
+- One SQLite database per instance, with separate normal and unlock-all economies.
+- NAT discovery/introductions and the existing monitoring endpoints.
+- Owned workers and graceful operator shutdown; established lobbies have no idle cutoff.
 
-The architecture work is local on `refactor/ctrnf-architecture`, from
-`feat/ps4-platform` at `33dc1c6`. It has **not been installed or accepted in game**.
-Review and later acceptance of both A/B (normal) and C/D (guest unlock-all)
-remain separate. LAN/WAN, capacity and public hosting are unqualified.
+## Instance modes
 
-- [Binding plan, inventory and fixture ledger](docs/ARCHITECTURE_REFACTOR.md)
-- [Final implementation and validation report](docs/ARCHITECTURE_REFACTOR_REPORT.md)
-- [Demonware wire contracts and evidence](docs/DEMONWARE_PROTOCOL.md)
+| Mode | Admission | Economy |
+| --- | --- | --- |
+| Normal | Verified shadNet account | Online progression, starting from zero by default |
+| Unlock-all | Verified shadNet, or explicitly configured anonymous guests | Pit Stop catalog ownership; separate database and matchmaking pool |
 
-## Build and configuration
+Anonymous admission requires both `CTR_ADMISSION=guest` and `CTR_UNLOCK_ALL=1`.
+Each authentication gets a new publisher identity; it is not an account and
+cannot recover a previous guest identity. The client needs the corresponding
+anonymous game patch. Unlock-all does not control single-player unlocks owned
+by the save. Each instance needs separate listeners and a separate `DATA_DIR`.
 
-From the repository directory, with Go 1.25 or newer and the pinned module
-dependencies already available:
+## Status
 
-```text
-go build -o .cache/ctrnf-server ./cmd/ctrnf-server
+**Experimental.** A local two-player shadNet session on baseline `33dc1c6` was
+accepted through shared lobby, racing and results on 2026-10-14. Anonymous
+two-client racing was accepted on an earlier build. The architecture refactor
+and this repository transition have automated coverage but have not yet been
+installed or accepted in game.
+
+LAN/WAN, capacity, public hosting and the optional relay are not qualified.
+Rewards use client-reported events; this is not authoritative race validation.
+Retained Diablo III code is inactive compatibility material, not supported
+game admission. The detailed acceptance history and open issues are in
+[FORK.md](FORK.md) and the [architecture report](docs/ARCHITECTURE_REFACTOR_REPORT.md).
+
+## Build and test
+
+Requirements: **Go 1.25 or newer** and **OpenSSL on PATH** for response signing
+and its tests. No C compiler is required for the SQLite driver.
+
+```sh
+git clone https://github.com/pierluigizagaria/demonware-server.git
+cd demonware-server
+go build -o bin/demonware-server ./cmd/ctrnf-server
 go vet ./...
 go test -count=1 ./...
 ```
 
-The local Windows verification uses `.toolchain/go`, `GOCACHE=.cache/go-build`
-and `GOPROXY=off`; the final executable is kept under
-`.cache/architecture-refactor/ctrnf-server.exe`. It is not installed by these
-instructions. Existing OpenSSL on `PATH` is required for response signing.
+On Windows, use `bin/demonware-server.exe` for the output name. The command
+directory remains `cmd/ctrnf-server` because CTR:NF is the admitted title;
+the module is `github.com/pierluigizagaria/demonware-server`.
 
-All environment names and their validation remain unchanged; see
-[example.env](example.env). Each instance reads its own immutable configuration:
-`ctrnf-server -env normal.env`, with process environment taking precedence.
-Private env files, keys, credentials, databases and runtime captures are ignored.
-The client routing, TLS certificate and signature patch are separate prerequisites
-documented in [FORK.md](FORK.md#client-side).
+For an offline checkout with the local toolchain and dependencies already
+present, use `.toolchain/go`, set `GOCACHE` to the absolute `.cache/go-build`
+path and set `GOPROXY=off`. Generated binaries and caches are ignored by Git.
 
-`D3_PUBFILES_CONFIG` and `D3_RIFTDATA` remain accepted but are inactive.
-`D3_PUBFILES` still locates generic physical files for service 10/21, excluding
-the documented Diablo outputs and aliases. The `pubfiles` command validates
-configuration and exits without generating files. `/pubfiles/` is not registered.
-Diablo code and tests remain in `internal/diablo`; no admitted title reaches it.
+## Configuration
 
-## Architecture and shutdown
+Start from [example.env](example.env). Configuration is validated once at
+startup; process environment values take precedence over an instance env file.
+Private env files, signing keys, certificates and databases are not distributed.
 
-`cmd/ctrnf-server` composes `config`, `auth`, platform providers, `lobby`, `ctr`,
-`store`, `presence`, `nat`, `relay`, `dashboard`, `httpserver` and `diagnostics`.
-`internal/demonware` remains independent of game rules. The lobby consumes a
-narrow dispatch contract; CTR owns its adapters and business rules, and SQLite
-implements the persistence interfaces consumed by CTR.
+```sh
+./bin/demonware-server -env normal.env
+```
 
-SIGINT/SIGTERM closes admission, interrupts idle/partial lobby reads and drains
-admitted handlers, replies, callbacks and background workers. Only then does
-SQLite close and release its instance lock. One 30-second budget includes
-`DB.Close`; expiry forces process exit without unlocking under active workers.
-Operator shutdown can abandon undelivered replies and pushes. Established
-sessions have no idle or elapsed-time cutoff.
+Before connecting a client, configure:
 
-SQLite uses WAL and `synchronous=FULL`: atomicity and durability are per committed
-transaction. Success replies follow commits, but a commit may survive a lost
-reply. A task can contain several transactions (125/1 rewards, refresh and
-challenges); there is no exactly-once delivery promise. Schema version 1, SQL and
-transaction boundaries are unchanged, and existing databases open unchanged.
-Never delete the WAL manually.
+1. The admission provider and instance policy: `CTR_ADMISSION`, `CTR_UNLOCK_ALL`
+   and a dedicated `DATA_DIR`.
+2. For shadNet admission, the trusted `SHADNET_*` issuer, client, title, scopes
+   and public JWKS URL. shadNet owns the accounts; no private key or database
+   is shared with this server.
+3. TLS (`CERT_FILE`, `KEY_FILE`), response signing (`CTR_AUTH_SIGNING_KEY`),
+   listener addresses/ports and routing to your own server.
+4. The required client-side authentication integration and
+   [CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch).
+   Server settings alone do not replace the client prerequisites.
 
-## Attribution and license
+See [client requirements](FORK.md#client-side) and
+[instance configuration](FORK.md#running-the-server) for details.
+Logs are redacted by default. Legacy `D3_*` variable names remain accepted;
+their active or inactive roles are documented in `example.env`.
 
-Derived from [nx-mod's original server](https://github.com/nx-mod/nextendo-demonware)
-and [NextendoNetwork/nextendo-demonware](https://github.com/NextendoNetwork/nextendo-demonware).
-The original CTR support and reverse engineering were contributed by
-[CollectingW](https://github.com/CollectingW). Original credits and historical
-Switch/Diablo evidence remain in [the archived documentation](docs/HISTORICAL_SWITCH_README.md).
-Useful upstream CTR fixes are reviewed and ported by hand; the reviewed commit
-is recorded in [FORK.md](FORK.md#following-upstream).
+## Architecture and data
 
-The [PolyForm Shield License 1.0.0](LICENSE.md) is unchanged. This is
-source-available software; consult the license, including its Noncompete terms,
-before any distribution or service decision.
+`cmd/ctrnf-server` composes independent component owners in one process:
+
+- `internal/demonware`: wire framing, buffers, crypto and reply envelopes.
+- `internal/auth` and `internal/platform`: admission, signing and tickets.
+- `internal/lobby` and `internal/ctr`: transport/router and CTR service adapters/business rules.
+- `internal/store`: SQLite persistence; `internal/presence`: shared identity views and presence.
+- `internal/nat`, `internal/relay`, `internal/dashboard`: networking and monitoring.
+
+SIGINT/SIGTERM stops admission and drains admitted work before closing SQLite
+and releasing the instance lock. A single 30-second limit covers the complete
+drain; expiry terminates the process. Replies and pushes can be lost during
+operator shutdown.
+
+`ctrnf.db` uses WAL and `synchronous=FULL`. Atomicity and durability apply to
+each committed transaction, not necessarily a whole task. A commit may survive
+without its response reaching the client; there is no exactly-once guarantee.
+The repository transition changes no schema, protocol or economy rule.
+
+## Documentation
+
+- [Implementation, configuration and provenance](FORK.md)
+- [Demonware contracts and evidence](docs/DEMONWARE_PROTOCOL.md)
+- [Architecture plan and inventory](docs/ARCHITECTURE_REFACTOR.md)
+- [Architecture implementation report](docs/ARCHITECTURE_REFACTOR_REPORT.md)
+- [Independent repository transition](docs/REPOSITORY_TRANSITION.md)
+- [Credits](CREDITS.md)
+
+## License
+
+This project retains the **[PolyForm Shield License 1.0.0](LICENSE.md)** and
+the original required notice. It is source-available software; the repository
+transition does not change its licensing terms, including the Noncompete terms.
+
+Required Notice: Copyright 2026 Nextendo Network

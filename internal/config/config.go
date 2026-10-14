@@ -3,7 +3,7 @@ package config
 import (
 	errors "errors"
 	fmt "fmt"
-	shadnetpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/shadnet"
+	shadnetpkg "github.com/pierluigizagaria/demonware-server/internal/platform/shadnet"
 	net "net"
 	os "os"
 	regexp "regexp"

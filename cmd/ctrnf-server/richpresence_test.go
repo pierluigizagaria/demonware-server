@@ -2,10 +2,10 @@ package main
 
 import (
 	binary "encoding/binary"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
-	presencepkg "github.com/NextendoNetwork/nextendo-demonware/internal/presence"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
+	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
 	testing "testing"
 )
 

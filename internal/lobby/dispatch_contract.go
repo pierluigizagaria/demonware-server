@@ -1,8 +1,8 @@
 package lobby
 
 import (
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
 	time "time"
 )
 

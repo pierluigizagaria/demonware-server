@@ -19,8 +19,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/NextendoNetwork/nextendo-demonware/internal/platform"
-	"github.com/NextendoNetwork/nextendo-demonware/internal/strictjson"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/strictjson"
 )
 
 const clockLeewaySeconds int64 = 60

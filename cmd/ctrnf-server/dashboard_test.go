@@ -2,10 +2,10 @@ package main
 
 import (
 	json "encoding/json"
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	dashboardpkg "github.com/NextendoNetwork/nextendo-demonware/internal/dashboard"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
+	dashboardpkg "github.com/pierluigizagaria/demonware-server/internal/dashboard"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
 	testing "testing"
 	time "time"
 )

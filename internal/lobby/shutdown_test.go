@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	"github.com/NextendoNetwork/nextendo-demonware/internal/diagnostics"
-	"github.com/NextendoNetwork/nextendo-demonware/internal/presence"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
 type shutdownTelemetry struct {

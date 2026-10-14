@@ -28,7 +28,7 @@ import (
 	binary "encoding/binary"
 	hex "encoding/hex"
 	fmt "fmt"
-	diagnosticspkg "github.com/NextendoNetwork/nextendo-demonware/internal/diagnostics"
+	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	net "net"
 	os "os"
 	filepath "path/filepath"

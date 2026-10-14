@@ -2,8 +2,8 @@ package main
 
 import (
 	json "encoding/json"
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
 	testing "testing"
 )
 

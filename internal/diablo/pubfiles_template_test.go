@@ -2,7 +2,7 @@ package diablo
 
 import (
 	json "encoding/json"
-	diagnosticspkg "github.com/NextendoNetwork/nextendo-demonware/internal/diagnostics"
+	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	os "os"
 	filepath "path/filepath"
 	strings "strings"

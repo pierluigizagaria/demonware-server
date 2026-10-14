@@ -6,7 +6,7 @@ import (
 	hex "encoding/hex"
 	json "encoding/json"
 	errors "errors"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
 	slices "slices"
 	sort "sort"
 	strconv "strconv"

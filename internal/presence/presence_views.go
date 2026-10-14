@@ -3,8 +3,8 @@
 package presence
 
 import (
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
-	ps4pkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/ps4"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
+	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 // connPID returns the Nextendo PID of a lobby connection's player (0 if unknown).

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NextendoNetwork/nextendo-demonware/internal/config"
-	"github.com/NextendoNetwork/nextendo-demonware/internal/platform/guest"
-	"github.com/NextendoNetwork/nextendo-demonware/internal/store"
+	"github.com/pierluigizagaria/demonware-server/internal/config"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/guest"
+	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
 
 func TestDrainOrdersAdmissionWorkersAndDatabase(t *testing.T) {

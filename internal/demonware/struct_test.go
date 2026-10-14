@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 func TestStructFieldsAndLimits(t *testing.T) {

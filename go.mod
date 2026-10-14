@@ -1,4 +1,4 @@
-module github.com/NextendoNetwork/nextendo-demonware
+module github.com/pierluigizagaria/demonware-server
 
 go 1.25.0
 

@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 func baseline(t *testing.T) map[string][]byte {

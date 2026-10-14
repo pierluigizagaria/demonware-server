@@ -16,17 +16,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NextendoNetwork/nextendo-demonware/internal/auth"
-	"github.com/NextendoNetwork/nextendo-demonware/internal/config"
-	"github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	"github.com/NextendoNetwork/nextendo-demonware/internal/store"
+	"github.com/pierluigizagaria/demonware-server/internal/auth"
+	"github.com/pierluigizagaria/demonware-server/internal/config"
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
 
 func main() {
 	log.SetOutput(os.Stdout)
 	envFile := flag.String("env", "", "load this instance's settings from a KEY=VALUE `file` (see example.env); variables already in the environment take precedence")
 	flag.Usage = func() {
-		fmt.Fprintln(flag.CommandLine.Output(), "usage: ctrnf-server [-env file] [pubfiles]")
+		fmt.Fprintln(flag.CommandLine.Output(), "usage: demonware-server [-env file] [pubfiles]")
 		flag.PrintDefaults()
 	}
 	flag.Parse()

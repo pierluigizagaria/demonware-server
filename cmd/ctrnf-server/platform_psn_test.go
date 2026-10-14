@@ -3,8 +3,8 @@ package main
 import (
 	json "encoding/json"
 	errors "errors"
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
-	ps4pkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/ps4"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
+	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 	strings "strings"
 	testing "testing"
 	time "time"

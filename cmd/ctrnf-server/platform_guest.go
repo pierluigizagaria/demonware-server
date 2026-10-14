@@ -3,10 +3,10 @@ package main
 import (
 	rand "crypto/rand"
 	fmt "fmt"
-	authpkg "github.com/NextendoNetwork/nextendo-demonware/internal/auth"
-	configpkg "github.com/NextendoNetwork/nextendo-demonware/internal/config"
-	guestpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/guest"
-	ps4pkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/ps4"
+	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
+	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
+	guestpkg "github.com/pierluigizagaria/demonware-server/internal/platform/guest"
+	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 func loadPublisherPlatform(c configpkg.ServerConfig) (authpkg.PublisherPlatform, string, error) {

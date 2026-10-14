@@ -1,7 +1,7 @@
 package relay
 
 import (
-	"github.com/NextendoNetwork/nextendo-demonware/internal/diagnostics"
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	"net"
 	"testing"
 	"time"

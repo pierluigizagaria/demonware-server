@@ -3,8 +3,8 @@ package main
 import (
 	bytes "bytes"
 	json "encoding/json"
-	configpkg "github.com/NextendoNetwork/nextendo-demonware/internal/config"
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
+	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
 	strings "strings"
 	testing "testing"
 )

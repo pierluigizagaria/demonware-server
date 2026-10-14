@@ -2,9 +2,9 @@ package main
 
 import (
 	json "encoding/json"
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	ps4pkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/ps4"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 	os "os"
 	filepath "path/filepath"
 	sync "sync"

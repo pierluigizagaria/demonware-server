@@ -4,10 +4,10 @@
 package main
 
 import (
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	diablopkg "github.com/NextendoNetwork/nextendo-demonware/internal/diablo"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
-	relaypkg "github.com/NextendoNetwork/nextendo-demonware/internal/relay"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
+	diablopkg "github.com/pierluigizagaria/demonware-server/internal/diablo"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	relaypkg "github.com/pierluigizagaria/demonware-server/internal/relay"
 )
 
 // Legacy integration fixtures retain component handles outside the production

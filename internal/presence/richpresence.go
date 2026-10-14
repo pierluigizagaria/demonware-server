@@ -9,7 +9,7 @@
 package presence
 
 import (
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 const SvcRichPresence = 68

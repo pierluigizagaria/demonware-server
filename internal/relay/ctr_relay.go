@@ -28,7 +28,7 @@ package relay
 
 import (
 	binary "encoding/binary"
-	diagnosticspkg "github.com/NextendoNetwork/nextendo-demonware/internal/diagnostics"
+	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	net "net"
 	strconv "strconv"
 	strings "strings"

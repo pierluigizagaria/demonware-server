@@ -1,4 +1,4 @@
-# PS4 fork
+# Implementation and provenance
 
 Base: `c3400c312a739cf7598204a981156959910ed874` from
 [NextendoNetwork/nextendo-demonware](https://github.com/NextendoNetwork/nextendo-demonware).
@@ -8,8 +8,13 @@ Architecture decision (2026-10-14): this is now a detached CTR:NF fork;
 useful upstream CTR fixes are reviewed and ported by hand. The last reviewed
 upstream commit is `c3400c312a739cf7598204a981156959910ed874`. The binding
 implementation plan is [ARCHITECTURE_REFACTOR.md](docs/ARCHITECTURE_REFACTOR.md).
-Work proceeds on `refactor/ctrnf-architecture`; `feat/ps4-platform` remains at
-the accepted `33dc1c6` until the user accepts the final review.
+The architecture refactor was completed at `120c965` on
+`refactor/ctrnf-architecture`. A subsequent user decision on 2026-10-14 adopts
+the independent repository [pierluigizagaria/demonware-server](https://github.com/pierluigizagaria/demonware-server)
+and its `main` branch. This publication decision does not establish in-game
+acceptance of the refactored build. The previous `feat/ps4-platform` checkpoint
+remains at `33dc1c6`. See [repository transition](docs/REPOSITORY_TRANSITION.md)
+and [credits](CREDITS.md).
 
 ### Accepted protocol extraction, 2026-10-14
 
@@ -65,7 +70,7 @@ invented races or occurrences. The auth listener bounds reading each request
 Settings are environment variables, as in the other Nextendo servers, and
 [`example.env`](example.env) documents every one. Give each instance its own
 copy (for example `normal.env`, `unlock-all.env`; git ignores `*.env` except
-the example) and start `ctrnf-server -env normal.env`, or let the deployment supply
+the example) and start `demonware-server -env normal.env`, or let the deployment supply
 the file (systemd `EnvironmentFile=`, `docker --env-file`). `-env` reads the
 file as `docker --env-file` does (values kept exactly, no quotes) and lets
 variables already in the process environment take precedence. `internal/config/config.go`
@@ -278,7 +283,7 @@ modules in `go.sum` are used only by the driver's own tooling.
 ```text
 go test -count=1 ./...
 go vet ./...
-go build -o .cache/ctrnf-server ./cmd/ctrnf-server
+go build -o .cache/demonware-server ./cmd/ctrnf-server
 go test -tags=integration -run TestShadNetPublisherInterop ./cmd/ctrnf-server   # needs SHADNET_INTEROP_FIXTURE
 ```
 

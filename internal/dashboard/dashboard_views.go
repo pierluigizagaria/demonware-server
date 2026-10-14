@@ -3,7 +3,7 @@
 package dashboard
 
 import (
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
 // The monitoring consumer receives snapshots and never locks its providers.

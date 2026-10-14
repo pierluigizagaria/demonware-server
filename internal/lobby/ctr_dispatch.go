@@ -2,9 +2,9 @@ package lobby
 
 import (
 	hex "encoding/hex"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	presencepkg "github.com/NextendoNetwork/nextendo-demonware/internal/presence"
-	relaypkg "github.com/NextendoNetwork/nextendo-demonware/internal/relay"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
+	relaypkg "github.com/pierluigizagaria/demonware-server/internal/relay"
 )
 
 type StorageHandler struct {

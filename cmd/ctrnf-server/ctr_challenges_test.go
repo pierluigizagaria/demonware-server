@@ -1,7 +1,7 @@
 package main
 
 import (
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
 	sync "sync"
 	testing "testing"
 	time "time"

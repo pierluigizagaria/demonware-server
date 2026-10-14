@@ -4,9 +4,9 @@ import (
 	bytes "bytes"
 	binary "encoding/binary"
 	hex "encoding/hex"
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
 	os "os"
 	testing "testing"
 )

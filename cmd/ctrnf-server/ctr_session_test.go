@@ -3,9 +3,9 @@ package main
 import (
 	bytes "bytes"
 	binary "encoding/binary"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
 	testing "testing"
 )
 

@@ -3,7 +3,7 @@ package auth
 import (
 	bytes "bytes"
 	binary "encoding/binary"
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
 	sync "sync"
 	time "time"
 )

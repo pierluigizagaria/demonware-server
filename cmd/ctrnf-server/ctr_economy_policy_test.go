@@ -1,9 +1,9 @@
 package main
 
 import (
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	storepkg "github.com/NextendoNetwork/nextendo-demonware/internal/store"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	storepkg "github.com/pierluigizagaria/demonware-server/internal/store"
 	os "os"
 	filepath "path/filepath"
 	reflect "reflect"

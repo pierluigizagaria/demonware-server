@@ -3,7 +3,7 @@ package main
 import (
 	hex "encoding/hex"
 	fmt "fmt"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
 	os "os"
 	filepath "path/filepath"
 	strings "strings"

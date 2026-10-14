@@ -1,11 +1,11 @@
 package main
 
 import (
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
-	diablopkg "github.com/NextendoNetwork/nextendo-demonware/internal/diablo"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
-	presencepkg "github.com/NextendoNetwork/nextendo-demonware/internal/presence"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	diablopkg "github.com/pierluigizagaria/demonware-server/internal/diablo"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
 	strings "strings"
 )
 

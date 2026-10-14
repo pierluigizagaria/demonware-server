@@ -21,7 +21,7 @@
 package ctr
 
 import (
-	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 // CTR wraps its title-specific attributes when uploading MatchMakingInfo,

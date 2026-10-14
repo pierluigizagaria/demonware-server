@@ -1,10 +1,10 @@
 package main
 
 import (
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	dashboardpkg "github.com/NextendoNetwork/nextendo-demonware/internal/dashboard"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
-	presencepkg "github.com/NextendoNetwork/nextendo-demonware/internal/presence"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
+	dashboardpkg "github.com/pierluigizagaria/demonware-server/internal/dashboard"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
 func newDashboardViews(presence *presencepkg.PresenceStore, matchmaker *ctrpkg.CtrMatchmaker, registry *lobbypkg.SessionRegistry) dashboardpkg.DashboardViews {

@@ -1,9 +1,9 @@
 package ctr
 
 import (
-	configpkg "github.com/NextendoNetwork/nextendo-demonware/internal/config"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
-	presencepkg "github.com/NextendoNetwork/nextendo-demonware/internal/presence"
+	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
 type EconomyHandler struct {

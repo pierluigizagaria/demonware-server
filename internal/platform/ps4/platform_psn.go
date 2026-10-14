@@ -3,9 +3,9 @@ package ps4
 import (
 	json "encoding/json"
 	fmt "fmt"
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
-	shadnetpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/shadnet"
-	strictjsonpkg "github.com/NextendoNetwork/nextendo-demonware/internal/strictjson"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
+	shadnetpkg "github.com/pierluigizagaria/demonware-server/internal/platform/shadnet"
+	strictjsonpkg "github.com/pierluigizagaria/demonware-server/internal/strictjson"
 	strconv "strconv"
 	strings "strings"
 	time "time"

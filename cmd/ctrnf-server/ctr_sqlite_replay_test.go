@@ -1,8 +1,8 @@
 package main
 
 import (
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	storepkg "github.com/NextendoNetwork/nextendo-demonware/internal/store"
+	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
+	storepkg "github.com/pierluigizagaria/demonware-server/internal/store"
 	math "math"
 	filepath "path/filepath"
 	reflect "reflect"

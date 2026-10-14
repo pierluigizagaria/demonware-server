@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	json "encoding/json"
 	fmt "fmt"
-	configpkg "github.com/NextendoNetwork/nextendo-demonware/internal/config"
+	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
 	os "os"
 	filepath "path/filepath"
 	sort "sort"

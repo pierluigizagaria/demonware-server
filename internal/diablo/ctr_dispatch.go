@@ -2,9 +2,9 @@ package diablo
 
 import (
 	hex "encoding/hex"
-	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
-	presencepkg "github.com/NextendoNetwork/nextendo-demonware/internal/presence"
-	relaypkg "github.com/NextendoNetwork/nextendo-demonware/internal/relay"
+	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
+	relaypkg "github.com/pierluigizagaria/demonware-server/internal/relay"
 )
 
 type DiabloMatchHandler struct{ *lobbypkg.ContextHandler }

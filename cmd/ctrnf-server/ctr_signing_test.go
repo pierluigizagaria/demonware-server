@@ -8,7 +8,7 @@ import (
 	x509 "crypto/x509"
 	base64 "encoding/base64"
 	pem "encoding/pem"
-	authpkg "github.com/NextendoNetwork/nextendo-demonware/internal/auth"
+	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
 	os "os"
 	exec "os/exec"
 	filepath "path/filepath"

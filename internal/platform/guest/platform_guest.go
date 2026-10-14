@@ -3,8 +3,8 @@ package guest
 import (
 	binary "encoding/binary"
 	fmt "fmt"
-	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
-	ps4pkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/ps4"
+	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
+	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 	io "io"
 	strconv "strconv"
 )
