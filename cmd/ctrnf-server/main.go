@@ -1,46 +1,32 @@
-// Demonware server for Crash Team Racing Nitro-Fueled on PS4 (CUSA13795),
-// with shadNet sign-in or explicit anonymous unlock-all admission. A fork of the Nextendo server
-// for Diablo III and Crash Team Racing on Switch; the Diablo III code is kept
-// unchanged but unused (FORK.md).
-//
-// One process serves all of it:
-//
-//	auth        HTTPS :AUTH_PORT (8460), reached through sni-router   auth.go platform_psn.go tickets.go
-//	lobby       TCP 3074 (+3075..3080), encrypted remote tasks        lobby.go handshake.go bdcrypto.go services.go
-//	matchmaking public games, friend lookups, user data               matchmaking.go friends.go
-//	NAT         UDP 3074: IP / NAT discovery, introductions           nat.go
-//	pubfiles    season, community events, item blacklist              pubfiles.go pubfiles.json
-//	dashboard   /api/stats on DASH_PORT (8093) for nextendo-dashboard dashboard.go
-//
-//	server [-env file]            run the server
-//	server [-env file] pubfiles   regenerate the publisher files from pubfiles.json and exit
-//	                                  (the lobby reads them on every request: no restart needed)
-//
-// Settings are environment variables, read once and validated in config.go;
-// example.env documents each one.
-
+// CTR:NF PS4 publisher server derived from Nextendo. One executable composes
+// authentication, lobby tasks, NAT, optional relay and the dashboard API.
+// Settings retain their existing names and validation; see example.env.
 package main
 
 import (
-	flag "flag"
-	fmt "fmt"
-	authpkg "github.com/NextendoNetwork/nextendo-demonware/internal/auth"
-	configpkg "github.com/NextendoNetwork/nextendo-demonware/internal/config"
-	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
-	storepkg "github.com/NextendoNetwork/nextendo-demonware/internal/store"
-	log "log"
-	os "os"
-	filepath "path/filepath"
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/auth"
+	"github.com/NextendoNetwork/nextendo-demonware/internal/config"
+	"github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
+	"github.com/NextendoNetwork/nextendo-demonware/internal/store"
 )
 
 func main() {
-	// Logs on stdout like the other game servers (the launchers redirect it to
-	// nextendo/logs/diablo-3.log).
 	log.SetOutput(os.Stdout)
-
 	envFile := flag.String("env", "", "load this instance's settings from a KEY=VALUE `file` (see example.env); variables already in the environment take precedence")
 	flag.Usage = func() {
-		fmt.Fprintln(flag.CommandLine.Output(), "usage: server [-env file] [pubfiles]")
+		fmt.Fprintln(flag.CommandLine.Output(), "usage: ctrnf-server [-env file] [pubfiles]")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -49,42 +35,84 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	cfg, err := configpkg.ReadConfig(*envFile, !pubfilesOnly)
+	cfg, err := config.ReadConfig(*envFile, !pubfilesOnly)
 	if err != nil {
-		log.Fatalf("[D3] configuration:\n%v", err)
+		log.Printf("[server] configuration:\n%v", err)
+		os.Exit(1)
 	}
 	if pubfilesOnly {
 		log.Print("[diablo] pubfiles is inactive in this CTR:NF server; no files generated")
 		return
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := runServer(ctx, cfg); err != nil {
+		log.Printf("[server] %v", err)
+		// A drain timeout MUST terminate the process. No deferred database close
+		// or unlock may run while unfinished workers still exist.
+		os.Exit(1)
+	}
+}
 
+const shutdownLimit = 30 * time.Second
+
+func runServer(ctx context.Context, cfg config.ServerConfig) error {
+	var resources drainPlan
+	finish := func(cause error) error { return errors.Join(cause, drainWithin(shutdownLimit, resources)) }
 	platform, trustID, err := loadPublisherPlatform(cfg)
 	if err != nil {
-		log.Fatalf("[D3] publisher admission: %v", err)
+		return fmt.Errorf("publisher admission: %w", err)
 	}
-	log.Printf("[D3] admission: %s", cfg.Admission)
+	if closer, ok := platform.(io.Closer); ok {
+		resources.wait = append(resources.wait, closer.Close)
+	}
+	log.Printf("[server] admission: %s", cfg.Admission)
 	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
-		panic(err)
+		return finish(err)
 	}
-	store, err := storepkg.OpenCTRSQLite(filepath.Join(cfg.DataDir, storepkg.CtrDB), cfg.UnlockAll, trustID)
+	database, err := store.OpenCTRSQLite(filepath.Join(cfg.DataDir, store.CtrDB), cfg.UnlockAll, trustID)
 	if err != nil {
-		log.Fatalf("[D3] CTR database: %v", err)
+		return finish(fmt.Errorf("CTR database: %w", err))
 	}
-	defer store.Close()
-	instance := newInstance(cfg, store)
-	if cfg.UnlockAll {
-		log.Print("[D3] unlock-all: on")
-	} else {
-		log.Print("[D3] unlock-all: off")
+	resources.closeDatabase = database.Close
+	i := newInstance(cfg, database)
+	log.Printf("[server] unlock-all: %v", cfg.UnlockAll)
+	resources.admission = append(resources.admission, i.lobby.BeginShutdown)
+	resources.stop = append(resources.stop, i.registry.StopReaper, i.nat.Close, i.relay.Close)
+	resources.wait = append(resources.wait,
+		func() error { i.lobby.Wait(); return nil },
+		func() error { i.registry.WaitReaper(); return nil },
+		func() error { i.nat.Wait(); return nil },
+		func() error { i.relay.Wait(); return nil })
+
+	dashboard, err := i.monitor.StartDashboard(newDashboardViews(i.presence, i.matchmaker, i.registry), i.diagnostics)
+	if err != nil {
+		return finish(fmt.Errorf("dashboard: %w", err))
 	}
+	resources.admission = append(resources.admission, dashboard.BeginShutdown)
+	resources.wait = append(resources.wait, dashboard.Wait)
+	if err := i.nat.Start(cfg.NatPort); err != nil {
+		return finish(fmt.Errorf("NAT: %w", err))
+	}
+	i.relay.StartCTRRelay(cfg.RelayLow, cfg.RelayHigh, cfg.PublicIP, i.presence.OnlinePIDs)
+	i.registry.StartReaper()
+	if err := i.lobby.Start(); err != nil {
+		return finish(err)
+	}
+	authServer, err := auth.StartAuth(platform, i.tickets, i.presence, cfg, i.diagnostics, i.monitor, ctr.NewUmbrellaHandler(i.diagnostics, i.tickets))
+	if err != nil {
+		return finish(fmt.Errorf("auth: %w", err))
+	}
+	resources.admission = append(resources.admission, authServer.BeginShutdown)
+	resources.wait = append(resources.wait, authServer.Wait)
 
-	go instance.monitor.StartDashboard(newDashboardViews(instance.presence, instance.matchmaker, instance.registry), instance.diagnostics)
-	go instance.nat.ServeNAT(cfg.NatPort)
-	instance.relay.StartCTRRelay(cfg.RelayLow, cfg.RelayHigh, cfg.PublicIP, instance.presence.OnlinePIDs)
-	go instance.registry.ReapSessions()
-	instance.lobby.Start()
-
-	if err := authpkg.ServeAuth(platform, instance.tickets, instance.presence, cfg, instance.diagnostics, instance.monitor, ctrpkg.NewUmbrellaHandler(instance.diagnostics, instance.tickets)); err != nil {
-		log.Fatalf("[D3 Auth] stopped: %v", err)
+	select {
+	case <-ctx.Done():
+		log.Print("[server] operator shutdown: draining admitted work")
+		return finish(nil)
+	case <-authServer.Done():
+		return finish(fmt.Errorf("auth stopped: %w", authServer.Err()))
+	case <-dashboard.Done():
+		return finish(fmt.Errorf("dashboard stopped: %w", dashboard.Err()))
 	}
 }

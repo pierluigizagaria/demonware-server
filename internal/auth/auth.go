@@ -20,6 +20,7 @@ import (
 	configpkg "github.com/NextendoNetwork/nextendo-demonware/internal/config"
 	dashboardpkg "github.com/NextendoNetwork/nextendo-demonware/internal/dashboard"
 	diagnosticspkg "github.com/NextendoNetwork/nextendo-demonware/internal/diagnostics"
+	"github.com/NextendoNetwork/nextendo-demonware/internal/httpserver"
 	ps4pkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/ps4"
 	presencepkg "github.com/NextendoNetwork/nextendo-demonware/internal/presence"
 	io "io"
@@ -36,13 +37,17 @@ import (
 // bdAuth ticket magic, read from the NSO (rodata 0xF07FB8): bytes DE AD BD EF.
 const TicketMagic uint32 = 0xEFBDADDE
 
-func ServeAuth(platform PublisherPlatform, tickets *TicketStore, presence *presencepkg.PresenceStore, cfg configpkg.ServerConfig, diag *diagnosticspkg.Diagnostics, monitor *dashboardpkg.Telemetry, umbrella AuxiliaryAuthHandler) error {
+func StartAuth(platform PublisherPlatform, tickets *TicketStore, presence *presencepkg.PresenceStore, cfg configpkg.ServerConfig, diag *diagnosticspkg.Diagnostics, monitor *dashboardpkg.Telemetry, umbrella AuxiliaryAuthHandler) (*httpserver.Server, error) {
 	ctrSigner, err := LoadCTRAuthSigner(cfg.SigningKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if ctrSigner == nil {
-		return fmt.Errorf("CTR_AUTH_SIGNING_KEY is required")
+		return nil, fmt.Errorf("CTR_AUTH_SIGNING_KEY is required")
+	}
+	certificate, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+	if err != nil {
+		return nil, err
 	}
 	diag.DiagnosticLogf("[CTR Auth] signed replies enabled (client trust mod required)")
 	dumps := diag.RunDumpDir("auth")
@@ -53,7 +58,7 @@ func ServeAuth(platform PublisherPlatform, tickets *TicketStore, presence *prese
 		Addr:    net.JoinHostPort(cfg.BindAddr, strconv.Itoa(cfg.AuthPort)),
 		Handler: h,
 		// The client is an embedded 2018 curl: don't require TLS 1.2+.
-		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS10},
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS10, Certificates: []tls.Certificate{certificate}},
 		ReadHeaderTimeout: 15 * time.Second,
 		// Bounds reading one request, body included. Idle keep-alive stays
 		// unlimited as before (a zero IdleTimeout would inherit ReadTimeout).
@@ -62,14 +67,14 @@ func ServeAuth(platform PublisherPlatform, tickets *TicketStore, presence *prese
 	}
 	ln, err := net.Listen("tcp", srv.Addr)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// Behind sni-router: the PROXY header carries the player's address (proxyproto.go).
 	if cfg.ProxyProtocol {
 		ln = NewProxyListener(ln)
 	}
 	diag.DiagnosticLogf("[D3 Auth] listening HTTPS :%d (proxyProto=%v, cert=%s)", cfg.AuthPort, cfg.ProxyProtocol, cfg.CertFile)
-	return srv.ServeTLS(ln, cfg.CertFile, cfg.KeyFile)
+	return httpserver.Start(srv, ln, true), nil
 }
 
 func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboardpkg.Telemetry, tickets *TicketStore, presence *presencepkg.PresenceStore, platform PublisherPlatform, ctrSigner *CtrAuthSigner, dumps string, umbrella AuxiliaryAuthHandler) http.Handler {

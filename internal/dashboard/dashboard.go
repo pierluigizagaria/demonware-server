@@ -19,6 +19,7 @@ import (
 	fmt "fmt"
 	configpkg "github.com/NextendoNetwork/nextendo-demonware/internal/config"
 	diagnosticspkg "github.com/NextendoNetwork/nextendo-demonware/internal/diagnostics"
+	"github.com/NextendoNetwork/nextendo-demonware/internal/httpserver"
 	ps4pkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/ps4"
 	net "net"
 	http "net/http"
@@ -315,7 +316,7 @@ func (monitor *Telemetry) BuildGameStats(views DashboardViews, game string) ApiS
 	}
 }
 
-func (monitor *Telemetry) StartDashboard(views DashboardViews, diag *diagnosticspkg.Diagnostics) {
+func (monitor *Telemetry) StartDashboard(views DashboardViews, diag *diagnosticspkg.Diagnostics) (*httpserver.Server, error) {
 	port, token := strconv.Itoa(monitor.dashPort), monitor.dashToken
 
 	authed := func(w http.ResponseWriter, r *http.Request) bool {
@@ -338,7 +339,9 @@ func (monitor *Telemetry) StartDashboard(views DashboardViews, diag *diagnostics
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 
 	diag.DiagnosticLogf("[D3 Dashboard] stats API on :%s (token=%v)", port, token != "")
-	if err := http.ListenAndServe(net.JoinHostPort(monitor.bindAddr, port), mux); err != nil {
-		diag.DiagnosticLogf("[D3 Dashboard] HTTP error: %v", err)
+	ln, err := net.Listen("tcp", net.JoinHostPort(monitor.bindAddr, port))
+	if err != nil {
+		return nil, err
 	}
+	return httpserver.Start(&http.Server{Handler: mux}, ln, false), nil
 }
