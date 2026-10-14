@@ -134,9 +134,9 @@ func (l *lobbyConn) handleTask(service, task byte, r *demonware.Reader, payload 
 	var reply []byte
 	switch {
 	case service == 38 && task == 6:
-		reply = l.onPlatformIdentityReport(task, r)
+		reply = (&platformHandler{replyCounter: l.replyCounter}).onPlatformIdentityReport(l, task, r)
 	case service == 4 && l.player != nil && isCTRTitle(l.player.Title):
-		reply = l.onCTRStats(task, r)
+		reply = (&statsHandler{replyCounter: l.replyCounter, stats: l.ctr.stats, presence: l.presence}).onCTRStats(l, task, r)
 	case service == svcTitleUtilities && task == taskGetServerTime:
 		now := uint32(l.now().Unix())
 		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Uint32(now); return 1 })
@@ -162,13 +162,13 @@ func (l *lobbyConn) handleTask(service, task byte, r *demonware.Reader, payload 
 		l.logf("task bdStorage.getPublisherFile ctx=%q file=%q -> %s (%d bytes)", ctx, name, path, len(data))
 
 	case service == svcTitleUtilities && task == 9:
-		reply = l.onGetUserNames(task, r)
+		reply = (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onGetUserNames(l, task, r)
 
 	case service == svcTitleUtilities && task == 10:
-		reply = l.onGetUserIDs(task, r)
+		reply = (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onGetUserIDs(l, task, r)
 
 	case service == 29 && (task == 1 || task == 4):
-		if reply = l.onUserData(task, r); reply == nil {
+		if reply = (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onUserData(l, task, r); reply == nil {
 			reply = l.taskReply(task, 0, nil)
 		}
 
@@ -187,7 +187,7 @@ func (l *lobbyConn) handleTask(service, task byte, r *demonware.Reader, payload 
 			reply = l.taskReply(task, errUnhandled, nil)
 		}
 	case service == svcRichPresence:
-		reply = l.onRichPresence(task, r)
+		reply = (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onRichPresence(l, task, r)
 
 	case service == svcAsyncMatchMaking && task == taskSetPlayerInfo:
 		// bdAsyncMatchMaking::setPlayerInfo(const char*, u32): the game uploads its
@@ -294,14 +294,14 @@ func (l *lobbyConn) handleTask(service, task byte, r *demonware.Reader, payload 
 		l.logf("task bdABTesting.enroll -> 200 (%d bytes)", len(body))
 
 	case service == svcMarketingComms:
-		reply = l.onMarketingComms(task, r)
+		reply = (&newsHandler{replyCounter: l.replyCounter, news: l.ctr.news}).onMarketingComms(l, task, r)
 
 	case service == svcAchievements:
-		result = l.onAchievements(task, payload)
+		result = (&economyHandler{replyCounter: l.replyCounter, economy: l.ctr.economy}).onAchievements(l, task, payload)
 		reply = result.Reply
 
 	case service == svcMarketplace:
-		result = l.onMarketplace(task, payload)
+		result = (&economyHandler{replyCounter: l.replyCounter, economy: l.ctr.economy}).onMarketplace(l, task, payload)
 		reply = result.Reply
 		if reply == nil {
 			reply = l.taskReply(task, errUnhandled, nil)

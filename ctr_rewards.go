@@ -48,14 +48,14 @@ func balanceUpdatePayload(pid uint64, amount int64) []byte {
 	entry = demonware.AppendVarintField(entry, 5, demonware.ZigZag(amount))
 	return demonware.AppendBytesField(nil, 1, entry)
 }
-func (l *lobbyConn) pushCurrentBalance() {
-	a, err := l.ctr.economy.snapshot(l.pid())
+func (h *economyHandler) pushCurrentBalance(peer taskSession) {
+	a, err := h.economy.snapshot(peer.PID())
 	if err != nil {
-		l.logf("CTR balance push read: %v", err)
+		peer.Logf("CTR balance push read: %v", err)
 		return
 	}
-	if err := l.sendPush(76, func(w *demonware.Writer) { w.Struct(balanceUpdatePayload(l.pid(), a.Balances[10])) }); err != nil {
-		l.logf("CTR balance push: %v", err)
+	if err := peer.SendPush(76, func(w *demonware.Writer) { w.Struct(balanceUpdatePayload(peer.PID(), a.Balances[10])) }); err != nil {
+		peer.Logf("CTR balance push: %v", err)
 	}
 }
 

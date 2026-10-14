@@ -193,19 +193,19 @@ func (replies *replyCounter) statsReply(task byte, rows []ctrStat, total uint32)
 	}
 	return demonware.ListReply(replies.transactions.Add(1), task, 0, uint32(len(rows)), total, w.Bytes())
 }
-func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
-	pid := l.pid()
-	l.presence.onlineMu.Lock()
-	p := l.presence.online[l.n]
+func (h *statsHandler) onCTRStats(peer taskSession, task byte, r *demonware.Reader) []byte {
+	pid := peer.PID()
+	h.presence.onlineMu.Lock()
+	p := h.presence.online[peer.ConnID()]
 	name := ""
 	allowed := p != nil && isCTRTitle(p.Title) && pid != 0
 	if allowed {
 		name = p.Username
 	}
-	l.presence.onlineMu.Unlock()
+	h.presence.onlineMu.Unlock()
 	fail := func(err error) []byte {
-		l.logf("CTR stats task=%d failed: %v", task, err)
-		return l.taskReply(task, errUnhandled, nil)
+		peer.Logf("CTR stats task=%d failed: %v", task, err)
+		return h.taskReply(task, errUnhandled, nil)
 	}
 	if !allowed {
 		return fail(fmt.Errorf("CTR identity required"))
@@ -215,14 +215,14 @@ func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
 		if err != nil {
 			return fail(err)
 		}
-		if err = l.ctr.stats.write(writes); err != nil {
+		if err = h.stats.write(writes); err != nil {
 			return fail(err)
 		}
-		l.logf("CTR stats saved pid=%d records=%d", pid, len(writes))
+		peer.Logf("CTR stats saved pid=%d records=%d", pid, len(writes))
 		for _, row := range writes {
-			l.logf("CTR stats upload board=%d score=%d operation=%d", row.Board, row.Score, row.Operation)
+			peer.Logf("CTR stats upload board=%d score=%d operation=%d", row.Board, row.Score, row.Operation)
 		}
-		return l.taskReply(task, 0, nil)
+		return h.taskReply(task, 0, nil)
 	}
 	if task != 4 && task != 13 {
 		return fail(fmt.Errorf("unsupported stats task"))
@@ -263,10 +263,10 @@ func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
 	if e != nil || cols != 0 || !statsEnd(r) {
 		return fail(fmt.Errorf("unsupported column selection"))
 	}
-	rows, total, err := readLeaderboard(l.ctr.stats, task, board, start, limit, ids)
+	rows, total, err := readLeaderboard(h.stats, task, board, start, limit, ids)
 	if err != nil {
 		return fail(err)
 	}
-	l.logf("CTR stats read task=%d board=%d rows=%d total=%d", task, board, len(rows), total)
-	return l.statsReply(task, rows, total)
+	peer.Logf("CTR stats read task=%d board=%d rows=%d total=%d", task, board, len(rows), total)
+	return h.statsReply(task, rows, total)
 }

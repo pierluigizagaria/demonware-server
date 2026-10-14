@@ -18,7 +18,7 @@ const (
 )
 
 // onAchievements answers every achievements-engine task with a well formed struct.
-func (l *lobbyConn) onAchievements(task byte, payload []byte) (result taskResult) {
+func (h *economyHandler) onAchievements(peer taskSession, task byte, payload []byte) (result taskResult) {
 	switch task {
 	case taskReportEvents, taskReportUserEvents:
 		var credit int64
@@ -26,85 +26,85 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) (result taskResult
 		if task == taskReportEvents {
 			events, err := parseRewardEvents(payload)
 			if err != nil {
-				l.logf("CTR reward event rejected: %v", err)
-				result.Reply = l.taskReply(task, errUnhandled, nil)
+				peer.Logf("CTR reward event rejected: %v", err)
+				result.Reply = h.taskReply(task, errUnhandled, nil)
 				return result
 			}
 			for _, e := range events {
-				l.logf("CTR reward event=%s timestamp=%d values=%v", e.Name, e.Timestamp, e.Values)
+				peer.Logf("CTR reward event=%s timestamp=%d values=%v", e.Name, e.Timestamp, e.Values)
 			}
-			credit, err = l.ctr.economy.awardRaces(l.pid(), events, l.now())
+			credit, err = h.economy.awardRaces(peer.PID(), events, peer.Now())
 			if err != nil {
-				l.logf("CTR reward persistence failed: %v", err)
-				result.Reply = l.taskReply(task, errUnhandled, nil)
+				peer.Logf("CTR reward persistence failed: %v", err)
+				result.Reply = h.taskReply(task, errUnhandled, nil)
 				return result
 			}
-			updates, err = l.ctr.economy.reportPitStopRefresh(l.pid(), events, l.now())
+			updates, err = h.economy.reportPitStopRefresh(peer.PID(), events, peer.Now())
 			if err != nil {
-				l.logf("CTR refresh persistence failed: %v", err)
-				result.Reply = l.taskReply(task, errUnhandled, nil)
+				peer.Logf("CTR refresh persistence failed: %v", err)
+				result.Reply = h.taskReply(task, errUnhandled, nil)
 				return result
 			}
-			challengeCredit, challengeUpdates, err := l.ctr.economy.awardChallenges(l.pid(), events, l.now())
+			challengeCredit, challengeUpdates, err := h.economy.awardChallenges(peer.PID(), events, peer.Now())
 			if err != nil {
-				l.logf("CTR challenge persistence failed: %v", err)
-				result.Reply = l.taskReply(task, errUnhandled, nil)
+				peer.Logf("CTR challenge persistence failed: %v", err)
+				result.Reply = h.taskReply(task, errUnhandled, nil)
 				return result
 			}
 			credit += challengeCredit
 			updates = append(updates, challengeUpdates...)
 			if challengeCredit != 0 {
-				l.logf("CTR challenge reward=%d persisted", challengeCredit)
+				peer.Logf("CTR challenge reward=%d persisted", challengeCredit)
 			}
 
 			if credit != 0 {
-				l.logf("CTR reward credit=%d currency=10 persisted", credit)
+				peer.Logf("CTR reward credit=%d currency=10 persisted", credit)
 			}
 		}
 		result.AfterReply = func(_ error) {
 			if credit != 0 {
-				l.pushCurrentBalance()
+				h.pushCurrentBalance(peer)
 			}
 			if len(updates) == 0 {
 				return
 			}
-			if err := l.sendPush(pushAchievementsUpdated, func(w *demonware.Writer) { w.Struct(updates) }); err != nil {
-				l.logf("CTR achievements push: %v", err)
+			if err := peer.SendPush(pushAchievementsUpdated, func(w *demonware.Writer) { w.Struct(updates) }); err != nil {
+				peer.Logf("CTR achievements push: %v", err)
 				return
 			}
-			l.logf("CTR achievements -> push %d achievements-updated", pushAchievementsUpdated)
+			peer.Logf("CTR achievements -> push %d achievements-updated", pushAchievementsUpdated)
 		}
-		result.Reply = l.structTaskReply(task, nil)
+		result.Reply = h.structTaskReply(task, nil)
 		return result
 
 	case taskGetAchievementStates:
-		a, err := l.ctr.economy.snapshot(l.pid())
+		a, err := h.economy.snapshot(peer.PID())
 		if err != nil {
-			result.Reply = l.taskReply(task, errUnhandled, nil)
+			result.Reply = h.taskReply(task, errUnhandled, nil)
 			return result
 		}
-		state := currentPitStopRefresh(a, l.now())
+		state := currentPitStopRefresh(a, peer.Now())
 		var states []byte
 		if achievementRequested(payload, state) {
 			states = demonware.AppendBytesField(nil, 1, state.encode())
 		}
 		for _, rule := range challengeRules.Rules {
-			if challenge, _, active := rule.current(a, l.now()); active && achievementRequested(payload, challenge) {
+			if challenge, _, active := rule.current(a, peer.Now()); active && achievementRequested(payload, challenge) {
 				states = demonware.AppendBytesField(states, 1, challenge.encode())
 			}
 		}
-		result.Reply = l.structTaskReply(task, demonware.AppendBytesField(states, 2, nil))
+		result.Reply = h.structTaskReply(task, demonware.AppendBytesField(states, 2, nil))
 		return result
 
 	case taskGetUserState:
 		// field 1 is the engine's user-state blob. Empty JSON keeps it valid and lets
 		// handleGetUserState fire CAEUserStateRefreshed, which is the refresh confirmation.
-		l.logf("CTR achievements getUserState -> empty state")
-		result.Reply = l.structTaskReply(task, demonware.AppendBytesField(nil, 1, []byte("{}")))
+		peer.Logf("CTR achievements getUserState -> empty state")
+		result.Reply = h.structTaskReply(task, demonware.AppendBytesField(nil, 1, []byte("{}")))
 		return result
 	}
 	// reportEvents and the activate/claim tasks take a request and return no body.
-	result.Reply = l.structTaskReply(task, nil)
+	result.Reply = h.structTaskReply(task, nil)
 	return result
 }
 

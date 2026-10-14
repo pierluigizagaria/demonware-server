@@ -59,7 +59,7 @@ func (state *presenceStore) onlinePIDSet() map[uint64]bool {
 	return out
 }
 
-func (l *lobbyConn) onRichPresence(task byte, r *demonware.Reader) []byte {
+func (h *presenceHandler) onRichPresence(peer taskSession, task byte, r *demonware.Reader) []byte {
 	ctx, _ := r.String()
 	switch task {
 	case rpSet:
@@ -68,31 +68,31 @@ func (l *lobbyConn) onRichPresence(task byte, r *demonware.Reader) []byte {
 		flag, err3 := r.Uint8()
 		data, err4 := r.Blob()
 		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
-			l.logf("richpresence SET illisible ctx=%q", ctx)
-			return l.taskReply(task, 0, nil)
+			peer.Logf("richpresence SET illisible ctx=%q", ctx)
+			return h.taskReply(task, 0, nil)
 		}
 		if id == 0 {
-			id = l.pid()
+			id = peer.PID()
 		}
 		if id == 0 {
-			return l.taskReply(task, 0, nil)
+			return h.taskReply(task, 0, nil)
 		}
-		l.presence.richMu.Lock()
-		l.presence.rich[id] = richPresence{plat, flag, data}
-		l.presence.richMu.Unlock()
-		l.logf("richpresence SET pid=%d ctx=%q %d bytes", id, ctx, len(data))
-		return l.taskReply(task, 0, nil)
+		h.presence.richMu.Lock()
+		h.presence.rich[id] = richPresence{plat, flag, data}
+		h.presence.richMu.Unlock()
+		peer.Logf("richpresence SET pid=%d ctx=%q %d bytes", id, ctx, len(data))
+		return h.taskReply(task, 0, nil)
 
 	case rpGet, rpGetAndSubscribe:
 		ids := readAccountIDs(r)
-		me := l.pid()
-		live := l.presence.onlinePIDSet()
+		me := peer.PID()
+		live := h.presence.onlinePIDSet()
 		type hit struct {
 			id uint64
 			p  richPresence
 		}
 		var hits []hit
-		l.presence.richMu.Lock()
+		h.presence.richMu.Lock()
 		for _, a := range ids {
 			id := a.id
 			if id == 0 {
@@ -104,15 +104,15 @@ func (l *lobbyConn) onRichPresence(task byte, r *demonware.Reader) []byte {
 			// Never return retained join data for a disconnected account.
 			p := richPresence{platform: a.platform}
 			if id == me || live[id] {
-				if stored, ok := l.presence.rich[id]; ok {
+				if stored, ok := h.presence.rich[id]; ok {
 					p = stored
 				}
 			}
 			hits = append(hits, hit{id, p})
 		}
-		l.presence.richMu.Unlock()
-		l.logf("richpresence GET ctx=%q %d demande(s) -> %d presence(s)", ctx, len(ids), len(hits))
-		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
+		h.presence.richMu.Unlock()
+		peer.Logf("richpresence GET ctx=%q %d demande(s) -> %d presence(s)", ctx, len(ids), len(hits))
+		return h.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, h := range hits {
 				w.Uint64(h.id)
 				w.String(h.p.platform)
@@ -122,5 +122,5 @@ func (l *lobbyConn) onRichPresence(task byte, r *demonware.Reader) []byte {
 			return uint32(len(hits))
 		})
 	}
-	return l.taskReply(task, 0, nil)
+	return h.taskReply(task, 0, nil)
 }

@@ -68,63 +68,63 @@ func getPlayerBalancesResponse(w map[uint64]int64, max int) []byte {
 // ---- dispatch -------------------------------------------------------------
 
 // onMarketplace handles Pit Stop requests; nil means an unsupported task.
-func (l *lobbyConn) onMarketplace(task byte, payload []byte) (result taskResult) {
+func (h *economyHandler) onMarketplace(peer taskSession, task byte, payload []byte) (result taskResult) {
 	switch task {
 	case taskGetBalancesV3:
 		ctx, max := parseBalancesRequest(payload)
 		if ctx != marketplaceContext || !validPS4BalancesRequest(payload, ctx, max) {
-			result.Reply = l.taskReply(task, errUnhandled, nil)
+			result.Reply = h.taskReply(task, errUnhandled, nil)
 			return result
 		}
-		a, err := l.ctr.economy.snapshot(l.pid())
+		a, err := h.economy.snapshot(peer.PID())
 		if err != nil {
-			l.logf("CTR economy read failed: %v", err)
-			result.Reply = l.taskReply(task, errUnhandled, nil)
+			peer.Logf("CTR economy read failed: %v", err)
+			result.Reply = h.taskReply(task, errUnhandled, nil)
 			return result
 		}
 		w := a.Balances
 		sb := getPlayerBalancesResponse(w, max)
-		l.logf("CTR pitstop balances ctx=%q max=%d -> %d currencies", ctx, max, len(currencyIDs()))
-		result.Reply = l.structTaskReply(task, sb)
+		peer.Logf("CTR pitstop balances ctx=%q max=%d -> %d currencies", ctx, max, len(currencyIDs()))
+		result.Reply = h.structTaskReply(task, sb)
 		return result
 
 	case taskSwitchReconciliation:
 		// Switch only (an eShop receipt): the PS4 build never sends it.
-		result.Reply = l.taskReply(task, errUnhandled, nil)
+		result.Reply = h.taskReply(task, errUnhandled, nil)
 		return result
 
 	case taskGetInventoryPaginated:
 		if len(payload) < 3 {
-			result.Reply = l.taskReply(task, errUnhandled, nil)
+			result.Reply = h.taskReply(task, errUnhandled, nil)
 			return result
 		}
 		r := demonware.NewReader(payload[3:])
 		ctx, err := r.String()
 		if err != nil || ctx != marketplaceContext {
-			result.Reply = l.taskReply(task, errUnhandled, nil)
+			result.Reply = h.taskReply(task, errUnhandled, nil)
 			return result
 		}
 		page, err := r.Uint32()
 		if err != nil {
-			result.Reply = l.taskReply(task, errUnhandled, nil)
+			result.Reply = h.taskReply(task, errUnhandled, nil)
 			return result
 		}
 		size, err := r.Uint32()
 		if err != nil || size == 0 || size > 4096 {
-			result.Reply = l.taskReply(task, errUnhandled, nil)
+			result.Reply = h.taskReply(task, errUnhandled, nil)
 			return result
 		}
-		a, err := l.ctr.economy.inventory(l.pid())
+		a, err := h.economy.inventory(peer.PID())
 		if err != nil {
-			l.logf("CTR economy inventory failed: %v", err)
-			result.Reply = l.taskReply(task, errUnhandled, nil)
+			peer.Logf("CTR economy inventory failed: %v", err)
+			result.Reply = h.taskReply(task, errUnhandled, nil)
 			return result
 		}
 		items := inventoryPage(a, page, size)
-		l.logf("CTR pitstop inventory page=%d size=%d -> %d items", page, size, len(items))
-		result.Reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
+		peer.Logf("CTR pitstop inventory page=%d size=%d -> %d items", page, size, len(items))
+		result.Reply = h.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, item := range items {
-				writeInventoryItem(w, l.pid(), item)
+				writeInventoryItem(w, peer.PID(), item)
 			}
 			return uint32(len(items))
 		})
@@ -132,18 +132,18 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) (result taskResult)
 	case taskPurchaseSkus:
 		skus, ok := parsePurchaseSkus(payload)
 		if !ok {
-			result.Reply = l.taskReply(task, errUnhandled, nil)
+			result.Reply = h.taskReply(task, errUnhandled, nil)
 			return result
 		}
-		debit, err := l.ctr.economy.purchase(l.pid(), skus)
+		debit, err := h.economy.purchase(peer.PID(), skus)
 		if err != nil {
-			l.logf("CTR pitstop purchase rejected: %v", err)
-			result.Reply = l.taskReply(task, errUnhandled, nil)
+			peer.Logf("CTR pitstop purchase rejected: %v", err)
+			result.Reply = h.taskReply(task, errUnhandled, nil)
 			return result
 		}
-		l.logf("CTR pitstop purchase skus=%v debit=%d currency=10", skus, debit)
-		result.AfterReply = func(_ error) { l.pushCurrentBalance() }
-		result.Reply = l.taskReply(task, 0, nil)
+		peer.Logf("CTR pitstop purchase skus=%v debit=%d currency=10", skus, debit)
+		result.AfterReply = func(_ error) { h.pushCurrentBalance(peer) }
+		result.Reply = h.taskReply(task, 0, nil)
 		return result
 
 	}

@@ -120,7 +120,7 @@ func (state *presenceStore) nicknameOnline(id uint64) string {
 }
 
 // onGetUserNames: 12/9.
-func (l *lobbyConn) onGetUserNames(task byte, r *demonware.Reader) []byte {
+func (h *presenceHandler) onGetUserNames(peer taskSession, task byte, r *demonware.Reader) []byte {
 	ids := r.Uint64s()
 	type hit struct {
 		id   uint64
@@ -128,12 +128,12 @@ func (l *lobbyConn) onGetUserNames(task byte, r *demonware.Reader) []byte {
 	}
 	var hits []hit
 	for _, id := range ids {
-		if name := l.presence.nicknameOnline(id); name != "" {
+		if name := h.presence.nicknameOnline(id); name != "" {
 			hits = append(hits, hit{id, name})
 		}
 	}
-	l.logf("friends getUserNames %d request(s) -> %d online %v", len(ids), len(hits), hits)
-	return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
+	peer.Logf("friends getUserNames %d request(s) -> %d online %v", len(ids), len(hits), hits)
+	return h.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, h := range hits {
 			w.Uint64(h.id)
 			w.String(h.name)
@@ -143,20 +143,20 @@ func (l *lobbyConn) onGetUserNames(task byte, r *demonware.Reader) []byte {
 }
 
 // onUserData: service 29. 1 = write own data, 4 = read a list's.
-func (l *lobbyConn) onUserData(task byte, r *demonware.Reader) []byte {
+func (h *presenceHandler) onUserData(peer taskSession, task byte, r *demonware.Reader) []byte {
 	ctx, _ := r.String()
 	switch task {
 	case 1:
 		data, err := r.Blob()
-		if err != nil || l.player == nil {
-			l.logf("userdata SET ctx=%q ignored (%v, player=%v)", ctx, err, l.player != nil)
-			return l.taskReply(task, 0, nil)
+		if err != nil || peer.Identity() == nil {
+			peer.Logf("userdata SET ctx=%q ignored (%v, player=%v)", ctx, err, peer.Identity() != nil)
+			return h.taskReply(task, 0, nil)
 		}
-		l.presence.userDataMu.Lock()
-		l.presence.userData[strings.ToLower(l.player.Username)+"|"+ctx] = data
-		l.presence.userDataMu.Unlock()
-		l.logf("userdata SET %s ctx=%q %d bytes", l.player.Username, ctx, len(data))
-		return l.taskReply(task, 0, nil)
+		h.presence.userDataMu.Lock()
+		h.presence.userData[strings.ToLower(peer.Identity().Username)+"|"+ctx] = data
+		h.presence.userDataMu.Unlock()
+		peer.Logf("userdata SET %s ctx=%q %d bytes", peer.Identity().Username, ctx, len(data))
+		return h.taskReply(task, 0, nil)
 	case 4:
 		if len(r.Remaining()) > 0 && r.Remaining()[0] == demonware.TagBool {
 			_, _ = r.Bool()
@@ -168,19 +168,19 @@ func (l *lobbyConn) onUserData(task byte, r *demonware.Reader) []byte {
 		}
 		var hits []hit
 		for _, id := range ids {
-			name := l.presence.nicknameOnline(id)
+			name := h.presence.nicknameOnline(id)
 			if name == "" {
 				continue
 			}
-			l.presence.userDataMu.Lock()
-			d, ok := l.presence.userData[strings.ToLower(name)+"|"+ctx]
-			l.presence.userDataMu.Unlock()
+			h.presence.userDataMu.Lock()
+			d, ok := h.presence.userData[strings.ToLower(name)+"|"+ctx]
+			h.presence.userDataMu.Unlock()
 			if ok {
 				hits = append(hits, hit{id, d})
 			}
 		}
-		l.logf("userdata GET ctx=%q %d request(s) -> %d", ctx, len(ids), len(hits))
-		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
+		peer.Logf("userdata GET ctx=%q %d request(s) -> %d", ctx, len(ids), len(hits))
+		return h.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, h := range hits {
 				w.Uint64(h.id)
 				w.Blob(h.data)
@@ -205,41 +205,41 @@ func (state *presenceStore) pidOnline(id uint64) uint64 {
 // last issued a ticket under still resolves (player_names in ctrnf.db), so
 // a friend is found even before they connect to the lobby. Resolving an
 // identity does not make it joinable: only live sessions are advertised.
-func (l *lobbyConn) onGetUserIDs(task byte, r *demonware.Reader) []byte {
+func (h *presenceHandler) onGetUserIDs(peer taskSession, task byte, r *demonware.Reader) []byte {
 	count, err := r.Uint32()
 	if err != nil || count == 0 || count > 500 {
-		return l.taskReply(task, errUnhandled, nil)
+		return h.taskReply(task, errUnhandled, nil)
 	}
 	names := make([]string, 0, count)
 	for i := uint32(0); i < count; i++ {
 		name, err := r.String()
 		if err != nil || name == "" || len(name) > 63 {
-			return l.taskReply(task, errUnhandled, nil)
+			return h.taskReply(task, errUnhandled, nil)
 		}
 		names = append(names, name)
 	}
 	known := map[string]*playerID{}
-	if l.presence.playerNames != nil {
-		recorded, err := l.presence.playerNames.namedPlayers(names)
+	if h.presence.playerNames != nil {
+		recorded, err := h.presence.playerNames.namedPlayers(names)
 		if err != nil {
-			l.logf("friends getUserIDs: player names: %v", err)
+			peer.Logf("friends getUserIDs: player names: %v", err)
 		} else {
 			known = recorded
 		}
 	}
-	l.presence.onlineMu.Lock()
-	for _, p := range l.presence.online {
+	h.presence.onlineMu.Lock()
+	for _, p := range h.presence.online {
 		known[strings.ToLower(p.Username)] = p
 	}
-	l.presence.onlineMu.Unlock()
+	h.presence.onlineMu.Unlock()
 	var found []*playerID
 	for _, name := range names {
 		if p := known[strings.ToLower(name)]; p != nil && p.PID != 0 {
 			found = append(found, p)
 		}
 	}
-	l.logf("friends getUserIDs %d request(s) -> %d resolved", len(names), len(found))
-	return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
+	peer.Logf("friends getUserIDs %d request(s) -> %d resolved", len(names), len(found))
+	return h.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, p := range found {
 			w.Uint64(p.PID)
 			w.String(p.Username)
