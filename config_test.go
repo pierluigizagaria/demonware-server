@@ -67,6 +67,27 @@ func TestConfigDefaultsNeedNoEnvironment(t *testing.T) {
 	}
 }
 
+func TestConfigDefaultsDoNotReadInstalledSettings(t *testing.T) {
+	want, err := loadConfig(lookupFrom(nil), nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := want
+	changed.publicIP = "127.0.0.2"
+	changed.authPort, changed.natPort, changed.dashPort = 30001, 30002, 30003
+	changed.lobbyPorts = "30004"
+	changed.certFile, changed.keyFile = "other-cert", "other-key"
+	changed.dataDir, changed.pubfilesConfig, changed.pubfilesDir, changed.riftData = "other-data", "other-config", "other-files", "other-rifts"
+	changed.dumps, changed.verbose, changed.proxyProtocol, changed.migrate, changed.redactLogs = "other-dumps", true, true, true, false
+	changed.dashToken, changed.sniHost = "synthetic-dashboard-value", "synthetic-host"
+	applyConfig(changed)
+	t.Cleanup(func() { applyConfig(want) })
+	got, err := loadConfig(lookupFrom(nil), nil, false)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatal("configuration defaults inherited prior instance settings")
+	}
+}
+
 func TestConfigReadsServerSettings(t *testing.T) {
 	env := serverEnv()
 	env["BIND_ADDR"], env["AUTH_PORT"], env["LOBBY_PORTS"] = "127.0.0.2", "31443", "3074, 3075"

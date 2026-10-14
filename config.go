@@ -20,8 +20,7 @@ import (
 // instance's KEY=VALUE file first. Everything is read and validated once,
 // here, before anything starts: a malformed or missing value, or an unknown
 // variable with one of this server's prefixes, stops the server with every
-// problem listed instead of falling back to a default. The defaults are the
-// initial values of the variables applyConfig sets.
+// problem listed instead of falling back to a default. Defaults are fresh values, independent of any running instance.
 
 // Settings without a home in an upstream file.
 var (
@@ -106,22 +105,22 @@ func loadConfig(lookup func(string) string, check []string, serving bool) (serve
 	needsShadNet := serving && admission != "guest"
 	c := serverConfig{
 		admission:      admission,
-		publicIP:       r.ipv4("NEXTENDO_HOST", nextendoHost),
+		publicIP:       r.ipv4("NEXTENDO_HOST", "127.0.0.1"),
 		bindAddr:       r.ip("BIND_ADDR"),
-		authPort:       r.port("AUTH_PORT", authPort),
-		lobbyPorts:     r.ports("LOBBY_PORTS", lobbyPorts),
-		natPort:        r.port("NAT_PORT", natPort),
-		proxyProtocol:  r.flag("NEXTENDO_PROXY_PROTOCOL", proxyProtocol),
-		certFile:       r.text("CERT_FILE", certFile),
-		keyFile:        r.text("KEY_FILE", keyFile),
-		dashPort:       r.port("DASH_PORT", dashPort),
-		dashToken:      r.text("DASH_TOKEN", dashToken),
-		sniHost:        r.text("NEXTENDO_SNI_HOST", sniHost),
-		pubfilesConfig: r.text("D3_PUBFILES_CONFIG", pubConfigPath),
-		pubfilesDir:    r.text("D3_PUBFILES", pubDir),
-		dumps:          r.text("D3_DUMPS", dumpRoot),
-		verbose:        r.flag("D3_VERBOSE", verbose),
-		riftData:       r.text("D3_RIFTDATA", riftDir),
+		authPort:       r.port("AUTH_PORT", 8460),
+		lobbyPorts:     r.ports("LOBBY_PORTS", "3074,3075,3076,3077,3078,3079,3080"),
+		natPort:        r.port("NAT_PORT", 3074),
+		proxyProtocol:  r.flag("NEXTENDO_PROXY_PROTOCOL", false),
+		certFile:       r.text("CERT_FILE", "cert.pem"),
+		keyFile:        r.text("KEY_FILE", "key.pem"),
+		dashPort:       r.port("DASH_PORT", 8093),
+		dashToken:      r.text("DASH_TOKEN", ""),
+		sniHost:        r.text("NEXTENDO_SNI_HOST", ""),
+		pubfilesConfig: r.text("D3_PUBFILES_CONFIG", "pubfiles.json"),
+		pubfilesDir:    r.text("D3_PUBFILES", "pubfiles"),
+		dumps:          r.text("D3_DUMPS", "off"),
+		verbose:        r.flag("D3_VERBOSE", false),
+		riftData:       r.text("D3_RIFTDATA", "riftdata"),
 		shadnet: shadnet.Policy{
 			Issuer:    r.required("SHADNET_ISSUER", needsShadNet),
 			ClientID:  r.required("SHADNET_CLIENT_ID", needsShadNet),
@@ -130,14 +129,14 @@ func loadConfig(lookup func(string) string, check []string, serving bool) (serve
 		},
 		jwksURL:      r.required("SHADNET_JWKS_URL", needsShadNet),
 		signingKey:   r.required("CTR_AUTH_SIGNING_KEY", serving),
-		dataDir:      r.text("DATA_DIR", dataDir),
+		dataDir:      r.text("DATA_DIR", "data"),
 		unlockAll:    r.flag("CTR_UNLOCK_ALL", false),
 		startBalance: r.balance("CTR_START_BALANCE"),
-		migrate:      r.flag("CTR_MIGRATE", migrateEnabled),
+		migrate:      r.flag("CTR_MIGRATE", false),
 		relayLow:     r.integer("CTR_RELAY_PORT_LOW", 0, 0, 65535),
 		relayHigh:    r.integer("CTR_RELAY_PORT_HIGH", 0, 0, 65535),
 		relayPIDs:    r.pids("CTR_RELAY_PIDS"),
-		redactLogs:   r.flag("NEXTENDO_REDACT_LOGS", redactLogs),
+		redactLogs:   r.flag("NEXTENDO_REDACT_LOGS", true),
 		news:         r.news(),
 	}
 	if admission == "guest" {
