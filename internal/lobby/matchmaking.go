@@ -74,7 +74,7 @@ func (handler *ContextHandler) Owns(peer TaskSession, s *MatchSession) bool {
 	return pid != 0 && s.OwnerPID == pid
 }
 
-// reapSessions removes games whose host never came back.
+// ReapSessions removes games whose host never came back.
 func (registry *SessionRegistry) ReapSessions() { registry.StartReaper(); registry.WaitReaper() }
 
 func (registry *SessionRegistry) StartReaper() {
@@ -135,7 +135,7 @@ func NewSessionRegistry() *SessionRegistry {
 	return &SessionRegistry{Sessions: map[[8]byte]*MatchSession{}}
 }
 
-// dropSessionsOf detaches the games of a closed connection; reapSessions removes
+// DropSessionsOf detaches the games of a closed connection; reapSessions removes
 // them if the host does not come back.
 func (registry *SessionRegistry) DropSessionsOf(conn uint64) {
 	registry.Mu.Lock()
@@ -152,7 +152,7 @@ func (registry *SessionRegistry) DropSessionsOf(conn uint64) {
 	}
 }
 
-// onFriendSessions (138/14): "of these ids, who hosts a game?"
+// OnFriendSessions (138/14): "of these IDs, who hosts a game?"
 // Without an answer the game shows NOT JOINABLE for every online friend.
 func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *demonware.Reader, context string) []byte {
 	ids := r.Uint64s()
@@ -166,7 +166,7 @@ func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *
 	for _, id := range ids {
 		pid := handler.Presence.PIDOnline(id)
 		if pid == 0 {
-			// On Citron the friend id IS the PID; the host may be
+			// On Citron the friend ID IS the PID; the host may be
 			// reconnecting and so missing from the online list.
 			pid = id
 		}
@@ -184,7 +184,7 @@ func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *
 		handler.Registry.Mu.Unlock()
 	}
 	peer.Logf("matchmaking FRIENDS context=%q %d asked -> %d game(s)", context, len(ids), len(found))
-	// The game ties each result to a friend by the online id carried BY the game
+	// The game ties each result to a friend by the online ID carried BY the game
 	// (Net::MatchMakingInfo +0x170, inside attrs): nothing prefixes the record,
 	// which is a raw bdMatchMakingInfo.
 	return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 {

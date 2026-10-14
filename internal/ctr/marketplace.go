@@ -19,7 +19,7 @@
 //	bdMarketplaceCurrencyAmount { uint64 currency_id = 1; int64 amount = 2; uint64 kind = 3 }
 //
 // CMarketplaceGetBalancesTask::finish reads getCurrencyID/getAmount off each entry and
-// looks the id up in the currency table the game loaded from its own data. An id the
+// looks the ID up in the currency table the game loaded from its own data. An ID the
 // game does not know is dropped. The catalog defines currency IDs 10 through 12.
 
 package ctr
@@ -51,7 +51,7 @@ func (s *EconomyStore) LoadWallets(dir string) {
 	}
 }
 
-// getPlayerBalancesResponse builds the reply for task 245.
+// GetPlayerBalancesResponse builds the reply for task 245.
 func GetPlayerBalancesResponse(w map[uint64]int64, max int) []byte {
 	ids := currencyIDs()
 	if max <= 0 || max > len(ids) {
@@ -67,7 +67,7 @@ func GetPlayerBalancesResponse(w map[uint64]int64, max int) []byte {
 	return out
 }
 
-// onMarketplace handles Pit Stop requests; nil means an unsupported task.
+// OnMarketplace handles Pit Stop requests; nil means an unsupported task.
 func (h *EconomyHandler) OnMarketplace(peer lobby.TaskSession, task byte, payload []byte) (result lobby.TaskResult) {
 	switch task {
 	case TaskGetBalancesV3:
@@ -164,7 +164,7 @@ func validPS4BalancesRequest(payload []byte, ctx string, max int) bool {
 	return bytes.Equal(payload, append(w.Bytes(), 0))
 }
 
-// parseBalancesRequest reads the bdGetPlayerBalancesRequest struct buffer that follows the
+// ParseBalancesRequest reads the bdGetPlayerBalancesRequest struct buffer that follows the
 // service and task bytes: field 1 context string, field 2 maxNumResults.
 func ParseBalancesRequest(payload []byte) (string, int) {
 	sb := demonware.TaskStructPayload(payload)
@@ -200,10 +200,10 @@ func ParseBalancesRequest(payload []byte) (string, int) {
 	return ctx, max
 }
 
-// writeInventoryItem writes one bdMarketplaceInventory. Field order and the struct offsets
+// WriteInventoryItem writes one bdMarketplaceInventory. Field order and the struct offsets
 // each value comes from were read from bdMarketplaceInventory::serialize; field 3 (+0x48)
-// is the item id CMarketplaceInventoryItem::populateItem matches against the game's own
-// catalog, so it carries the catalog ITEM id granted by the SKU.
+// is the item ID CMarketplaceInventoryItem::populateItem matches against the game's own
+// catalog, so it carries the catalog ITEM ID granted by the SKU.
 func WriteInventoryItem(w *demonware.Writer, owner uint64, item uint32) {
 	w.Uint64(owner)                      // bdUserAccountID owner
 	w.String(ps4.MarketplaceAccountType) // bdUserAccountID account type

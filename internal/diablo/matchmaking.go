@@ -25,7 +25,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/lobby"
 )
 
-// readInfo reads a bdMatchMakingInfo sent by the client.
+// ReadInfo reads a bdMatchMakingInfo sent by the client.
 func ReadInfo(r *demonware.Reader) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
 	if host, err = r.Blob(); err != nil {
 		return
@@ -40,7 +40,7 @@ func ReadInfo(r *demonware.Reader) (host []byte, gameType, maxPlayers uint32, at
 	return
 }
 
-// onMatchMaking handles service 21. Returns nil if the task isn't handled.
+// OnMatchMaking handles service 21. Returns nil if the task isn't handled.
 func (handler *MatchHandler) OnMatchMaking(peer lobby.TaskSession, task byte, r *demonware.Reader) []byte {
 	return handler.OnMatchMakingContext(peer, task, r, "d3")
 }

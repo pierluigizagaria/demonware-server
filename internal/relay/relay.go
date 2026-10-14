@@ -8,7 +8,7 @@
 //
 // bdCommonAddr, the 67-byte hostAddr blob the game exchanges, already has room for this:
 //
-//	slot 0      local address   ip[4] + port u16 little-endian
+//	slot 0      local address   IP[4] + port u16 little-endian
 //	slots 1..9  RELAY addresses, empty slots carry the sentinel 0.255.0.255:0
 //	slot 10     public address
 //	byte 66     NAT type
@@ -58,7 +58,7 @@ func (relay *Table) relayFor(joinerPID uint64) bool {
 }
 
 const (
-	RelayAddrLen  = 6  // ip[4] + port u16
+	RelayAddrLen  = 6  // IP[4] + port u16
 	RelaySlotLow  = 1  // first relay slot in bdCommonAddr
 	RelaySlotHigh = 9  // last relay slot
 	CommonAddrLen = 67 // local + 9 relay + public + nat type
@@ -118,7 +118,7 @@ func (relay *Table) Start(low, high int, host string, onlinePIDs func() []uint64
 	go func() { defer relay.workers.Done(); relay.reap(onlinePIDs) }()
 }
 
-// parseAddrSlot reads one bdCommonAddr slot. The port is little-endian, as in nat.go.
+// ParseAddrSlot reads one bdCommonAddr slot. The port is little-endian, as in nat.go.
 func ParseAddrSlot(b []byte) *net.UDPAddr {
 	if len(b) < RelayAddrLen {
 		return nil
@@ -139,7 +139,7 @@ func writeAddrSlot(b []byte, a *net.UDPAddr) {
 	binary.LittleEndian.PutUint16(b[4:6], uint16(a.Port))
 }
 
-// hostPublicAddr returns the public endpoint the host advertised (slot 10).
+// HostPublicAddr returns the public endpoint the host advertised (slot 10).
 func HostPublicAddr(hostAddr []byte) *net.UDPAddr {
 	if len(hostAddr) < CommonAddrLen {
 		return nil
@@ -147,7 +147,7 @@ func HostPublicAddr(hostAddr []byte) *net.UDPAddr {
 	return ParseAddrSlot(hostAddr[60:66])
 }
 
-// withRelay returns a copy of hostAddr with a relay endpoint written into the first free
+// WithRelay returns a copy of hostAddr with a relay endpoint written into the first free
 // relay slot, allocating a port for this (host, joiner) pair. The original is returned
 // unchanged when the relay is off or the blob is not a bdCommonAddr.
 func (relay *Table) WithRelay(hostAddr []byte, hostPID, joinerPID uint64) []byte {

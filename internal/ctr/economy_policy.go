@@ -15,7 +15,7 @@ var catalogItems = func() map[uint32]bool {
 	return m
 }()
 
-// inventory computes unlock-all ownership without persisting catalog items.
+// Inventory computes unlock-all ownership without persisting catalog items.
 // Save-owned unlocks (Adventure, Time Trial, cheats) stay outside server control.
 func (s *EconomyStore) Inventory(pid uint64) (*EconomyAccount, error) {
 	if s.UnlockAll {

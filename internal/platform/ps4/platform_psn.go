@@ -26,7 +26,7 @@ const (
 
 func IsCTRTitle(title uint32) bool { return title == CTRTitle }
 
-// psnPlatform adapts the observed CTR PS4 request envelope to platform identity.
+// PSNPlatform adapts the observed CTR PS4 request envelope to platform identity.
 // The supplied verifier determines trust; failed verification has no fallback.
 type PSNPlatform struct {
 	Verifier platform.Verifier
@@ -79,7 +79,7 @@ func (PSNPlatform) AuthData(id platform.PlayerID) map[string]string {
 	return map[string]string{"extended_data": fmt.Sprintf("nextendo:shadnet:%d", id.PID)}
 }
 
-// loadPSNPlatform also returns the trust ID (issuer, client and title) that
+// LoadPSNPlatform also returns the trust ID (issuer, client and title) that
 // the instance database is bound to.
 func LoadPSNPlatform(policy shadnet.Policy, jwksURL string) (PSNPlatform, string, error) {
 	verifier, err := shadnet.Load(policy, jwksURL)

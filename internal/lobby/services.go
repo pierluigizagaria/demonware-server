@@ -67,7 +67,7 @@ func (l *Session) sendPush(event uint32, build func(w *demonware.Writer)) error 
 	return l.sendEncrypted(demonware.InnerPush, w.Bytes())
 }
 
-// onTask handles a decrypted request. payload = bytes after the inner type.
+// ProcessTask handles a decrypted request. payload = bytes after the inner type.
 func (l *Session) ProcessTask(payload []byte) {
 	// This check linearizes task admission with RequestStop. Once admitted,
 	// the session worker owns the whole reply and AfterReply operation.
@@ -123,7 +123,7 @@ func (l *Session) DeliverResult(result TaskResult) {
 	}
 }
 
-// taskResult is owned by one request; the router invokes AfterReply exactly
+// TaskResult is owned by one request; the router invokes AfterReply exactly
 // once, passing the error from that request's send attempt.
 type TaskResult struct {
 	Reply      []byte

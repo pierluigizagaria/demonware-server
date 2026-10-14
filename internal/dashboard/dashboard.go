@@ -67,7 +67,7 @@ func (monitor *Telemetry) UnregisterConn(conn uint64) {
 	monitor.statsMu.Unlock()
 }
 
-// noteTask records one remote task for the dashboard (services.go onTask).
+// NoteTask records one remote task for the dashboard (services.go ProcessTask).
 func (monitor *Telemetry) NoteTask(conn, pid uint64, service, task byte) {
 	name := TaskName(service, task)
 	monitor.tasksTotal.Add(1)

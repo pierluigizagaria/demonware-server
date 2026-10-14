@@ -38,7 +38,7 @@ func ticketIssuedAt(ticket []byte) time.Time {
 	return time.Unix(int64(binary.LittleEndian.Uint32(ticket[13:17])), 0)
 }
 
-// rememberTicket records a ticket issued to id and forgets those that can no
+// RememberTicket records a ticket issued to ID and forgets those that can no
 // longer be read, so the store holds at most one window of issuance.
 func (s *TicketStore) RememberTicket(ticket []byte, id platform.PlayerID, now time.Time, window time.Duration) {
 	s.Mu.Lock()
@@ -51,7 +51,7 @@ func (s *TicketStore) RememberTicket(ticket []byte, id platform.PlayerID, now ti
 	s.Entries[ticketTag(ticket)] = issuedTicket{ticket: append([]byte(nil), ticket...), id: id}
 }
 
-// issuedTicketPlayer admits a ticket only if this server issued exactly these
+// IssuedTicketPlayer admits a ticket only if this server issued exactly these
 // bytes within window and its identity matches the ticket's account.
 func (s *TicketStore) IssuedTicketPlayer(ticket []byte, now time.Time, window time.Duration) (*platform.PlayerID, bool) {
 	if len(ticket) != 128 || binary.LittleEndian.Uint32(ticket) != TicketMagic {
@@ -64,7 +64,7 @@ func (s *TicketStore) IssuedTicketPlayer(ticket []byte, now time.Time, window ti
 	return s.IssuedIdentity(ticket)
 }
 
-// issuedIdentity returns the identity a ticket was issued to; it is not admission.
+// IssuedIdentity returns the identity a ticket was issued to; it is not admission.
 func (s *TicketStore) IssuedIdentity(ticket []byte) (*platform.PlayerID, bool) {
 	if len(ticket) != 128 {
 		return nil, false

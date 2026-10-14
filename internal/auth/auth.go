@@ -154,10 +154,10 @@ func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Te
 		binary.LittleEndian.PutUint32(clientTicket[5:], titleID)
 		binary.LittleEndian.PutUint32(clientTicket[9:], 0) // reserve
 		binary.LittleEndian.PutUint32(clientTicket[13:], uint32(time.Now().Unix()))
-		// CTR reads its online id at +25, where Diablo keeps the expiry.
+		// CTR reads its online ID at +25, where Diablo keeps the expiry.
 		// Verified identities stay stable: the game ties a match to its host through
 		// CFriendManager::getFriendByOnlineId(Net::MatchMakingInfo +0x170), and an
-		// id that changes on every connection matches no friend. Guest admission
+		// ID that changes on every connection matches no friend. Guest admission
 		// intentionally has no platform friend association.
 		userID, expiry := uint64(1), uint64(time.Now().Unix()+86400)
 		if ps4.IsCTRTitle(titleID) {

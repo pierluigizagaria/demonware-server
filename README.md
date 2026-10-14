@@ -72,6 +72,10 @@ For an offline checkout with the local toolchain and dependencies already
 present, use `.toolchain/go`, set `GOCACHE` to the absolute `.cache/go-build`
 path and set `GOPROXY=off`. Generated binaries and caches are ignored by Git.
 
+The suite preserves exact dispatcher and JSON compatibility references, including
+the SQLite JSON columns. See the [JSON inventory](docs/DEMONWARE_PROTOCOL.md#json-compatibility-references)
+before changing a serialized field or persisted data contract.
+
 ## Configuration
 
 Start from [example.env](example.env). Configuration is validated once at

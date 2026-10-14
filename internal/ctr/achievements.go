@@ -18,7 +18,7 @@ const (
 	TaskGetUserState         = 9
 )
 
-// onAchievements answers every achievements-engine task with a well formed struct.
+// OnAchievements answers every achievements-engine task with a well formed struct.
 func (h *EconomyHandler) OnAchievements(peer lobby.TaskSession, task byte, payload []byte) (result lobby.TaskResult) {
 	switch task {
 	case taskReportEvents, taskReportUserEvents:

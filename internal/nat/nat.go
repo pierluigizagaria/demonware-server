@@ -4,8 +4,8 @@
 // STUN server (same Demonware SDK generation) and confirmed by the console's
 // probes:
 //
-//	1e 03 00       type 30, IP discovery  -> 31 | 02 | 00 | ip[4] | port u16
-//	14 02 00 00    type 20, NAT discovery -> 21 | 02 | 00 | ip[4] | port u16 | serverIp[4] | serverPort u16
+//	1e 03 00       type 30, IP discovery  -> 31 | 02 | 00 | IP[4] | port u16
+//	14 02 00 00    type 20, NAT discovery -> 21 | 02 | 00 | IP[4] | port u16 | serverIp[4] | serverPort u16
 //
 // The IP is written in network order, the port as a little-endian u16. Without
 // these replies the NAT type stays unknown and the game only offers local
@@ -14,7 +14,7 @@
 // NAT traversal (29-byte packets, format documented by
 // Protarium-Network/bo2-wiiu-demonware):
 //
-//	type | u16 version | id[10] | hmac[4] | sourceAddress[6] | destAddress[6]
+//	type | u16 version | ID[10] | hmac[4] | sourceAddress[6] | destAddress[6]
 //
 // 0x0A: a joining player asks to be introduced to the host. We send the packet
 // back BYTE FOR BYTE to the destination with type 0x0B (INTRO); the HMAC covers

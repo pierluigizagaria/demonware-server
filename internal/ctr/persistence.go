@@ -23,7 +23,7 @@ type rankedLeaderboard interface {
 	ReadEntities(board uint32, pids []uint64) ([]Stat, error)
 }
 
-// readLeaderboard returns the rows for stats task 4 (ranks from start) or 13
+// ReadLeaderboard returns the rows for stats task 4 (ranks from start) or 13
 // (the given entities) and the total the reply reports.
 func ReadLeaderboard(store LeaderboardStore, task byte, board uint32, start uint64, limit uint32, ids map[uint64]bool) ([]Stat, uint32, error) {
 	if ranked, ok := store.(rankedLeaderboard); ok {

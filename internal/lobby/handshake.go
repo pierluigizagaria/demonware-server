@@ -229,7 +229,7 @@ func (l *Session) run() {
 	}
 }
 
-// onClientAuth checks the 0x82's tag against each candidate key, keeps the
+// OnClientAuth checks the 0x82's tag against each candidate key, keeps the
 // one that matches, and replies with 0x83.
 func (l *Session) OnClientAuth(raw []byte) bool {
 	if len(raw) < 5+1+8 {
@@ -285,7 +285,7 @@ type keyCand struct {
 	Key24 []byte
 }
 
-// candidates gathers the plausible 24-byte keys. Only a fresh ticket issued
+// Candidates gathers the plausible 24-byte keys. Only a fresh ticket issued
 // here may key the handshake: the one the 0x82 echoes.
 func (l *Session) Candidates(raw []byte) []keyCand {
 	var out []keyCand
@@ -303,7 +303,7 @@ func (l *Session) Candidates(raw []byte) []keyCand {
 	return out
 }
 
-// onEncrypted applies the connection's admission and sequence rules before
+// OnEncrypted applies the connection's admission and sequence rules before
 // dispatching the decoded protocol message to the application.
 func (l *Session) OnEncrypted(raw []byte) {
 	encrypted, err := demonware.ParseEncryptedFrame(raw)

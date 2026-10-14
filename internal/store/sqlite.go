@@ -27,7 +27,7 @@ const SchemaVersion = 1
 // days ago can no longer affect a reward, so it is neither loaded nor kept.
 const ReplayRetention = 9 * 24 * time.Hour
 
-// ctrSQLite owns the only connection pool for this instance's economy, stats
+// SQLite owns the only connection pool for this instance's economy, stats
 // and player names.
 type SQLite struct {
 	InitialBalance func() int64
@@ -52,7 +52,7 @@ func lockInstance(path string) (*os.File, error) {
 	return f, nil
 }
 
-// openCTRSQLite binds the instance to its admission namespace: the shadNet
+// OpenSQLite binds the instance to its admission namespace: the shadNet
 // issuer/client/title or the separate anonymous-guest namespace.
 func OpenSQLite(path string, unlockAll bool, trustID string) (*SQLite, error) {
 	if trustID == "" {
@@ -683,7 +683,7 @@ func (s *SQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctr.Stat
 	return rows, total, rs.Err()
 }
 
-// readEntities returns the given accounts' rows in rank order; each rank
+// ReadEntities returns the given accounts' rows in rank order; each rank
 // counts the rows ordered before it.
 func (s *SQLite) ReadEntities(board uint32, pids []uint64) ([]ctr.Stat, error) {
 	rows := []ctr.Stat{}
@@ -725,7 +725,7 @@ func (s *SQLite) RememberName(pid uint64, name string, at time.Time) error {
 	return err
 }
 
-// namedPlayers returns, by lower-case name, the player most recently recorded
+// NamedPlayers returns, by lower-case name, the player most recently recorded
 // under each requested name.
 func (s *SQLite) NamedPlayers(names []string) (map[string]*platform.PlayerID, error) {
 	out := map[string]*platform.PlayerID{}

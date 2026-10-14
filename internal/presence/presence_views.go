@@ -7,7 +7,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
-// connPID returns the Nextendo PID of a lobby connection's player (0 if unknown).
+// ConnPID returns the Nextendo PID of a lobby connection's player (0 if unknown).
 func (state *Store) ConnPID(conn uint64) uint64 {
 	state.OnlineMu.Lock()
 	defer state.OnlineMu.Unlock()

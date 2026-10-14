@@ -41,7 +41,7 @@ type Config struct {
 	News                               News
 }
 
-// readConfig loads envFile, if any, and reads the configuration. serving
+// Read loads envFile, if any, and reads the configuration. serving
 // requires what the server needs beyond `server pubfiles`.
 func Read(envFile string, serving bool) (Config, error) {
 	return ReadEnvironment(envFile, serving, os.Environ())
@@ -78,7 +78,7 @@ func ReadEnvironment(envFile string, serving bool, environ []string) (Config, er
 	return Load(func(name string) string { return values[canonicalName(name)] }, SettingNames(names), serving)
 }
 
-// settingNames returns the canonical names in environ, without repeats, that
+// SettingNames returns the canonical names in environ, without repeats, that
 // carry one of this server's prefixes; the env file's variables are among them.
 func SettingNames(environ []string) []string {
 	var names []string
@@ -102,7 +102,7 @@ func canonicalName(name string) string {
 	return name
 }
 
-// loadConfig reads every setting through lookup. Each name in check, the
+// Load reads every setting through lookup. Each name in check, the
 // environment's variables with a server prefix, must be a setting.
 func Load(lookup func(string) string, check []string, serving bool) (Config, error) {
 	r := &envReader{lookup: lookup, known: map[string]bool{}}
@@ -331,7 +331,7 @@ func (r *envReader) pids(name string) string {
 
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// loadEnvFile sets the variables of an env file (parseEnvFile). A variable
+// LoadEnvFile sets the variables of an env file (parseEnvFile). A variable
 // already in the process environment keeps its value.
 func LoadEnvFile(path string) error {
 	vars, err := ParseEnvFile(path)
@@ -348,7 +348,7 @@ func LoadEnvFile(path string) error {
 	return nil
 }
 
-// parseEnvFile reads NAME=value lines in order, as `docker --env-file` does:
+// ParseEnvFile reads NAME=value lines in order, as `docker --env-file` does:
 // leading blanks, blank lines and lines starting with # are skipped, and the
 // value is everything after the first =, kept exactly (no quote processing).
 // A leading UTF-8 byte order mark and CRLF line ends are accepted.

@@ -16,7 +16,7 @@ import (
 // Currency IDs are assigned from CMarketplaceData's baseCurrencyId (10).
 const WumpaCurrency = uint64(10)
 
-//go:embed ctr-skus.json
+//go:embed ctr-SKUs.json
 var catalogJSON []byte
 
 type economySKU struct {

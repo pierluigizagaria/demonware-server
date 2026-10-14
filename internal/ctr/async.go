@@ -17,7 +17,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
-// ctrPeer is the engine's connection identity and notification seam. A PID
+// Peer is the engine's connection identity and notification seam. A PID
 // alone cannot distinguish a stale connection from its replacement.
 type Peer interface {
 	ConnID() uint64
@@ -177,7 +177,7 @@ func SendNotices(notices []notice) {
 	}
 }
 
-// occupancy counts PEOPLE in the room, not searches: one search may be a party.
+// Occupancy counts PEOPLE in the room, not searches: one search may be a party.
 func (r *Room) Occupancy() int {
 	n := 0
 	for _, p := range r.Players {
@@ -291,10 +291,10 @@ func (m *Matchmaker) claimConflict(s *Search) bool {
 	return false
 }
 
-// reserve accepts a search before its success reply is sent: the conflict
+// Reserve accepts a search before its success reply is sent: the conflict
 // check and the seat reservation happen together, so two parties cannot both
-// be told they claimed the same player. activate matches it after the reply;
-// release drops it if the reply could not be sent.
+// be told they claimed the same player. Activate matches it after the reply;
+// Release drops it if the reply could not be sent.
 func (m *Matchmaker) Reserve(s *Search) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -314,7 +314,7 @@ func (m *Matchmaker) Release(s *Search) {
 	delete(m.Pending, s.ID)
 }
 
-// enqueue reserves and activates a search in one go.
+// Enqueue reserves and activates a search in one go.
 func (m *Matchmaker) Enqueue(s *Search) []notice {
 	if m.Reserve(s) != nil {
 		return nil
@@ -322,7 +322,7 @@ func (m *Matchmaker) Enqueue(s *Search) []notice {
 	return m.Activate(s)
 }
 
-// activate matches a reserved search in its current membership. A reservation
+// Activate matches a reserved search in its current membership. A reservation
 // withdrawn meanwhile (its leader disconnected or searched again) is not
 // revived.
 func (m *Matchmaker) Activate(reserved *Search) []notice {
@@ -444,7 +444,7 @@ func (m *Matchmaker) Cancel(conn Peer, id uint64) bool {
 	return false
 }
 
-// leave handles a lobby disband (id != 0) or a disconnect (id == 0). The
+// Leave handles a lobby disband (id != 0) or a disconnect (id == 0). The
 // engine tracks searches by their leader's connection; a party follower who
 // leaves loses only its own seat, and a surviving host is told the new
 // expected membership. Any merge reservation involving the room is released.

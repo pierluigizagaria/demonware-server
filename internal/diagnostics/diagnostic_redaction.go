@@ -15,7 +15,7 @@ type Diagnostics struct {
 	DumpRoot, RunStamp string
 }
 
-// diagnosticLogf keeps numbers and booleans, which identify tasks, sizes and
+// DiagnosticLogf keeps numbers and booleans, which identify tasks, sizes and
 // outcomes, and the type of an error. Everything else is withheld: strings,
 // byte slices, structs, maps, addresses and error texts can carry tickets,
 // keys, tokens, request bodies, addresses and names.
@@ -48,7 +48,7 @@ type redacted struct{ marker string }
 // Format prints the marker for every verb, including %X and %q.
 func (r redacted) Format(f fmt.State, _ rune) { _, _ = f.Write([]byte(r.marker)) }
 
-// runDumpDir returns this run's capture directory for one component, "" when
+// RunDumpDir returns this run's capture directory for one component, "" when
 // captures are off.
 func (d *Diagnostics) RunDumpDir(component string) string {
 	if d.RedactLogs || d.DumpRoot == "off" || d.DumpRoot == "0" {

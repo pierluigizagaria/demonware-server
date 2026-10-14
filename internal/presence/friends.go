@@ -5,8 +5,8 @@
 // (getUserIDs) resolves the friends' online names to them; the other lookups
 // take them as they are.
 //
-// Result 12/9 (reader 0xBFCE70, 0x60-byte object): 0A u64 id | 10 nickname string.
-// Result 29/4 (reader 0xBF6860, 0x30-byte object): 0A u64 id | 13 blob.
+// Result 12/9 (reader 0xBFCE70, 0x60-byte object): 0A u64 ID | 10 nickname string.
+// Result 29/4 (reader 0xBF6860, 0x30-byte object): 0A u64 ID | 13 blob.
 //
 // We answer for friends currently connected to the lobby. A connection's
 // player is the identity its ticket was issued to (tickets.go).
@@ -60,7 +60,7 @@ func (state *Store) DropOnline(conn uint64) {
 	}
 }
 
-// onlinePlayerFor returns the connected player whose account ID is id, or nil.
+// onlinePlayerFor returns the connected player whose account ID is ID, or nil.
 func (state *Store) onlinePlayerFor(id uint64) *platform.PlayerID {
 	state.OnlineMu.Lock()
 	defer state.OnlineMu.Unlock()
@@ -72,7 +72,7 @@ func (state *Store) onlinePlayerFor(id uint64) *platform.PlayerID {
 	return nil
 }
 
-// onlinePIDs returns every connected player's PID once.
+// OnlinePIDs returns every connected player's PID once.
 func (state *Store) OnlinePIDs() []uint64 {
 	state.OnlineMu.Lock()
 	defer state.OnlineMu.Unlock()
@@ -87,7 +87,7 @@ func (state *Store) OnlinePIDs() []uint64 {
 	return out
 }
 
-// nicknameOnline returns the nickname of a connected player identified by id.
+// NicknameOnline returns the nickname of a connected player identified by ID.
 func (state *Store) NicknameOnline(id uint64) string {
 	if p := state.onlinePlayerFor(id); p != nil {
 		return p.Username
@@ -95,7 +95,7 @@ func (state *Store) NicknameOnline(id uint64) string {
 	return ""
 }
 
-// onGetUserNames: 12/9.
+// OnGetUserNames: 12/9.
 func (h *Handler) OnGetUserNames(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	ids := r.Uint64s()
 	type hit struct {
@@ -118,7 +118,7 @@ func (h *Handler) OnGetUserNames(peer presencePeer, task byte, r *demonware.Read
 	})
 }
 
-// onUserData: service 29. 1 = write own data, 4 = read a list's.
+// OnUserData: service 29. 1 = write own data, 4 = read a list's.
 func (h *Handler) OnUserData(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	ctx, _ := r.String()
 	switch task {
@@ -167,7 +167,7 @@ func (h *Handler) OnUserData(peer presencePeer, task byte, r *demonware.Reader) 
 	return nil
 }
 
-// pidOnline returns the PID of a connected player identified by id, or 0.
+// PIDOnline returns the PID of a connected player identified by ID, or 0.
 // Used by the Crash Team Racing code.
 func (state *Store) PIDOnline(id uint64) uint64 {
 	if p := state.onlinePlayerFor(id); p != nil {
@@ -176,9 +176,9 @@ func (state *Store) PIDOnline(id uint64) uint64 {
 	return 0
 }
 
-// onGetUserIDs answers bdTitleUtilities.getUserIDs (12/10): online IDs to
+// OnGetUserIDs answers bdTitleUtilities.getUserIDs (12/10): online IDs to
 // account IDs. Players connected now win; otherwise the name a player was
-// last issued a ticket under still resolves (player_names in ctrnf.db), so
+// last issued a ticket under still resolves (player_names in ctrnf.DB), so
 // a friend is found even before they connect to the lobby. Resolving an
 // identity does not make it joinable: only live sessions are advertised.
 func (h *Handler) OnGetUserIDs(peer presencePeer, task byte, r *demonware.Reader) []byte {

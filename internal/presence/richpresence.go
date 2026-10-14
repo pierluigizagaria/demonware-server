@@ -1,7 +1,7 @@
 // bdRichPresenceService (service 68). Shared by the CTR handlers and the
 // inherited Diablo III request fixture; live D3 friend presence is unqualified.
 //
-//	bdUserAccountID    : 0A u64 id | 10 platform string
+//	bdUserAccountID    : 0A u64 ID | 10 platform string
 //	bdRichPresenceData : bdUserAccountID | 03 u8 | 13 blob
 //
 // get request: 10 context | 08 u32 count | count x bdUserAccountID.

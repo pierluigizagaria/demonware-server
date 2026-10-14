@@ -118,7 +118,7 @@ func ParseRewardEvents(payload []byte) ([]AchievementEvent, error) {
 	return out, nil
 }
 
-// raceReceipt identifies a race reward claim by exactly the values the payout
+// RaceReceipt identifies a race reward claim by exactly the values the payout
 // uses, so an ID or extra field the reward ignores cannot make a retry a new
 // claim. Those values are the client's own statement: a different time, rank
 // or mode is a different claim, and nothing here proves the race took place.

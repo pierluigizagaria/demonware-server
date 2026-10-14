@@ -299,7 +299,7 @@ type PublisherFiles struct {
 	PubDir, PubConfigPath, RiftDir string
 }
 
-// publisherFile looks the file up in the pubfiles folder, ignoring case (the
+// PublisherFile looks the file up in the pubfiles folder, ignoring case (the
 // game asks for "Config.txt", the generator writes "config.txt").
 func (provider *PublisherFiles) PublisherFile(name string, now time.Time) ([]byte, string) {
 	if data, path, ok := provider.riftFile(name, now); ok {
