@@ -25,9 +25,9 @@ import (
 
 type Telemetry struct {
 	dashStart                               time.Time
-	LoginsTotal, tasksTotal, gatheringsMade atomic.Int64
+	loginsTotal, tasksTotal, gatheringsMade atomic.Int64
 	statsMu                                 sync.Mutex
-	ConnStats                               map[uint64]*ConnStat
+	connStats                               map[uint64]*connStat
 	taskEvents                              []taskEvent
 	taskCount                               map[string]int64
 	peakConnected                           int
@@ -37,10 +37,10 @@ type Telemetry struct {
 }
 
 func NewTelemetry(cfg config.Config, natIntros func() int64) *Telemetry {
-	return &Telemetry{dashStart: time.Now(), ConnStats: map[uint64]*ConnStat{}, taskCount: map[string]int64{}, natIntros: natIntros, authPort: cfg.AuthPort, natPort: cfg.NATPort, dashPort: cfg.DashPort, sniHost: cfg.SNIHost, dashToken: cfg.DashToken, bindAddr: cfg.BindAddr}
+	return &Telemetry{dashStart: time.Now(), connStats: map[uint64]*connStat{}, taskCount: map[string]int64{}, natIntros: natIntros, authPort: cfg.AuthPort, natPort: cfg.NATPort, dashPort: cfg.DashPort, sniHost: cfg.SNIHost, dashToken: cfg.DashToken, bindAddr: cfg.BindAddr}
 }
 
-type ConnStat struct {
+type connStat struct {
 	addr       string
 	First      time.Time
 	Last       time.Time
@@ -54,16 +54,19 @@ type taskEvent struct {
 	action string
 }
 
+// RecordLogin records one successful authentication, at the existing issuance point.
+func (monitor *Telemetry) RecordLogin() { monitor.loginsTotal.Add(1) }
+
 func (monitor *Telemetry) RegisterConn(conn uint64, address string) {
 	now := time.Now()
 	monitor.statsMu.Lock()
-	monitor.ConnStats[conn] = &ConnStat{addr: address, First: now, Last: now}
+	monitor.connStats[conn] = &connStat{addr: address, First: now, Last: now}
 	monitor.statsMu.Unlock()
 }
 
 func (monitor *Telemetry) UnregisterConn(conn uint64) {
 	monitor.statsMu.Lock()
-	delete(monitor.ConnStats, conn)
+	delete(monitor.connStats, conn)
 	monitor.statsMu.Unlock()
 }
 
@@ -76,7 +79,7 @@ func (monitor *Telemetry) NoteTask(conn, pid uint64, service, task byte) {
 	}
 	now := time.Now()
 	monitor.statsMu.Lock()
-	if cs := monitor.ConnStats[conn]; cs != nil {
+	if cs := monitor.connStats[conn]; cs != nil {
 		cs.calls++
 		cs.Last = now
 		cs.lastAction = name
@@ -241,7 +244,7 @@ func (monitor *Telemetry) BuildGameStats(views Views, game string) APIStats {
 	// A player who reconnected can hold two lobby connections: keep the most
 	// recently active one.
 	byPID := map[uint64]apiPlayer{}
-	for n, cs := range monitor.ConnStats {
+	for n, cs := range monitor.connStats {
 		p, ok := who[n]
 		if !ok || p.PID == 0 {
 			continue
@@ -292,7 +295,7 @@ func (monitor *Telemetry) BuildGameStats(views Views, game string) APIStats {
 		Connected:      len(players),
 		InLobby:        inLobby,
 		ActiveLobbies:  len(gs),
-		TotalSessions:  monitor.LoginsTotal.Load(),
+		TotalSessions:  monitor.loginsTotal.Load(),
 		TotalRMC:       monitor.tasksTotal.Load(),
 		GatheringsMade: monitor.gatheringsMade.Load(),
 		PeakConnected:  monitor.peakConnected,

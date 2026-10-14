@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/pierluigizagaria/demonware-server/internal/ctr"
 	"github.com/pierluigizagaria/demonware-server/internal/dashboard"
@@ -13,19 +12,19 @@ import (
 
 func TestDashboardCTRMembershipAndTitleSplit(t *testing.T) {
 	oldOnline := testPresence.Online
-	oldStats := testTelemetry.ConnStats
+	oldTelemetry := testTelemetry
 	oldRooms := testMatchmaker.Rooms
 	oldSessions := testRegistry.Sessions
 	defer func() {
 		testPresence.Online = oldOnline
-		testTelemetry.ConnStats = oldStats
+		testTelemetry = oldTelemetry
 		testMatchmaker.Rooms = oldRooms
 		testRegistry.Sessions = oldSessions
 	}()
 	testPresence.Online = map[uint64]*platform.PlayerID{1: {PID: 101, Username: "host", Title: 5760}, 2: {PID: 102, Username: "joined", Title: 5760}, 3: {PID: 103, Username: "pending", Title: 5760}, 4: {PID: 104, Username: "diablo"}}
-	testTelemetry.ConnStats = map[uint64]*dashboard.ConnStat{}
+	testTelemetry = dashboard.NewTelemetry(testConfig, func() int64 { return 0 })
 	for id := range testPresence.Online {
-		testTelemetry.ConnStats[id] = &dashboard.ConnStat{First: time.Now(), Last: time.Now()}
+		testTelemetry.RegisterConn(id, "")
 	}
 	host := &ctr.Search{PID: 101, Doc: ctr.SearchDoc{Members: []uint64{101}}}
 	guest := &ctr.Search{PID: 102, Doc: ctr.SearchDoc{Members: []uint64{102, 103}}}

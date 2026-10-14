@@ -242,7 +242,7 @@ func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Te
 			w.Header().Set("X-Signature", signature)
 		}
 
-		monitor.LoginsTotal.Add(1)
+		monitor.RecordLogin()
 		diag.DiagnosticLogf("[auth] #%d %q pid=%d kind=%s -> 200 code=700 auth_task=%s", n, id.Username, id.PID, id.Kind, authTask)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
