@@ -29,8 +29,8 @@ func (handler *MatchHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 
 // This compatibility table is intentionally absent from production wiring.
 func NewServiceTable(replies *lobby.ReplyCounter, registry *lobby.SessionRegistry, presenceStore *presence.Store, relayTable *relay.Table, files *PublisherFiles) *lobby.ServiceTable {
-	return &lobby.ServiceTable{Replies: replies, Handlers: map[byte]lobby.TaskHandler{
+	return lobby.NewServiceTable(replies, map[byte]lobby.TaskHandler{
 		21: &MatchHandler{&lobby.ContextHandler{ReadInfo: ReadInfo, ReplyCounter: replies, Registry: registry, Presence: presenceStore, Relay: relayTable}},
 		10: &lobby.StorageHandler{ReplyCounter: replies, Files: files},
-	}}
+	}, []byte{80, 104})
 }

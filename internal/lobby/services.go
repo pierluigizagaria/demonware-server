@@ -25,29 +25,8 @@ import (
 )
 
 const (
-	svcStorage          = 10
-	SvcTitleUtilities   = 12
-	SvcAsyncMatchMaking = 145 // bdAsyncMatchMaking
-	SvcHTTPProxy        = 194 // bdABTesting, via bdHTTPProxyRequest/Response
-
-	// Numbers AND result types read from the bdTaskParams of each bdAsyncMatchMaking
-	// function. bdUInt64Result::deserialize = readUInt64, bdStringResult = readString,
-	// bdBoolResult = readBool, bdLobbyDocuments = two strings.
-	TaskSetPlayerInfo      = 2  // no result
-	TaskGetPlayerToken     = 3  // bdUInt64Result
-	TaskQoSHostsReply      = 4  // no result
-	TaskGetMMStatus        = 5  // bdStringResult
-	TaskInitMatchMaking    = 6  // bdStringResult
-	TaskStartMatchMaking   = 7  // bdStringResult
-	TaskLobbyDisbanded     = 10 // no result
-	TaskGetLobbyDocuments  = 13 // bdLobbyDocuments
-	TaskAckExpectGame      = 14 // no result
-	TaskSyncLobbyDocuments = 15 // bdBoolResult
-	TaskInitiateDCQoS      = 17 // bdStringResult
-	TaskStartSearch        = 18 // bdStringResult
-
+	svcStorage           = 10
 	taskGetPublisherFile = 21
-	TaskGetServerTime    = 6
 )
 
 // Error returned for an unhandled task: nonzero and different from 200, so
@@ -74,6 +53,8 @@ func (l *Session) ProcessTask(payload []byte) {
 	if l.isStopping() {
 		return
 	}
+	// Inherited router compatibility, characterized by the raw-bandwidth fixture.
+	// Its general protocol meaning is not established. Preserve this ordering.
 	if len(payload) == 18 && payload[0] == 18 && payload[1] == 1 && payload[2] == 0 && payload[3] == 1 {
 		_ = l.sendEncrypted(demonware.InnerTaskReply, l.TaskReply(1, ErrUnhandled, nil))
 		return
@@ -91,7 +72,7 @@ func (l *Session) ProcessTask(payload []byte) {
 		if len(payload) >= 3 {
 			task = payload[2]
 		}
-		if service == 80 || service == 104 {
+		if l.Table.rejectsUnreadableTask(service) {
 			_ = l.sendEncrypted(demonware.InnerTaskReply, l.TaskReply(task, ErrUnhandled, nil))
 			return
 		}

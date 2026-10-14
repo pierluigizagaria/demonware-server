@@ -262,3 +262,15 @@ does not serialize production JSON; its JSON use loads test fixtures. The
 architecture dispatcher fixture remains unchanged: 648 snapshots with exactly
 the existing 12 service-21 Diablo disconnection exceptions. No schema or SQL
 change accompanies these references.
+
+## Inherited router compatibility
+
+Before ordinary task parsing, the router handles exactly `len(payload) == 18 &&
+payload[0] == 18 && payload[1] == 1 && payload[2] == 0 && payload[3] == 1` by
+sending an inner task reply for task 1 with error 1 and no results. The immutable
+`raw-bandwidth` dispatcher fixture characterizes this inherited behavior; a
+general bandwidth-protocol interpretation is not established.
+
+Each service table owns a copied unreadable-task policy. Both the CTR table and
+the disconnected Diablo compatibility table retain error replies for services
+80 and 104. Other unreadable task tags retain the inherited empty success.

@@ -75,15 +75,15 @@ func (handler *utilityHandler) Handle(peer lobby.TaskSession, request lobby.Task
 	service, task, r := request.Service, request.Task, request.Args
 	var reply []byte
 	switch {
-	case service == lobby.SvcTitleUtilities && task == lobby.TaskGetServerTime:
+	case service == SvcTitleUtilities && task == TaskGetServerTime:
 		now := uint32(peer.Now().Unix())
 		reply = handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Uint32(now); return 1 })
 		peer.Logf("[ctr] task bdTitleUtilities.getServerTime -> %d", now)
 
-	case service == lobby.SvcTitleUtilities && task == 9:
+	case service == SvcTitleUtilities && task == 9:
 		reply = handler.OnGetUserNames(peer, task, r)
 
-	case service == lobby.SvcTitleUtilities && task == 10:
+	case service == SvcTitleUtilities && task == 10:
 		reply = handler.OnGetUserIDs(peer, task, r)
 
 	default:
@@ -153,7 +153,7 @@ func (handler *asyncHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 	service, task, r := request.Service, request.Task, request.Args
 	var reply []byte
 	switch {
-	case service == lobby.SvcAsyncMatchMaking && task == lobby.TaskSetPlayerInfo:
+	case service == SvcAsyncMatchMaking && task == TaskSetPlayerInfo:
 		// bdAsyncMatchMaking::setPlayerInfo(const char*, u32): the game uploads its
 		// listen_server{local_address,security_id,security_key} here. The function has no
 		// result, so an empty success is the right answer. It is the FIRST task of the
@@ -164,7 +164,7 @@ func (handler *asyncHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 		reply = handler.TaskReply(task, 0, nil)
 		peer.Logf("[ctr] task bdAsyncMatchMaking.setPlayerInfo -> success (%d bytes)", len(handler.PlayerInfo(peer.ConnID())))
 
-	case service == lobby.SvcAsyncMatchMaking && task == lobby.TaskSyncLobbyDocuments:
+	case service == SvcAsyncMatchMaking && task == TaskSyncLobbyDocuments:
 		id, e1 := r.Uint64()
 		version, e2 := r.Uint64()
 		raw, e3 := r.String()
@@ -177,14 +177,14 @@ func (handler *asyncHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 		reply = handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
 		peer.Logf("[ctr] sync lobby=%d version=%d accepted=%v", id, version, ok)
 
-	case service == lobby.SvcAsyncMatchMaking && task == lobby.TaskGetPlayerToken:
+	case service == SvcAsyncMatchMaking && task == TaskGetPlayerToken:
 		// getMatchMakingPlayerToken -> bdUInt64Result (readUInt64). This is the
 		// requestPlayerToken step of CNetworkTaskAsyncMatchMakingRegistration: without a token the
 		// registration state machine cannot advance.
 		reply = handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Uint64(peer.PID()); return 1 })
 		peer.Logf("[ctr] task bdAsyncMatchMaking.getMatchMakingPlayerToken -> %d", peer.PID())
 
-	case service == lobby.SvcAsyncMatchMaking && task == lobby.TaskStartSearch:
+	case service == SvcAsyncMatchMaking && task == TaskStartSearch:
 		raw, err := r.String()
 		if err != nil {
 			reply = handler.TaskReply(task, lobby.ErrUnhandled, nil)
@@ -212,11 +212,11 @@ func (handler *asyncHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 			SendNotices(notices)
 		}
 
-	case service == lobby.SvcAsyncMatchMaking && task == 8:
+	case service == SvcAsyncMatchMaking && task == 8:
 		id, err := r.Uint64()
 		ok := err == nil && handler.matchmaker.Cancel(peer, id)
 		reply = handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
-	case service == lobby.SvcAsyncMatchMaking && task == lobby.TaskLobbyDisbanded:
+	case service == SvcAsyncMatchMaking && task == TaskLobbyDisbanded:
 		id, err := r.Uint64()
 		if err == nil {
 			notices := handler.matchmaker.Leave(peer, id)
@@ -224,21 +224,21 @@ func (handler *asyncHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 		}
 		reply = handler.TaskReply(task, 0, nil)
 
-	case service == lobby.SvcAsyncMatchMaking &&
-		(task == lobby.TaskInitMatchMaking || task == lobby.TaskStartMatchMaking ||
-			task == lobby.TaskGetMMStatus || task == lobby.TaskInitiateDCQoS):
+	case service == SvcAsyncMatchMaking &&
+		(task == TaskInitMatchMaking || task == TaskStartMatchMaking ||
+			task == TaskGetMMStatus || task == TaskInitiateDCQoS):
 		// All of these return a bdStringResult (readString).
 		id := strconv.FormatUint(peer.PID(), 10)
 		reply = handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(id); return 1 })
 		peer.Logf("[ctr] task bdAsyncMatchMaking task=%d -> string %q", task, id)
 
-	case service == lobby.SvcAsyncMatchMaking &&
-		(task == lobby.TaskQoSHostsReply || task == lobby.TaskAckExpectGame):
+	case service == SvcAsyncMatchMaking &&
+		(task == TaskQoSHostsReply || task == TaskAckExpectGame):
 		// No result.
 		reply = handler.TaskReply(task, 0, nil)
 		peer.Logf("[ctr] task bdAsyncMatchMaking task=%d -> empty success", task)
 
-	case service == lobby.SvcAsyncMatchMaking && task == lobby.TaskGetLobbyDocuments:
+	case service == SvcAsyncMatchMaking && task == TaskGetLobbyDocuments:
 		id, err := r.Uint64()
 		h, b, ok := handler.matchmaker.Documents(peer, id)
 		if err != nil || !ok {
@@ -258,7 +258,7 @@ func (handler *httpProxyHandler) Handle(peer lobby.TaskSession, request lobby.Ta
 	service, task := request.Service, request.Task
 	var reply []byte
 	switch {
-	case service == lobby.SvcHTTPProxy && task == 1:
+	case service == SvcHTTPProxy && task == 1:
 		// bdABTesting::enroll. The body is parsed as JSON: expiresIn, ABToken,
 		// enrollments. No experiment is active, but the reply must be well
 		// formed, or the task fails on every connection.
@@ -317,7 +317,7 @@ func NewServiceTable(replies *lobby.ReplyCounter, ctr *Services, presenceStore *
 	economy := &EconomyHandler{ReplyCounter: replies, Economy: ctr.Economy}
 	context := &lobby.ContextHandler{ReadInfo: ReadInfo, ReplyCounter: replies, Registry: registry, Presence: presenceStore, Relay: relayTable}
 	async := &asyncHandler{ReplyCounter: replies, matchmaker: matchmaker, info: map[uint64]string{}}
-	table := &lobby.ServiceTable{Replies: replies, Handlers: map[byte]lobby.TaskHandler{
+	table := lobby.NewServiceTable(replies, map[byte]lobby.TaskHandler{
 		4:   &StatsHandler{ReplyCounter: replies, Stats: ctr.Stats, Presence: presenceStore},
 		10:  &lobby.StorageHandler{ReplyCounter: replies, Files: publisherFiles{dir: pubDir}},
 		12:  &utilityHandler{friends},
@@ -330,7 +330,7 @@ func NewServiceTable(replies *lobby.ReplyCounter, ctr *Services, presenceStore *
 		138: &contextHandler{context},
 		145: async,
 		194: &httpProxyHandler{replies},
-	}}
+	}, []byte{80, 104})
 	table.OnCloseSession = func(peer lobby.TaskSession) {
 		defer registry.DropSessionsOf(peer.ConnID())
 		defer async.forget(peer.ConnID())

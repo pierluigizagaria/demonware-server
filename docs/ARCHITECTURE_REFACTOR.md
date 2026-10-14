@@ -300,7 +300,7 @@ by source and fixtures, not by reinterpreting the historical default logs.
 
 | Router branch | Baseline behavior | Fixture |
 | --- | --- | --- |
-| Exact 18-byte bandwidth special case | Checked before typed arguments; error reply for task 1 | baseline raw-bandwidth |
+| Inherited 18-byte router compatibility case | Checked before typed arguments; error reply for task 1 | baseline raw-bandwidth |
 | Payload shorter than three bytes | No reply or transaction increment | baseline empty/short-service/short-tag |
 | Unreadable task tag, 80 or 104 | Error reply using payload byte 2 | baseline unreadable-task for each selector |
 | Unreadable task tag, other services | Empty success using payload byte 2 | baseline unreadable-task for each selector |

@@ -7,7 +7,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
-// taskSession exposes identity and messaging, never transport keys, sockets or
+// TaskSession exposes identity and messaging, never transport keys, sockets or
 // persistence. Clock and entropy retain the characterized component test seams.
 type TaskSession interface {
 	ConnID() uint64
@@ -60,9 +60,24 @@ func (l *Session) Random(p []byte) (int, error) { return l.random(p) }
 // One immutable table is wired for the instance; routing never selects a game
 // table from an untrusted request or from the current session's title.
 type ServiceTable struct {
-	Replies        *ReplyCounter
-	Handlers       map[byte]TaskHandler
-	OnCloseSession func(TaskSession)
+	unreadableTaskErrors [256]bool
+	Replies              *ReplyCounter
+	Handlers             map[byte]TaskHandler
+	OnCloseSession       func(TaskSession)
+}
+
+// NewServiceTable copies the unreadable-task policy so callers cannot change
+// routing by mutating their configuration slice after construction.
+func NewServiceTable(replies *ReplyCounter, handlers map[byte]TaskHandler, unreadableErrors []byte) *ServiceTable {
+	table := &ServiceTable{Replies: replies, Handlers: handlers}
+	for _, service := range unreadableErrors {
+		table.unreadableTaskErrors[service] = true
+	}
+	return table
+}
+
+func (table *ServiceTable) rejectsUnreadableTask(service byte) bool {
+	return table != nil && table.unreadableTaskErrors[service]
 }
 
 func (table *ServiceTable) Handle(peer TaskSession, request TaskRequest) TaskResult {
