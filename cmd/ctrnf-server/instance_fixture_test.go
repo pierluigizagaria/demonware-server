@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -202,9 +203,9 @@ var testConfig = func() config.Config {
 	return c
 }()
 
-var testNAT = &nat.Server{}
+var testNAT = nat.NewServer(testDiagnostics, "", "", &atomic.Uint64{})
 
-var testTelemetry = dashboard.NewTelemetry(testConfig, testNAT.NATIntros.Load)
+var testTelemetry = dashboard.NewTelemetry(testConfig, testNAT.Introductions)
 
 func testApplyConfig(c config.Config) {
 	testConfig = c

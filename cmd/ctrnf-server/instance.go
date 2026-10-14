@@ -56,8 +56,8 @@ func newInstance(cfg config.Config, database *store.SQLite) *serverInstance {
 	i.registry = lobby.NewSessionRegistry()
 	i.relay = relay.NewTable(diag, cfg.BindAddr, cfg.RelayPIDs)
 	ids := &atomic.Uint64{}
-	i.nat = &nat.Server{Diagnostics: diag, BindAddr: cfg.BindAddr, NextendoHost: cfg.PublicIP, ConnNum: ids, NATSeen: map[string]int{}}
-	i.monitor = dashboard.NewTelemetry(cfg, i.nat.NATIntros.Load)
+	i.nat = nat.NewServer(diag, cfg.BindAddr, cfg.PublicIP, ids)
+	i.monitor = dashboard.NewTelemetry(cfg, i.nat.Introductions)
 	replies := &lobby.ReplyCounter{}
 	table, _ := ctr.NewServiceTable(replies, i.ctr, i.presence, i.registry, i.matchmaker, cfg.PubfilesDir, i.relay)
 	i.lobby = &lobby.Server{Table: table, Cfg: cfg, Diag: diag, Tickets: i.tickets, Presence: i.presence, Replies: replies, IDs: ids, Monitor: i.monitor, Options: &lobby.Options{MigrateEnabled: cfg.Migrate, PublicHost: cfg.PublicIP}}

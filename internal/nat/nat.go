@@ -47,11 +47,20 @@ type Server struct {
 	workers sync.WaitGroup
 	*diagnostics.Diagnostics
 	BindAddr, NextendoHost string
-	ConnNum                *atomic.Uint64
+	connNum                *atomic.Uint64
 	natSeenMu              sync.Mutex
-	NATSeen                map[string]int
-	NATIntros              atomic.Int64
+	natSeen                map[string]int
+	natIntros              atomic.Int64
 }
+
+// NewServer initializes NAT state without opening sockets or starting workers.
+// ids is the same instance allocator used by the lobby, never a copy.
+func NewServer(diag *diagnostics.Diagnostics, bindAddr, publicHost string, ids *atomic.Uint64) *Server {
+	return &Server{Diagnostics: diag, BindAddr: bindAddr, NextendoHost: publicHost, connNum: ids, natSeen: map[string]int{}}
+}
+
+// Introductions observes the total successfully forwarded NAT introductions.
+func (s *Server) Introductions() int64 { return s.natIntros.Load() }
 
 func (s *Server) ServeNAT(port int) {
 	if err := s.Start(port); err != nil {
@@ -116,11 +125,11 @@ func (s *Server) servePacket(pc net.PacketConn, port int) {
 		}
 		sig := fmt.Sprintf("%X", buf[:n])
 		s.natSeenMu.Lock()
-		if len(s.NATSeen) >= natSeenMax {
-			s.NATSeen = map[string]int{}
+		if len(s.natSeen) >= natSeenMax {
+			s.natSeen = map[string]int{}
 		}
-		cnt := s.NATSeen[sig]
-		s.NATSeen[sig] = cnt + 1
+		cnt := s.natSeen[sig]
+		s.natSeen[sig] = cnt + 1
 		s.natSeenMu.Unlock()
 
 		if n == 29 && (buf[0] == 0x0A || buf[0] == 0x0E) {
@@ -139,7 +148,7 @@ func (s *Server) servePacket(pc net.PacketConn, port int) {
 			if _, err := pc.WriteTo(intro, to); err != nil {
 				s.DiagnosticLogf("[nat] INTRO to %s: %v", to, err)
 			} else {
-				s.NATIntros.Add(1)
+				s.natIntros.Add(1)
 				// The host answers 0x0C to sourceAddress from INSIDE the packet, not to
 				// where we saw the request come from. A client that fills in its LAN
 				// address there is unreachable and the join fails with "failed to connect".
@@ -170,7 +179,7 @@ func (s *Server) servePacket(pc net.PacketConn, port int) {
 			if cnt < 2 {
 				s.DiagnosticLogf("[nat] unknown packet from %s: %s", addr, hex.EncodeToString(buf[:n]))
 				if dir := s.RunDumpDir("nat"); dir != "" {
-					_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("unknown_%d.bin", s.ConnNum.Add(1))), buf[:n], 0o644)
+					_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("unknown_%d.bin", s.connNum.Add(1))), buf[:n], 0o644)
 				}
 			}
 			continue
