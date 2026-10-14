@@ -19,6 +19,7 @@ as the service 21 public matchmaking.
 
 | Piece | Where | Behavior |
 | --- | --- | --- |
+| Demonware wire protocol | `internal/demonware` | Shared framing, handshake key derivation, typed buffers and task/reply envelopes. Standard-library dependencies only; no game state, identity policy or listeners. [Contracts and evidence](docs/DEMONWARE_PROTOCOL.md). |
 | PS4 identity | `platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL and cached for 5 minutes, renewed in the background during the last minute, issuer/audience/title/scopes, 60 s clock leeway) |
 | Anonymous admission | `platform_guest.go` | Explicit injected provider, `CTR_ADMISSION=guest`, restricted to unlock-all instances. Reads the unchanged PS4 envelope, assigns a random positive 63-bit publisher ID and a matching nickname of at most 15 characters. No issuer lookup, account, client identity claim or network-address binding. Never a fallback after failed verification. |
 | Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | Lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity; a missing response signer fails closed. Tickets live in memory by session tag (the auth handler, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. No session files and no all-zero handshake key |
@@ -198,10 +199,14 @@ and a shadNet instance cannot open the guest database. No data migration occurs.
 checks when shadNet is disabled, before sending this request. A separate local
 CUSA13795 01.21 game-patch candidate bypasses those game-owned gates, supplies
 the unchanged placeholder envelope, and adopts the publisher-assigned ID. An
-offline CPU experiment reaches HTTP upload with no NP service calls. This is not
-full game-loop/Toolkit, native stock-binary, matchmaking or race qualification.
-The server unit/integration fixtures cover anonymous ticket issuance, lobby
-handshake, name lookup and Umbrella; they do not establish those client results.
+offline CPU experiment reaches HTTP upload with no NP service calls. On
+2026-10-14 the user confirmed a complete coherent two-client race through results
+with the 28-edit candidate. The subsequent 27-edit candidate restored local names
+and passed a shared-lobby check with both peer names visible. Stock-emulator
+qualification remains pending. The server unit/integration fixtures cover
+anonymous ticket issuance, lobby handshake, name lookup and Umbrella; these
+tests alone do not establish client acceptance. The protocol extraction below
+has not been installed or qualified in game.
 Platform friends and invitations are not promised for anonymous identities.
 
 ## Two publisher servers
@@ -265,8 +270,12 @@ checks verification, the signed response, ticket issuance and lobby admission.
 
 ## Following upstream
 
-Fixes from the original repository are merged with `git merge`, so the fork
-keeps the upstream layout:
+Fixes from the original repository can still be merged with `git merge`.
+The 2026-10-14 protocol extraction deliberately changes the upstream layout:
+`internal/demonware` owns the codecs previously spread across `bdcrypto.go`,
+`handshake.go`, `services.go`, `matchmaking.go`, `friends.go` and CTR files.
+There is still one module and executable. Read the
+[protocol contract](docs/DEMONWARE_PROTOCOL.md) before resolving codec conflicts.
 
 - New components live in files the fork owns: `config.go`, `platform_psn.go`, `platform_guest.go`,
   `platform_tasks.go`, `tickets.go`, `ctr_sqlite.go`, `ctr_economy_policy.go`,
@@ -280,12 +289,19 @@ keeps the upstream layout:
 - Nintendo-only upstream files are deleted: `identity.go`, `gates.go`,
   `accountlookup.go`, `presence.go` and their tests. An upstream change to one
   of them is a modify/delete conflict; keep the deletion.
-- Shared upstream files keep their structure, but expect conflicts there.
+- Shared upstream files retain their application responsibilities, but expect conflicts there.
   Nintendo branches and values were removed or replaced (for example
   `octane_switch` and `nintendo` became the PS4 constants in `platform_psn.go`),
   the engine fixes above changed `ctr_async.go`, `ctr_merge.go`, `handshake.go`
   and `ctr_relay.go`, and a few signatures changed for the PS4 path (`serveAuth`
   takes the platform adapter, `ctrMatchmaker.leave` returns the notices to send).
-- Diablo III-only files changed only their logging calls (`pubfiles.go`,
-  `seasons.go`) and, in `riftdata.go`, how `D3_RIFTDATA` is read;
-  `matchmaking.go` and `lobbydoc.go` are unchanged.
+- Original service tests are retained and now use the protocol package API.
+  Reader cursors are private; use checked methods instead of restoring direct
+  buffer access. Protocol fixes belong in `internal/demonware`, with regression
+  vectors; game schemas and error policy stay in their services.
+- Shared rich presence moved from `ctr_presence.go` to `richpresence.go`.
+  Its Diablo fixture is retained; live Diablo support is not established by it.
+- Diablo III-only files keep their behavior: logging changed in `pubfiles.go`
+  and `seasons.go`; `riftdata.go` reads configured `D3_RIFTDATA` and delegates
+  varint decoding to the protocol package. `matchmaking.go` uses the same
+  package for codecs. `lobbydoc.go` is unchanged.

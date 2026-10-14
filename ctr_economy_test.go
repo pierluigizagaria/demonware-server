@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 func TestEconomyPurchaseRestartAndRetry(t *testing.T) {
@@ -119,12 +121,12 @@ func TestEconomyBundleOnlyChargesUnownedComponents(t *testing.T) {
 }
 func TestInventoryOwnerAndCatalogItem(t *testing.T) {
 	item := economyCatalog[200085].Items[0]
-	w := &bdWriter{}
+	w := &demonware.Writer{}
 	writeInventoryItem(w, 42, item)
-	r := &bdReader{b: w.b}
-	owner, _ := r.u64()
-	kind, _ := r.str()
-	id, _ := r.u32()
+	r := demonware.NewReader(w.Bytes())
+	owner, _ := r.Uint64()
+	kind, _ := r.String()
+	id, _ := r.Uint32()
 	if owner != 42 || kind != marketplaceAccountType || id != item {
 		t.Fatalf("bad inventory owner/item %d %s %d", owner, kind, id)
 	}

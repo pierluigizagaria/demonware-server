@@ -1,7 +1,7 @@
 package main
 
-// bdRichPresenceService (service 68). CTR polls it for its friends once the
-// LSG session is established.
+// bdRichPresenceService (service 68). Shared by the CTR handlers and the
+// inherited Diablo III request fixture; live D3 friend presence is unqualified.
 //
 //	bdUserAccountID    : 0A u64 id | 10 platform string
 //	bdRichPresenceData : bdUserAccountID | 03 u8 | 13 blob
@@ -9,8 +9,9 @@ package main
 // get request: 10 context | 08 u32 count | count x bdUserAccountID.
 
 import (
-	"encoding/binary"
 	"sync"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 const svcRichPresence = 68
@@ -38,28 +39,16 @@ var (
 	rich   = map[uint64]richPresence{}
 )
 
-func (r *bdReader) u64() (uint64, error) {
-	if err := r.tag(tagU64); err != nil {
-		return 0, err
-	}
-	if r.off+8 > len(r.b) {
-		return 0, errShort
-	}
-	v := binary.LittleEndian.Uint64(r.b[r.off:])
-	r.off += 8
-	return v, nil
-}
-
 // accountIDs reads "u32 count | count x bdUserAccountID".
-func (r *bdReader) accountIDs() []accountID {
-	n, err := r.u32()
+func readAccountIDs(r *demonware.Reader) []accountID {
+	n, err := r.Uint32()
 	if err != nil || n > 4096 {
 		return nil
 	}
 	out := make([]accountID, 0, n)
 	for i := uint32(0); i < n; i++ {
-		id, err1 := r.u64()
-		plat, err2 := r.str()
+		id, err1 := r.Uint64()
+		plat, err2 := r.String()
 		if err1 != nil || err2 != nil {
 			break
 		}
@@ -77,14 +66,14 @@ func onlinePIDSet() map[uint64]bool {
 	return out
 }
 
-func (l *lobbyConn) onRichPresence(task byte, r *bdReader) []byte {
-	ctx, _ := r.str()
+func (l *lobbyConn) onRichPresence(task byte, r *demonware.Reader) []byte {
+	ctx, _ := r.String()
 	switch task {
 	case rpSet:
-		id, err1 := r.u64()
-		plat, err2 := r.str()
-		flag, err3 := r.u8()
-		data, err4 := r.blob()
+		id, err1 := r.Uint64()
+		plat, err2 := r.String()
+		flag, err3 := r.Uint8()
+		data, err4 := r.Blob()
 		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
 			l.logf("richpresence SET illisible ctx=%q", ctx)
 			return taskReply(task, 0, nil)
@@ -102,7 +91,7 @@ func (l *lobbyConn) onRichPresence(task byte, r *bdReader) []byte {
 		return taskReply(task, 0, nil)
 
 	case rpGet, rpGetAndSubscribe:
-		ids := r.accountIDs()
+		ids := readAccountIDs(r)
 		me := l.pid()
 		live := onlinePIDSet()
 		type hit struct {
@@ -130,12 +119,12 @@ func (l *lobbyConn) onRichPresence(task byte, r *bdReader) []byte {
 		}
 		richMu.Unlock()
 		l.logf("richpresence GET ctx=%q %d demande(s) -> %d presence(s)", ctx, len(ids), len(hits))
-		return taskReply(task, 0, func(w *bdWriter) uint32 {
+		return taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, h := range hits {
-				w.u64(h.id)
-				w.str(h.p.platform)
-				w.u8(h.p.flag)
-				w.blobv(h.p.data)
+				w.Uint64(h.id)
+				w.String(h.p.platform)
+				w.Uint8(h.p.flag)
+				w.Blob(h.p.data)
 			}
 			return uint32(len(hits))
 		})

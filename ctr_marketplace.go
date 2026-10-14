@@ -26,8 +26,9 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"os"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 const (
@@ -50,26 +51,6 @@ func loadWallets() {
 	}
 }
 
-// ---- protobuf -------------------------------------------------------------
-
-func pbVarintField(b []byte, field byte, v uint64) []byte {
-	b = append(b, field<<3)
-	return appendVarint(b, v)
-}
-
-// zigzag encodes a signed amount the way bdStructBufferSerializer::writeInt64 does.
-// bdMarketplaceCurrencyAmount's amount is an int64, and a plain varint is read back
-// halved: 10000 sent raw arrives as 10000>>1 = 5000, which is what the game displayed.
-func zigzag(v int64) uint64 {
-	return uint64(v<<1) ^ uint64(v>>63)
-}
-
-func pbBytesField(b []byte, field byte, p []byte) []byte {
-	b = append(b, field<<3|2)
-	b = appendVarint(b, uint64(len(p)))
-	return append(b, p...)
-}
-
 // getPlayerBalancesResponse builds the reply for task 245.
 func getPlayerBalancesResponse(w map[uint64]int64, max int) []byte {
 	ids := currencyIDs()
@@ -78,23 +59,12 @@ func getPlayerBalancesResponse(w map[uint64]int64, max int) []byte {
 	}
 	out := []byte{}
 	for _, id := range ids[:max] {
-		e := pbVarintField(nil, 1, id)
-		e = pbVarintField(e, 2, zigzag(w[id]))
-		e = pbVarintField(e, 3, 0)
-		out = pbBytesField(out, 1, e)
+		e := demonware.AppendVarintField(nil, 1, id)
+		e = demonware.AppendVarintField(e, 2, demonware.ZigZag(w[id]))
+		e = demonware.AppendVarintField(e, 3, 0)
+		out = demonware.AppendBytesField(out, 1, e)
 	}
 	return out
-}
-
-// structTaskReply mirrors httpProxyReply: bdStructBufferTask::deserializeTaskReply reads
-// the struct immediately after the task byte, so no result-count fields may precede it.
-func structTaskReply(task byte, sb []byte) []byte {
-	w := &bdWriter{}
-	w.u64(transactions.Add(1))
-	w.u32(0)
-	w.u8(task)
-	w.structv(sb)
-	return w.b
 }
 
 // ---- dispatch -------------------------------------------------------------
@@ -122,16 +92,19 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 		return taskReply(task, errUnhandled, nil)
 
 	case taskGetInventoryPaginated:
-		r := &bdReader{b: payload, off: 3}
-		ctx, err := r.str()
+		if len(payload) < 3 {
+			return taskReply(task, errUnhandled, nil)
+		}
+		r := demonware.NewReader(payload[3:])
+		ctx, err := r.String()
 		if err != nil || ctx != marketplaceContext {
 			return taskReply(task, errUnhandled, nil)
 		}
-		page, err := r.u32()
+		page, err := r.Uint32()
 		if err != nil {
 			return taskReply(task, errUnhandled, nil)
 		}
-		size, err := r.u32()
+		size, err := r.Uint32()
 		if err != nil || size == 0 || size > 4096 {
 			return taskReply(task, errUnhandled, nil)
 		}
@@ -142,7 +115,7 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 		}
 		items := inventoryPage(a, page, size)
 		l.logf("CTR pitstop inventory page=%d size=%d -> %d items", page, size, len(items))
-		return taskReply(task, 0, func(w *bdWriter) uint32 {
+		return taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, item := range items {
 				writeInventoryItem(w, l.pid(), item)
 			}
@@ -173,16 +146,16 @@ func validPS4BalancesRequest(payload []byte, ctx string, max int) bool {
 	if max < 1 || max > 16 {
 		return false
 	}
-	w := &bdWriter{b: []byte{svcMarketplace, tagU8, taskGetBalancesV3}}
-	sb := pbBytesField(nil, 1, []byte(ctx))
-	w.structv(pbVarintField(sb, 2, uint64(max)))
-	return bytes.Equal(payload, append(w.b, 0))
+	w := demonware.NewWriter([]byte{svcMarketplace, demonware.TagUint8, taskGetBalancesV3})
+	sb := demonware.AppendBytesField(nil, 1, []byte(ctx))
+	w.Struct(demonware.AppendVarintField(sb, 2, uint64(max)))
+	return bytes.Equal(payload, append(w.Bytes(), 0))
 }
 
 // parseBalancesRequest reads the bdGetPlayerBalancesRequest struct buffer that follows the
 // service and task bytes: field 1 context string, field 2 maxNumResults.
 func parseBalancesRequest(payload []byte) (string, int) {
-	sb := structPayload(payload)
+	sb := demonware.TaskStructPayload(payload)
 	ctx, max := "", 0
 	for i := 0; i < len(sb); {
 		field := sb[i] >> 3
@@ -190,7 +163,7 @@ func parseBalancesRequest(payload []byte) (string, int) {
 		i++
 		switch wire {
 		case 0:
-			v, next, err := readVarint(sb, i)
+			v, next, err := demonware.ReadVarint(sb, i)
 			if err != nil {
 				return ctx, max
 			}
@@ -199,7 +172,7 @@ func parseBalancesRequest(payload []byte) (string, int) {
 				max = int(v)
 			}
 		case 2:
-			ln, next, err := readVarint(sb, i)
+			ln, next, err := demonware.ReadVarint(sb, i)
 			if err != nil || ln > uint64(len(sb)-next) {
 				return ctx, max
 			}
@@ -215,89 +188,58 @@ func parseBalancesRequest(payload []byte) (string, int) {
 	return ctx, max
 }
 
-// structPayload returns the struct buffer inside a task argument buffer. onTask passes the
-// WHOLE typed buffer, so the first three bytes are the service, the u8 tag and the task:
-//
-//	50 | 03 f5 | 17 | 08 11 00 00 00 | 0a 0d "octane_switch" 10 03
-//	svc  tag/task  struct  u32 length   the struct itself
-func structPayload(payload []byte) []byte {
-	const hdr = 3 // service + tagU8 + task
-	if len(payload) < hdr+6 || payload[hdr] != tagStruct || payload[hdr+1] != tagU32 {
-		return nil
-	}
-	n := int(payload[hdr+2]) | int(payload[hdr+3])<<8 | int(payload[hdr+4])<<16 | int(payload[hdr+5])<<24
-	if n < 0 || hdr+6+n > len(payload) {
-		return nil
-	}
-	return payload[hdr+6 : hdr+6+n]
-}
-
 // ---- purchases and inventory ----------------------------------------------
-
-// readUInt16 expects 0x06; readInt64 expects 0x09. 0x14 is a special
-// INT64_MAX sentinel in writeInt64, not the tag for an eight-byte integer.
-const (
-	tagU16 = 0x06
-	tagI64 = 0x09
-)
-
-func (w *bdWriter) u16(v uint16) {
-	w.b = append(w.b, tagU16)
-	w.b = binary.LittleEndian.AppendUint16(w.b, v)
-}
-
-func (w *bdWriter) i64(v int64) {
-	w.b = append(w.b, tagI64)
-	w.b = binary.LittleEndian.AppendUint64(w.b, uint64(v))
-}
 
 // writeInventoryItem writes one bdMarketplaceInventory. Field order and the struct offsets
 // each value comes from were read from bdMarketplaceInventory::serialize; field 3 (+0x48)
 // is the item id CMarketplaceInventoryItem::populateItem matches against the game's own
 // catalog, so it carries the catalog ITEM id granted by the SKU.
-func writeInventoryItem(w *bdWriter, owner uint64, item uint32) {
-	w.u64(owner)                   // bdUserAccountID owner
-	w.strv(marketplaceAccountType) // bdUserAccountID account type
-	w.u32(item)                    // catalog item ID, not SKU
-	w.u32(1)                       // +0x4c quantity
-	w.u32(0)                       // +0x50
-	w.blobv(nil)                   // +0x54 item data
-	w.u32(0)                       // +0x98
-	w.i64(0)                       // +0xa0 expiry, 0 = never
-	w.u16(0)                       // +0xa8
-	w.u32(0)                       // +0xac
+func writeInventoryItem(w *demonware.Writer, owner uint64, item uint32) {
+	w.Uint64(owner)                  // bdUserAccountID owner
+	w.String(marketplaceAccountType) // bdUserAccountID account type
+	w.Uint32(item)                   // catalog item ID, not SKU
+	w.Uint32(1)                      // +0x4c quantity
+	w.Uint32(0)                      // +0x50
+	w.Blob(nil)                      // +0x54 item data
+	w.Uint32(0)                      // +0x98
+	w.Int64(0)                       // +0xa0 expiry, 0 = never
+	w.Uint16(0)                      // +0xa8
+	w.Uint32(0)                      // +0xac
 }
 
 // purchaseSkus encodes arrays as count followed by typed elements.
 // CTR cosmetics are non-consumable: quantities other than one are rejected.
 func parsePurchaseSkus(payload []byte) ([]uint32, bool) {
-	r := &bdReader{b: payload, off: 3}
-	ctx, err := r.str()
+	if len(payload) < 3 {
+		return nil, false
+	}
+	r := demonware.NewReader(payload[3:])
+	ctx, err := r.String()
 	if err != nil || ctx != marketplaceContext {
 		return nil, false
 	}
-	n, err := r.u32()
+	n, err := r.Uint32()
 	if err != nil || n == 0 || n > 255 {
 		return nil, false
 	}
 	skus := make([]uint32, n)
 	for i := range skus {
-		skus[i], err = r.u32()
+		skus[i], err = r.Uint32()
 		if err != nil {
 			return nil, false
 		}
 	}
-	qn, err := r.u32()
+	qn, err := r.Uint32()
 	if err != nil || qn != n {
 		return nil, false
 	}
 	for range skus {
-		q, e := r.u32()
+		q, e := r.Uint32()
 		if e != nil || q != 1 {
 			return nil, false
 		}
 	}
-	if !defaultPS4PurchaseOptions(r.b[r.off:], n) {
+	if !defaultPS4PurchaseOptions(r.Remaining(), n) {
 		return nil, false
 	}
 	return skus, true
@@ -318,18 +260,18 @@ func parsePurchaseSkus(payload []byte) ([]uint32, bool) {
 // Only this caller's exact defaults are supported; never ignore gifting,
 // coupon or other optional data.
 func defaultPS4PurchaseOptions(tail []byte, count uint32) bool {
-	w := &bdWriter{}
-	w.boolv(false)
-	w.u32(count)
+	w := &demonware.Writer{}
+	w.Bool(false)
+	w.Uint32(count)
 	for i := uint32(0); i < count; i++ {
-		w.u64(0)
-		w.strv("")
+		w.Uint64(0)
+		w.String("")
 	}
-	w.u32(0)
-	w.u32(0)
-	w.u8(0)
-	w.u32(0)
-	return bytes.Equal(tail, append(w.b, 0))
+	w.Uint32(0)
+	w.Uint32(0)
+	w.Uint8(0)
+	w.Uint32(0)
+	return bytes.Equal(tail, append(w.Bytes(), 0))
 }
 func parsePurchaseSku(payload []byte) (uint32, bool) {
 	ids, ok := parsePurchaseSkus(payload)

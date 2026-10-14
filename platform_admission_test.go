@@ -17,6 +17,7 @@ import (
 	"testing/iotest"
 	"time"
 
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 	"github.com/NextendoNetwork/nextendo-demonware/internal/platform"
 )
 
@@ -66,19 +67,19 @@ func handshake(t *testing.T, ticket []byte) *lobbyConn {
 	l, _ := sharedPS4Lobby()
 	l.keys, l.player = nil, nil
 	l.maxLen, l.nonce, l.payload1 = 65536, make([]byte, 8), make([]byte, 20)
-	raw := frame(append(append([]byte{msgClientAuth}, ticket...), make([]byte, 8)...))
+	raw := demonware.Frame(append(append([]byte{demonware.MsgClientAuth}, ticket...), make([]byte, 8)...))
 	var transcript bytes.Buffer
-	transcript.Write(u32le(210))
-	transcript.Write(u32le(220))
-	transcript.Write(u32le(l.maxLen))
+	transcript.Write(demonware.Uint32LE(210))
+	transcript.Write(demonware.Uint32LE(220))
+	transcript.Write(demonware.Uint32LE(l.maxLen))
 	transcript.Write(l.nonce)
-	transcript.Write(u32le(uint32(len(l.payload1) + 2)))
-	transcript.WriteByte(frameFlag)
-	transcript.WriteByte(msgServerHi)
+	transcript.Write(demonware.Uint32LE(uint32(len(l.payload1) + 2)))
+	transcript.WriteByte(demonware.FrameFlag)
+	transcript.WriteByte(demonware.MsgServerHi)
 	transcript.Write(l.payload1)
 	transcript.Write(raw[:len(raw)-8])
-	k := deriveKeys(transcript.Bytes(), ticket[97:121])
-	copy(raw[len(raw)-8:], k.clientTag[:])
+	k := demonware.DeriveKeys(transcript.Bytes(), ticket[97:121])
+	copy(raw[len(raw)-8:], k.ClientTag[:])
 	l.onClientAuth(raw)
 	return l
 }
@@ -146,13 +147,13 @@ func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
 	if err := rememberPlayerName(playerID{PID: 42, Username: "OfflineFriend", Kind: "shadnet"}, time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	req := &bdWriter{b: []byte{12, tagU8, 10}}
-	req.u32(3)
-	req.strv("FIXTURE")
-	req.strv("offlinefriend")
-	req.strv("stranger")
-	req.b = append(req.b, 0)
-	reply := sharedTask(t, l, w, req.b)
+	req := demonware.NewWriter([]byte{12, demonware.TagUint8, 10})
+	req.Uint32(3)
+	req.String("FIXTURE")
+	req.String("offlinefriend")
+	req.String("stranger")
+	req.Raw([]byte{0})
+	reply := sharedTask(t, l, w, req.Bytes())
 	if len(reply) < 21 || binary.LittleEndian.Uint32(reply[10:14]) != 0 || binary.LittleEndian.Uint32(reply[17:21]) != 2 {
 		t.Fatal("online and previously authenticated friends were not both resolved")
 	}

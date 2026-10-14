@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 func openTestLeaderboard(t *testing.T, path string) *ctrSQLite {
@@ -83,19 +85,19 @@ func TestSQLiteLeaderboardServesStatsTasks(t *testing.T) {
 	if err := ctrStats.write([]ctrStatWrite{{ctrStat: ctrStat{Board: 1001, PID: 12, Score: 400, Name: "A"}, Operation: 4}, {ctrStat: ctrStat{Board: 1001, PID: 13, Score: 500, Name: "B"}, Operation: 4}}); err != nil {
 		t.Fatal(err)
 	}
-	w := &bdWriter{}
-	w.u32(1001)
-	w.u64(2)
-	w.u32(1)
-	w.u32(0)
-	w.b = append(w.b, 0)
-	r := &bdReader{b: l.onCTRStats(4, &bdReader{b: w.b})}
-	r.u64()
-	code, _ := r.u32()
-	r.u8()
-	n, _ := r.u32()
-	total, _ := r.u32()
-	pid, _ := r.u64()
+	w := &demonware.Writer{}
+	w.Uint32(1001)
+	w.Uint64(2)
+	w.Uint32(1)
+	w.Uint32(0)
+	w.Raw([]byte{0})
+	r := demonware.NewReader(l.onCTRStats(4, demonware.NewReader(w.Bytes())))
+	r.Uint64()
+	code, _ := r.Uint32()
+	r.Uint8()
+	n, _ := r.Uint32()
+	total, _ := r.Uint32()
+	pid, _ := r.Uint64()
 	if code != 0 || n != 1 || total != 2 || pid != 12 {
 		t.Fatalf("rank read = code %d rows %d total %d pid %d", code, n, total, pid)
 	}

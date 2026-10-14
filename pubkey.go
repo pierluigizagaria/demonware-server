@@ -1,5 +1,7 @@
 package main
 
+import "encoding/hex"
+
 // bdPublicKeyDER is the RSA-2048 public key (SubjectPublicKeyInfo DER, 294 bytes)
 // read from the NSO at rodata 0xF07E90. The client uses it as an HKDF label to
 // transform the ticket's 24-byte key when the conn+0x208 flag is set.
@@ -12,3 +14,11 @@ var bdPublicKeyDER = mustHex("" +
 	"c99a9238d4d5eef3274466132c06f064e7ecf875fd15d41b91459d4a3f40e935537ffc9661e1487421f00420413002d2" +
 	"f90203010001" +
 	"")
+
+func mustHex(s string) []byte {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}

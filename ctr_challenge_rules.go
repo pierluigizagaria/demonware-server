@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 // Original Switch 1.0.15 AchievementMetadata. Dates are offsets into the
@@ -223,7 +225,7 @@ func (s *economyStore) awardChallenges(pid uint64, events []achievementEvent, no
 		if c.Progress != before {
 			a.Challenges[key] = c
 			updated, _, _ := r.current(a, now)
-			updates = pbBytesField(updates, 1, updated.encode())
+			updates = demonware.AppendBytesField(updates, 1, updated.encode())
 		} else if recordChanged {
 			a.Challenges[key] = c
 		}

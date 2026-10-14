@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 // Switch 1.0.15 AchievementMetadata, pitstop_daily_refresh parameters:
@@ -23,7 +25,7 @@ type ctrAchievementState struct {
 }
 
 func (a ctrAchievementState) encode() []byte {
-	e := pbBytesField(nil, 1, []byte(a.Name))
+	e := demonware.AppendBytesField(nil, 1, []byte(a.Name))
 	for _, f := range []struct {
 		tag   byte
 		value uint64
@@ -31,7 +33,7 @@ func (a ctrAchievementState) encode() []byte {
 		{2, a.Kind}, {3, a.Progress}, {4, a.Target}, {5, a.Status},
 		{6, a.Completed}, {7, a.Start}, {8, a.End}, {9, uint64(boolToCompletion(a.Completed))}, {11, a.ID},
 	} {
-		e = pbVarintField(e, f.tag, f.value)
+		e = demonware.AppendVarintField(e, f.tag, f.value)
 	}
 	return e
 }
@@ -98,36 +100,36 @@ func (s *economyStore) reportPitStopRefresh(pid uint64, events []achievementEven
 	if err := s.saveChange(pid, a, economyChange{source: "pit stop refresh"}); err != nil {
 		return nil, err
 	}
-	return pbBytesField(nil, 1, currentPitStopRefresh(a, now).encode()), nil
+	return demonware.AppendBytesField(nil, 1, currentPitStopRefresh(a, now).encode()), nil
 }
 
 // bdGetAchievementStatesRequest: kinds=2, limit=3, token=4,
 // statuses=5, names=6. Do not leak a progression state into daily challenges.
 func achievementRequested(payload []byte, s ctrAchievementState) bool {
-	fields, err := economyProto(structPayload(payload))
+	fields, err := demonware.ParseFields(demonware.TaskStructPayload(payload))
 	if err != nil {
 		return false
 	}
 	hasKind, kind, hasStatus, status, hasName, name := false, false, false, false, false, false
 	for _, f := range fields {
-		switch f.number {
+		switch f.Number {
 		case 2:
 			hasKind = true
-			kind = kind || f.value == s.Kind
+			kind = kind || f.Value == s.Kind
 		case 3:
-			if f.value == 0 {
+			if f.Value == 0 {
 				return false
 			}
 		case 4:
-			if len(f.data) != 0 {
+			if len(f.Data) != 0 {
 				return false
 			}
 		case 5:
 			hasStatus = true
-			status = status || f.value == s.Status
+			status = status || f.Value == s.Status
 		case 6:
 			hasName = true
-			name = name || string(f.data) == s.Name
+			name = name || string(f.Data) == s.Name
 		case 7:
 			return false // Explicit IDs are not used for this named counter.
 		}

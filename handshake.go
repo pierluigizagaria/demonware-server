@@ -1,8 +1,9 @@
 package main
 
-// Demonware lobby handshake, read from D3's NSO (see
-// d3hack/capture/nso/handshake*_decomp.txt). Nothing here is guessed: every
-// field corresponds to a read the client does.
+// Demonware lobby handshake. The layout and offsets below are inherited from
+// upstream's D3 NSO reverse-engineering notes (original reference:
+// d3hack/capture/nso/handshake*_decomp.txt), not new local binary evidence.
+// Wire helpers live in internal/demonware; admission and connection state stay here.
 //
 // Connect (0xBFC8F0): the client draws 8 random bytes (conn+0x21C) and sends
 // 28 RAW bytes, unframed:
@@ -27,9 +28,8 @@ package main
 //	| the 0x82 frame in full minus its last 8 bytes
 
 import (
-	"bytes"
+	"crypto/hmac"
 	"crypto/rand"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -39,37 +39,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-)
 
-const (
-	frameFlag      = 0xAB
-	lobbyVersion   = 220 // the highest accepted; the client offers 210 and 220
-	helloLen       = 28
-	msgServerHi    = 0x81
-	msgClientAuth  = 0x82
-	msgServerOK    = 0x83
-	msgError       = 0x84
-	msgEncrypted   = 0x85
-	msgMigrateInit = 0x87
-	msgMigrateAck  = 0x88
-	msgMigrateGo   = 0x89
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 var serverIDs atomic.Uint64
-
-func u32le(v uint32) []byte {
-	b := make([]byte, 4)
-	binary.LittleEndian.PutUint32(b, v)
-	return b
-}
-
-// frame wraps a body (type included) with length and flag.
-func frame(body []byte) []byte {
-	out := make([]byte, 0, 5+len(body))
-	out = append(out, u32le(uint32(1+len(body)))...)
-	out = append(out, frameFlag)
-	return append(out, body...)
-}
 
 type lobbyConn struct {
 	c       net.Conn
@@ -81,7 +55,7 @@ type lobbyConn struct {
 	nonce    []byte
 	payload1 []byte // the sent 0x81's payload, for the transcript
 
-	keys    *sessionKeys
+	keys    *demonware.SessionKeys
 	player  *playerID
 	s2cSeq  uint32
 	c2sSeq  uint32 // last accepted client frame number
@@ -114,22 +88,7 @@ func (l *lobbyConn) readFull(n int) ([]byte, error) {
 
 // readFrame returns the RAW frame (length included), nil for a keepalive.
 func (l *lobbyConn) readFrame() ([]byte, error) {
-	hdr, err := l.readFull(4)
-	if err != nil {
-		return nil, err
-	}
-	n := binary.LittleEndian.Uint32(hdr)
-	if n == 0 {
-		return nil, nil
-	}
-	if n > l.maxLen || n > 1<<21 {
-		return nil, fmt.Errorf("frame of %d bytes rejected", n)
-	}
-	rest, err := l.readFull(int(n))
-	if err != nil {
-		return nil, err
-	}
-	return append(hdr, rest...), nil
+	return demonware.ReadFrame(l.readFull, l.maxLen)
 }
 
 func (l *lobbyConn) send(b []byte) error {
@@ -153,35 +112,32 @@ func (l *lobbyConn) run() {
 	defer dropOnline(l.n)
 	l.logf("==== CONNECT from=%s", l.c.RemoteAddr())
 
-	hello, err := l.readFull(helloLen)
+	hello, err := l.readFull(demonware.HelloLen)
 	if err != nil {
 		l.logf("hello: %v", err)
 		return
 	}
 	l.dump("hello", hello)
-	v := func(i int) uint32 { return binary.LittleEndian.Uint32(hello[i:]) }
-	if v(0) != 200 || v(4) != 200 || v(8) != 210 || v(12) != 220 {
-		l.logf("unexpected hello: %X", hello)
+	h, err := demonware.ParseHello(hello)
+	if err != nil {
+		l.logf("unexpected hello: %v", err)
 		return
 	}
-	l.maxLen = v(16)
-	l.nonce = append([]byte{}, hello[20:28]...)
+	l.maxLen = h.MaxFrame
+	l.nonce = h.Nonce[:]
 	l.logf("hello ok: versions 210..220 maxFrame=0x%X nonce=%X", l.maxLen, l.nonce)
 
 	// 0x81: version | server identifier (conn+0x268, surfaced to the game in
 	// the "connected" event) | 8 bytes the client only skips over.
 	id := 0x0D3000000000 + serverIDs.Add(1)
-	pad := make([]byte, 8)
-	_, _ = rand.Read(pad)
-	l.payload1 = make([]byte, 0, 20)
-	l.payload1 = append(l.payload1, u32le(lobbyVersion)...)
-	l.payload1 = binary.LittleEndian.AppendUint64(l.payload1, id)
-	l.payload1 = append(l.payload1, pad...)
-	if err := l.send(frame(append([]byte{msgServerHi}, l.payload1...))); err != nil {
+	var pad [8]byte
+	_, _ = rand.Read(pad[:])
+	l.payload1 = demonware.ServerHelloPayload(id, pad)
+	if err := l.send(demonware.Frame(append([]byte{demonware.MsgServerHi}, l.payload1...))); err != nil {
 		l.logf("send 0x81: %v", err)
 		return
 	}
-	l.logf("-> 0x81 version=%d id=0x%X", lobbyVersion, id)
+	l.logf("-> 0x81 version=%d id=0x%X", demonware.LobbyVersion, id)
 
 	for {
 		raw, err := l.readFrame()
@@ -206,7 +162,7 @@ func (l *lobbyConn) run() {
 		l.dump(fmt.Sprintf("in%02d_%02x", l.msgSeen, body[0]), raw)
 
 		switch {
-		case l.keys == nil && body[0] == msgClientAuth:
+		case l.keys == nil && body[0] == demonware.MsgClientAuth:
 			if !l.onClientAuth(raw) {
 				return
 			}
@@ -227,41 +183,31 @@ func (l *lobbyConn) onClientAuth(raw []byte) bool {
 	}
 	tag := raw[len(raw)-8:]
 
-	var t bytes.Buffer
-	t.Write(u32le(210))
-	t.Write(u32le(220))
-	t.Write(u32le(l.maxLen))
-	t.Write(l.nonce)
-	t.Write(u32le(uint32(len(l.payload1) + 2)))
-	t.WriteByte(frameFlag)
-	t.WriteByte(msgServerHi)
-	t.Write(l.payload1)
-	t.Write(raw[:len(raw)-8])
-	transcript := t.Bytes()
+	transcript := demonware.HandshakeTranscript(l.maxLen, l.nonce, l.payload1, raw[:len(raw)-8])
 
 	candidates := l.candidates(raw)
 	for _, cand := range candidates {
 		for _, wrapped := range []bool{false, true} {
 			k24 := cand.key24
 			if wrapped {
-				k24 = wrapKey24(k24)
+				k24 = demonware.WrapKey24(k24, bdPublicKeyDER)
 			}
-			k := deriveKeys(transcript, k24)
-			if bytes.Equal(k.clientTag[:], tag) {
+			k := demonware.DeriveKeys(transcript, k24)
+			if hmac.Equal(k.ClientTag[:], tag) {
 				l.keys = &k
 				l.logf("0x82 AUTHENTICATED — key=%s rsa=%v", cand.name, wrapped)
-				if tk := findTicket(raw); tk != nil {
+				if tk := demonware.FindTicket(raw); tk != nil {
 					l.loadIdentity(tk)
 				}
-				if err := l.send(frame(append([]byte{msgServerOK}, k.serverChk[:]...))); err != nil {
+				if err := l.send(demonware.Frame(append([]byte{demonware.MsgServerOK}, k.ServerCheck[:]...))); err != nil {
 					l.logf("send 0x83: %v", err)
 					return false
 				}
-				l.logf("-> 0x83 chk=%X ; encrypted session established", k.serverChk)
+				l.logf("-> 0x83 chk=%X ; encrypted session established", k.ServerCheck)
 				// The 0x83 already sets [+0x258]=3, the only condition for getStatus()==2: the 0x87 adds
 				// nothing and makes the game wait for a migration (closes after ~12 s). Kept behind CTR_MIGRATE.
 				if migrateEnabled {
-					if err := l.sendEncrypted(msgMigrateInit, []byte{1}); err != nil {
+					if err := l.sendEncrypted(demonware.MsgMigrateInit, []byte{1}); err != nil {
 						l.logf("send 0x87: %v", err)
 						return false
 					}
@@ -294,7 +240,7 @@ func (l *lobbyConn) candidates(raw []byte) []keyCand {
 			keyCand{name + "[33:57]", append([]byte{}, t[33:57]...)},
 		)
 	}
-	if t := findTicket(raw); t != nil {
+	if t := demonware.FindTicket(raw); t != nil {
 		if _, ok := issuedTicketPlayer(t, time.Now(), ticketWindow); ok {
 			add("issued-ticket", t)
 		}
@@ -302,108 +248,47 @@ func (l *lobbyConn) candidates(raw []byte) []keyCand {
 	return out
 }
 
-// findTicket looks for the magic DE AD BD EF in the 0x82's bdBitBuffer, at
-// every bit offset (the preceding fields aren't byte-aligned), LSB order
-// then MSB, and returns the 128 bytes that follow.
-func findTicket(raw []byte) []byte {
-	magic := []byte{0xDE, 0xAD, 0xBD, 0xEF}
-	bit := func(i int, msb bool) byte {
-		b := raw[i/8]
-		if msb {
-			return (b >> (7 - uint(i%8))) & 1
-		}
-		return (b >> uint(i%8)) & 1
-	}
-	total := len(raw) * 8
-	for _, msb := range []bool{false, true} {
-		for off := 0; off+128*8 <= total; off++ {
-			get := func(k int) byte {
-				var v byte
-				for j := 0; j < 8; j++ {
-					if msb {
-						v |= bit(off+k*8+j, true) << uint(7-j)
-					} else {
-						v |= bit(off+k*8+j, false) << uint(j)
-					}
-				}
-				return v
-			}
-			ok := true
-			for k := 0; k < 4 && ok; k++ {
-				ok = get(k) == magic[k]
-			}
-			if !ok {
-				continue
-			}
-			t := make([]byte, 128)
-			for k := range t {
-				t[k] = get(k)
-			}
-			return t
-		}
-	}
-	return nil
-}
-
-// onEncrypted decodes a client message after the handshake. The
-// client->server format hasn't been read in the binary yet: we assume it
-// mirrors the server's 0x85 and log everything, verified or not.
+// onEncrypted applies the connection's admission and sequence rules before
+// dispatching the decoded protocol message to the application.
 func (l *lobbyConn) onEncrypted(raw []byte) {
-	body := raw[5:]
-	typ := body[0]
-	if len(body) < 1+4+16+16+8 {
-		l.logf("msg 0x%02X short (%d):\n%s", typ, len(raw), hex.Dump(raw))
+	encrypted, err := demonware.ParseEncryptedFrame(raw)
+	if err != nil {
+		l.logf("encrypted frame rejected: %v", err)
 		return
 	}
-	seq := binary.LittleEndian.Uint32(body[1:5])
-	iv := body[5:21]
-	ct := body[21 : len(body)-8]
-	tag := raw[len(raw)-8:]
-	macOK := bytes.Equal(hmacSHA1(l.keys.c2sMAC, raw[:len(raw)-8])[:8], tag)
-	// The client numbers its encrypted frames from 1 and its own reader accepts
-	// only the next number (CTR PS4 1.21 eboot: send counter conn+0x260 set to 1
-	// at 0x1a3c0 and incremented at 0x19125; receive check at 0x1ac33). A
-	// different number is a replayed or injected frame: drop it without
-	// advancing, so the next genuine frame is still accepted.
-	if macOK {
-		if seq != l.c2sSeq+1 {
-			l.logf("msg 0x%02X seq=%d expected %d, ignored", typ, seq, l.c2sSeq+1)
-			return
-		}
-		l.c2sSeq = seq
+	if !encrypted.Verify(l.keys.C2SMAC) {
+		l.logf("msg 0x%02X seq=%d invalid MAC, ignored", encrypted.Type, encrypted.Sequence)
+		return
+	}
+	// Preserve the CTR-confirmed sequence policy, including consuming an
+	// authenticated malformed payload's sequence before attempting to decode it.
+	if encrypted.Sequence != l.c2sSeq+1 {
+		l.logf("msg 0x%02X seq=%d expected %d, ignored", encrypted.Type, encrypted.Sequence, l.c2sSeq+1)
+		return
+	}
+	l.c2sSeq = encrypted.Sequence
+	message, err := encrypted.Decrypt(l.keys.C2SAES)
+	if err != nil {
+		l.logf("msg 0x%02X seq=%d decrypt: %v", encrypted.Type, encrypted.Sequence, err)
+		return
+	}
+	l.dump(fmt.Sprintf("in%02d_plain", l.msgSeen), message.Plaintext)
+	inner, n := message.Type, len(message.Payload)
+	if verbose {
+		l.logf("msg 0x%02X seq=%d inner_len=%d inner_type=0x%02X plaintext:\n%s", encrypted.Type, encrypted.Sequence, n, inner, hex.Dump(message.Plaintext))
+	}
+	if inner == demonware.InnerTaskRequest {
+		l.onTask(message.Payload)
+		return
 	}
 
-	pt, err := aesCBCDecrypt(l.keys.c2sAES, iv, ct)
-	if err != nil {
-		l.logf("msg 0x%02X seq=%d mac=%v decrypt: %v\n%s", typ, seq, macOK, err, hex.Dump(raw))
-		return
-	}
-	l.dump(fmt.Sprintf("in%02d_plain", l.msgSeen), pt)
-	if len(pt) < 5 {
-		l.logf("msg 0x%02X seq=%d mac=%v plaintext too short: %X", typ, seq, macOK, pt)
-		return
-	}
-	n := binary.LittleEndian.Uint32(pt[0:4])
-	inner := pt[4]
-	if verbose {
-		l.logf("msg 0x%02X seq=%d mac=%v inner_len=%d inner_type=0x%02X plaintext:\n%s", typ, seq, macOK, n, inner, hex.Dump(pt))
-	} else if !macOK {
-		l.logf("msg 0x%02X seq=%d invalid MAC, ignored", typ, seq)
-	}
-	if !macOK || int(n) > len(pt)-5 {
-		return
-	}
-	if inner == 0x86 {
-		l.onTask(pt[5 : 5+n])
-		return
-	}
-	if inner == msgMigrateAck {
+	if inner == demonware.MsgMigrateAck {
 		// 0x88 closes 0x87: nothing is expected after it. A 0x89 would trigger a real migration.
 		if !migrateEnabled {
 			l.logf("0x88 migrate-ack — LSG login complete")
 			return
 		}
-		if err := l.sendEncrypted(msgMigrateGo, migrateGoPayload()); err != nil {
+		if err := l.sendEncrypted(demonware.MsgMigrateGo, migrateGoPayload()); err != nil {
 			l.logf("sending 0x89: %v", err)
 			return
 		}
@@ -446,28 +331,14 @@ func migrateGoPayload() []byte {
 func (l *lobbyConn) sendEncrypted(innerType byte, payload []byte) error {
 	l.sendMu.Lock()
 	defer l.sendMu.Unlock()
-	pt := make([]byte, 0, 5+len(payload)+16)
-	pt = append(pt, u32le(uint32(len(payload)))...)
-	pt = append(pt, innerType)
-	pt = append(pt, payload...)
-	for len(pt)%16 != 0 {
-		pt = append(pt, 0)
-	}
 	iv := make([]byte, 16)
-	_, _ = rand.Read(iv)
-	ct, err := aesCBCEncrypt(l.keys.s2cAES, iv, pt)
+	if _, err := rand.Read(iv); err != nil {
+		return err
+	}
+	out, err := demonware.EncodeEncrypted(l.s2cSeq+1, innerType, payload, iv, l.keys.S2CAES, l.keys.S2CMAC)
 	if err != nil {
 		return err
 	}
 	l.s2cSeq++
-	body := []byte{msgEncrypted}
-	body = append(body, u32le(l.s2cSeq)...)
-	body = append(body, iv...)
-	body = append(body, ct...)
-
-	out := u32le(uint32(1 + len(body) + 8))
-	out = append(out, frameFlag)
-	out = append(out, body...)
-	out = append(out, hmacSHA1(l.keys.s2cMAC, out)[:8]...)
 	return l.send(out)
 }

@@ -3,7 +3,6 @@ package main
 // bdStats service 4. Wire layouts recovered from CTR 1.0.15's bdStatsInfo
 // and COctaneLeaderboardStatsInfo serializers, not from the dashboard API.
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -12,6 +11,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 type ctrStat struct {
@@ -40,28 +41,20 @@ func timeBoard(board uint32) bool { return board > 1000 && board < 1159 }
 // Ring Rally uses raw points, but shares the Octane driver extension with times.
 func ringBoard(board uint32) bool   { return board >= 89 && board <= 133 && board != 100 }
 func octaneBoard(board uint32) bool { return timeBoard(board) || ringBoard(board) }
-func statsEnd(r *bdReader) bool     { return r.off == len(r.b) || (r.off+1 == len(r.b) && r.b[r.off] == 0) }
-func statsInt64(r *bdReader) (int64, error) {
-	if err := r.tag(9); err != nil {
-		return 0, err
-	}
-	if len(r.b)-r.off < 8 {
-		return 0, errShort
-	}
-	v := int64(binary.LittleEndian.Uint64(r.b[r.off:]))
-	r.off += 8
-	return v, nil
+func statsEnd(r *demonware.Reader) bool {
+	return len(r.Remaining()) == 0 || (len(r.Remaining()) == 1 && r.Remaining()[0] == 0)
 }
-func parseStatWrites(r *bdReader, pid uint64, name string) ([]ctrStatWrite, error) {
+
+func parseStatWrites(r *demonware.Reader, pid uint64, name string) ([]ctrStatWrite, error) {
 	out := []ctrStatWrite{}
 	for !statsEnd(r) {
 		if len(out) >= 128 {
 			return nil, fmt.Errorf("too many writes")
 		}
-		board, e1 := r.u32()
-		entity, e2 := r.u64()
-		op, e3 := r.u8()
-		score, e4 := statsInt64(r)
+		board, e1 := r.Uint32()
+		entity, e2 := r.Uint64()
+		op, e3 := r.Uint8()
+		score, e4 := r.Int64()
 		if e1 != nil || e2 != nil || e3 != nil || e4 != nil || entity != pid || pid == 0 {
 			return nil, fmt.Errorf("invalid stats write or owner")
 		}
@@ -71,7 +64,7 @@ func parseStatWrites(r *bdReader, pid uint64, name string) ([]ctrStatWrite, erro
 		row := ctrStatWrite{ctrStat: ctrStat{Board: board, PID: pid, Score: score, Name: name, Updated: uint32(time.Now().Unix())}, Operation: op}
 		if octaneBoard(board) {
 			var err error
-			row.Driver, err = r.u32()
+			row.Driver, err = r.Uint32()
 			if err != nil {
 				return nil, err
 			}
@@ -184,32 +177,24 @@ func (s *ctrStatsStore) read(board uint32) ([]ctrStat, error) {
 	return rows, nil
 }
 func statsReply(task byte, rows []ctrStat, total uint32) []byte {
-	w := &bdWriter{}
-	w.u64(transactions.Add(1))
-	w.u32(0)
-	w.u8(task)
-	w.u32(uint32(len(rows)))
-	if len(rows) == 0 {
-		return w.b
-	}
-	w.u32(total)
+	w := &demonware.Writer{}
 	for _, r := range rows {
-		w.u64(r.PID)
-		w.i64(r.Score)
-		w.u64(r.Rank)
+		w.Uint64(r.PID)
+		w.Int64(r.Score)
+		w.Uint64(r.Rank)
 		name := r.Name
 		if len(name) > 63 {
 			name = name[:63]
 		}
-		w.strv(name)
-		w.u32(r.Updated)
+		w.String(name)
+		w.Uint32(r.Updated)
 		if octaneBoard(r.Board) {
-			w.u32(r.Driver)
+			w.Uint32(r.Driver)
 		}
 	}
-	return w.b
+	return demonware.ListReply(transactions.Add(1), task, 0, uint32(len(rows)), total, w.Bytes())
 }
-func (l *lobbyConn) onCTRStats(task byte, r *bdReader) []byte {
+func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
 	pid := l.pid()
 	onlineMu.Lock()
 	p := online[l.n]
@@ -243,7 +228,7 @@ func (l *lobbyConn) onCTRStats(task byte, r *bdReader) []byte {
 	if task != 4 && task != 13 {
 		return fail(fmt.Errorf("unsupported stats task"))
 	}
-	board, err := r.u32()
+	board, err := r.Uint32()
 	if err != nil {
 		return fail(err)
 	}
@@ -251,11 +236,11 @@ func (l *lobbyConn) onCTRStats(task byte, r *bdReader) []byte {
 	var limit uint32
 	ids := map[uint64]bool{}
 	if task == 4 {
-		start, err = r.u64()
+		start, err = r.Uint64()
 		if err != nil {
 			return fail(err)
 		}
-		limit, err = r.u32()
+		limit, err = r.Uint32()
 		if err != nil || limit > 1000 {
 			return fail(fmt.Errorf("invalid rank limit"))
 		}
@@ -263,19 +248,19 @@ func (l *lobbyConn) onCTRStats(task byte, r *bdReader) []byte {
 			start = 1
 		}
 	} else {
-		n, e := r.u32()
+		n, e := r.Uint32()
 		if e != nil || n > 1000 {
 			return fail(fmt.Errorf("invalid entity count"))
 		}
 		for i := uint32(0); i < n; i++ {
-			id, e := r.u64()
+			id, e := r.Uint64()
 			if e != nil {
 				return fail(e)
 			}
 			ids[id] = true
 		}
 	}
-	cols, e := r.u32()
+	cols, e := r.Uint32()
 	if e != nil || cols != 0 || !statsEnd(r) {
 		return fail(fmt.Errorf("unsupported column selection"))
 	}

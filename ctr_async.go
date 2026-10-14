@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 // Event layouts verified against CTR 1.0.15's bdAsyncMatchMakingEventHandler.
@@ -144,12 +146,12 @@ type ctrNotice struct {
 	host, backend string
 }
 
-func (n ctrNotice) write(w *bdWriter) {
+func (n ctrNotice) write(w *demonware.Writer) {
 	for _, id := range n.ids {
-		w.u64(id)
+		w.Uint64(id)
 	}
-	w.strv(n.host)
-	w.strv(n.backend)
+	w.String(n.host)
+	w.String(n.backend)
 }
 func sendCTRNotices(notices []ctrNotice) {
 	for _, n := range notices {

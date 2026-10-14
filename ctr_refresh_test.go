@@ -5,10 +5,12 @@ import (
 	"encoding/hex"
 	"testing"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 func TestInventoryCompleteClientWireLayout(t *testing.T) {
-	w := &bdWriter{}
+	w := &demonware.Writer{}
 	writeInventoryItem(w, 42, 688)
 	// Independent bdMarketplaceInventory::deserialize wire fixture. In particular,
 	// signed int64 uses 09; 14 is the MAX_INT64 sentinel with no trailing bytes.
@@ -16,8 +18,8 @@ func TestInventoryCompleteClientWireLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(w.b, want) {
-		t.Fatalf("inventory wire\ngot %x\nwant %x", w.b, want)
+	if !bytes.Equal(w.Bytes(), want) {
+		t.Fatalf("inventory wire\ngot %x\nwant %x", w.Bytes(), want)
 	}
 }
 
@@ -55,15 +57,15 @@ func TestPitStopRefreshRetryRestartLimitAndReset(t *testing.T) {
 
 func TestRefreshNotificationCanBeDecodedAndNamesRealCounter(t *testing.T) {
 	s := currentPitStopRefresh(&economyAccount{}, time.Now())
-	f, err := economyProto(s.encode())
+	f, err := demonware.ParseFields(s.encode())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := map[uint64]economyProtoField{}
+	got := map[uint64]demonware.Field{}
 	for _, v := range f {
-		got[v.number] = v
+		got[v.Number] = v
 	}
-	if string(got[1].data) != "pitstop_daily_refresh" || got[2].value != 1 {
+	if string(got[1].Data) != "pitstop_daily_refresh" || got[2].Value != 1 {
 		t.Fatal("wrong refresh callback")
 	}
 	for _, tag := range []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 11} {
@@ -71,17 +73,17 @@ func TestRefreshNotificationCanBeDecodedAndNamesRealCounter(t *testing.T) {
 			t.Fatalf("missing required field %d", tag)
 		}
 	}
-	if got[5].value < 1 || got[5].value > 5 {
+	if got[5].Value < 1 || got[5].Value > 5 {
 		t.Fatal("client rejects invalid achievement status")
 	}
-	w := &bdWriter{b: []byte{125, 3, 3}}
-	w.structv(pbVarintField(nil, 2, 3))
-	if achievementRequested(w.b, s) {
+	w := demonware.NewWriter([]byte{125, 3, 3})
+	w.Struct(demonware.AppendVarintField(nil, 2, 3))
+	if achievementRequested(w.Bytes(), s) {
 		t.Fatal("refresh included in daily challenge query")
 	}
-	w = &bdWriter{b: []byte{125, 3, 3}}
-	w.structv(pbVarintField(nil, 2, 1))
-	if !achievementRequested(w.b, s) {
+	w = demonware.NewWriter([]byte{125, 3, 3})
+	w.Struct(demonware.AppendVarintField(nil, 2, 1))
+	if !achievementRequested(w.Bytes(), s) {
 		t.Fatal("refresh missing from progression query")
 	}
 }

@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 func mergeTestRooms(t *testing.T) (*ctrMatchmaker, *ctrRoom, *ctrRoom) {
@@ -24,7 +26,7 @@ func TestCTRMergeThreePlusThreeAfterDestinationAck(t *testing.T) {
 	if len(m.rooms) != 2 || a.occupancy() != 6 || len(a.players) != 3 || b.mergeTarget != a.id {
 		t.Fatal("invalid reserved merge state")
 	}
-	w := &bdWriter{}
+	w := &demonware.Writer{}
 	out[0].write(w)
 	var backend struct {
 		Players map[string]string `json:"players"`
@@ -45,21 +47,21 @@ func TestCTRMergeThreePlusThreeAfterDestinationAck(t *testing.T) {
 		if n.event != ctrMergeLobby || len(n.ids) != 3 || n.ids[1] != b.id || n.ids[2] != a.id {
 			t.Fatal("invalid merge event routing")
 		}
-		w := &bdWriter{}
+		w := &demonware.Writer{}
 		n.write(w)
-		rd := &bdReader{b: w.b}
+		rd := demonware.NewReader(w.Bytes())
 		for _, want := range n.ids {
-			if got, err := rd.u64(); err != nil || got != want {
+			if got, err := rd.Uint64(); err != nil || got != want {
 				t.Fatal("merge wire IDs")
 			}
 		}
-		if _, err := rd.str(); err != nil {
+		if _, err := rd.String(); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := rd.str(); err != nil {
+		if _, err := rd.String(); err != nil {
 			t.Fatal(err)
 		}
-		if rd.off != len(rd.b) {
+		if len(rd.Remaining()) != 0 {
 			t.Fatal("trailing wire bytes")
 		}
 	}

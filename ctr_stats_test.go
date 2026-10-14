@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"os"
 	"testing"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 func TestCTRStatsPersistenceBestAndWire(t *testing.T) {
@@ -29,19 +31,19 @@ func TestCTRStatsPersistenceBestAndWire(t *testing.T) {
 		t.Fatalf("bad persistent ranks: %+v %v", rows, err)
 	}
 	reply := statsReply(4, rows[1:], 2)
-	r := &bdReader{b: reply}
-	r.u64()
-	r.u32()
-	r.u8()
-	n, _ := r.u32()
-	total, _ := r.u32()
-	pid, _ := r.u64()
-	score, _ := statsInt64(r)
-	rank, _ := r.u64()
-	name, _ := r.str()
-	stamp, _ := r.u32()
-	driver, e := r.u32()
-	if n != 1 || total != 2 || pid != 12 || score != 4000000000 || rank != 2 || name != "Racer" || stamp != 100 || driver != 123 || e != nil || r.off != len(reply) {
+	r := demonware.NewReader(reply)
+	r.Uint64()
+	r.Uint32()
+	r.Uint8()
+	n, _ := r.Uint32()
+	total, _ := r.Uint32()
+	pid, _ := r.Uint64()
+	score, _ := r.Int64()
+	rank, _ := r.Uint64()
+	name, _ := r.String()
+	stamp, _ := r.Uint32()
+	driver, e := r.Uint32()
+	if n != 1 || total != 2 || pid != 12 || score != 4000000000 || rank != 2 || name != "Racer" || stamp != 100 || driver != 123 || e != nil || r.Position() != len(reply) {
 		t.Fatalf("bad reply %x", reply)
 	}
 	before, _ := os.ReadFile(s.path())
@@ -63,23 +65,23 @@ func TestCTRStatsPersistenceBestAndWire(t *testing.T) {
 func TestCTRStatsCapturedInitializationAndOwnership(t *testing.T) {
 	// Actual 4/1 initialization from the user's Highscores attempt, including task terminator.
 	packet, _ := hex.DecodeString("04030108e80300000a4edf496b00000000030009000000000000000000")
-	writes, err := parseStatWrites(&bdReader{b: packet, off: 3}, 1800003406, "Collecting")
+	writes, err := parseStatWrites(demonware.NewReader(packet[3:]), 1800003406, "Collecting")
 	if err != nil || len(writes) != 1 || writes[0].Board != 1000 {
 		t.Fatalf("capture failed: %+v %v", writes, err)
 	}
-	if _, err = parseStatWrites(&bdReader{b: packet, off: 3}, 7, "forged"); err == nil {
+	if _, err = parseStatWrites(demonware.NewReader(packet[3:]), 7, "forged"); err == nil {
 		t.Fatal("accepted other account")
 	}
-	w := &bdWriter{}
-	w.u32(1001)
-	w.u64(12)
-	w.u8(4)
-	w.i64(4000000000)
-	w.u32(123)
-	if rows, err := parseStatWrites(&bdReader{b: w.b}, 12, "test"); err != nil || rows[0].Driver != 123 {
+	w := &demonware.Writer{}
+	w.Uint32(1001)
+	w.Uint64(12)
+	w.Uint8(4)
+	w.Int64(4000000000)
+	w.Uint32(123)
+	if rows, err := parseStatWrites(demonware.NewReader(w.Bytes()), 12, "test"); err != nil || rows[0].Driver != 123 {
 		t.Fatal(rows, err)
 	}
-	if _, err := parseStatWrites(&bdReader{b: w.b[:len(w.b)-1]}, 12, "test"); err == nil {
+	if _, err := parseStatWrites(demonware.NewReader(w.Bytes()[:len(w.Bytes())-1]), 12, "test"); err == nil {
 		t.Fatal("accepted truncated driver")
 	}
 }
@@ -93,24 +95,24 @@ func TestCTRStatsRankAndFriendsRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, task := range []byte{4, 13} {
-		w := &bdWriter{}
-		w.u32(1001)
+		w := &demonware.Writer{}
+		w.Uint32(1001)
 		if task == 4 {
-			w.u64(2)
-			w.u32(1)
+			w.Uint64(2)
+			w.Uint32(1)
 		} else {
-			w.u32(1)
-			w.u64(12)
+			w.Uint32(1)
+			w.Uint64(12)
 		}
-		w.u32(0)
-		w.b = append(w.b, 0)
-		r := &bdReader{b: l.onCTRStats(task, &bdReader{b: w.b})}
-		r.u64()
-		code, _ := r.u32()
-		r.u8()
-		n, _ := r.u32()
-		r.u32()
-		pid, _ := r.u64()
+		w.Uint32(0)
+		w.Raw([]byte{0})
+		r := demonware.NewReader(l.onCTRStats(task, demonware.NewReader(w.Bytes())))
+		r.Uint64()
+		code, _ := r.Uint32()
+		r.Uint8()
+		n, _ := r.Uint32()
+		r.Uint32()
+		pid, _ := r.Uint64()
 		if code != 0 || n != 1 || pid != 12 {
 			t.Fatalf("task %d wrong page/filter", task)
 		}
@@ -119,19 +121,19 @@ func TestCTRStatsRankAndFriendsRequests(t *testing.T) {
 
 func TestRingRallyScoresAndDriverWire(t *testing.T) {
 	for _, board := range []uint32{89, 99, 101, 133, 1002} {
-		w := &bdWriter{}
-		w.u32(board)
-		w.u64(12)
-		w.u8(4)
-		w.i64(123456)
-		w.u32(77)
+		w := &demonware.Writer{}
+		w.Uint32(board)
+		w.Uint64(12)
+		w.Uint8(4)
+		w.Int64(123456)
+		w.Uint32(77)
 		// A generic counter after the extended record must remain a separate write.
-		w.u32(150)
-		w.u64(12)
-		w.u8(1)
-		w.i64(1)
-		w.b = append(w.b, 0)
-		writes, err := parseStatWrites(&bdReader{b: w.b}, 12, "Racer")
+		w.Uint32(150)
+		w.Uint64(12)
+		w.Uint8(1)
+		w.Int64(1)
+		w.Raw([]byte{0})
+		writes, err := parseStatWrites(demonware.NewReader(w.Bytes()), 12, "Racer")
 		if err != nil || len(writes) != 2 || writes[0].Driver != 77 || writes[1].Board != 150 {
 			t.Fatalf("board %d: %+v %v", board, writes, err)
 		}
@@ -148,19 +150,19 @@ func TestRingRallyScoresAndDriverWire(t *testing.T) {
 		if err != nil || len(rows) != 1 || rows[0].Score != 123456 || rows[0].Driver != 77 {
 			t.Fatalf("bad saved score: %+v %v", rows, err)
 		}
-		r := &bdReader{b: statsReply(4, rows, 1)}
-		r.u64()
-		r.u32()
-		r.u8()
-		r.u32()
-		r.u32()
-		r.u64()
-		statsInt64(r)
-		r.u64()
-		r.str()
-		r.u32()
-		driver, err := r.u32()
-		if err != nil || driver != 77 || r.off != len(r.b) {
+		r := demonware.NewReader(statsReply(4, rows, 1))
+		r.Uint64()
+		r.Uint32()
+		r.Uint8()
+		r.Uint32()
+		r.Uint32()
+		r.Uint64()
+		r.Int64()
+		r.Uint64()
+		r.String()
+		r.Uint32()
+		driver, err := r.Uint32()
+		if err != nil || driver != 77 || len(r.Remaining()) != 0 {
 			t.Fatalf("missing reply driver board %d", board)
 		}
 	}

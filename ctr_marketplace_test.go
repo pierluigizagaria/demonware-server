@@ -2,9 +2,25 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"testing"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
+
+func TestMarketplaceRejectsShortTaskHeaders(t *testing.T) {
+	l := &lobbyConn{}
+	for _, task := range []byte{taskGetInventoryPaginated, taskPurchaseSkus} {
+		request := []byte{80, 3, task}
+		for n := 0; n <= len(request); n++ {
+			reply := l.onMarketplace(task, request[:n])
+			if len(reply) != 14 || binary.LittleEndian.Uint32(reply[10:14]) != errUnhandled {
+				t.Fatalf("task %d accepted %d-byte request", task, n)
+			}
+		}
+	}
+}
 
 // The exact bytes Crash Team Racing sent for bdMarketplace::getBalancesV3 (service 80,
 // task 245), captured from production on 2026-09-21.
@@ -39,7 +55,7 @@ func TestBalancesResponseShape(t *testing.T) {
 			t.Fatalf("byte %d: tag %#x, want 0x0A", i, sb[i])
 		}
 		i++
-		ln, next, err := readVarint(sb, i)
+		ln, next, err := demonware.ReadVarint(sb, i)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -51,7 +67,7 @@ func TestBalancesResponseShape(t *testing.T) {
 		for j := 0; j < len(e); {
 			field := e[j] >> 3
 			j++
-			v, n, err := readVarint(e, j)
+			v, n, err := demonware.ReadVarint(e, j)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -72,12 +88,12 @@ func TestBalancesResponseShape(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("%d balances, want 3", len(got))
 	}
-	// Amounts are zigzag encoded; a raw varint arrives halved (10000 showed as 5000).
-	if got[0].id != 10 || got[0].amount != zigzag(1234) {
-		t.Fatalf("first balance = %+v, want id 1 amount zigzag(1234)=%d", got[0], zigzag(1234))
+	// Amounts are demonware.ZigZag encoded; a raw varint arrives halved (10000 showed as 5000).
+	if got[0].id != 10 || got[0].amount != demonware.ZigZag(1234) {
+		t.Fatalf("first balance = %+v, want id 1 amount demonware.ZigZag(1234)=%d", got[0], demonware.ZigZag(1234))
 	}
-	if got[2].id != 12 || got[2].amount != zigzag(7) {
-		t.Fatalf("third balance = %+v, want id 3 amount zigzag(7)=%d", got[2], zigzag(7))
+	if got[2].id != 12 || got[2].amount != demonware.ZigZag(7) {
+		t.Fatalf("third balance = %+v, want id 3 amount demonware.ZigZag(7)=%d", got[2], demonware.ZigZag(7))
 	}
 }
 
@@ -86,15 +102,15 @@ func TestBalancesResponseShape(t *testing.T) {
 func TestStructTaskReplyLayout(t *testing.T) {
 	reply := structTaskReply(taskGetBalancesV3, []byte{0x0A, 0x02, 0x08, 0x01})
 
-	if reply[0] != tagU64 {
-		t.Fatalf("reply[0] = %#x, want transaction tag %#x", reply[0], tagU64)
+	if reply[0] != demonware.TagUint64 {
+		t.Fatalf("reply[0] = %#x, want transaction tag %#x", reply[0], demonware.TagUint64)
 	}
 	// u64 tag + 8 bytes, u32 tag + 4 bytes, u8 tag + 1 byte.
 	const taskOff = 1 + 8 + 1 + 4
-	if reply[taskOff] != tagU8 || reply[taskOff+1] != taskGetBalancesV3 {
+	if reply[taskOff] != demonware.TagUint8 || reply[taskOff+1] != taskGetBalancesV3 {
 		t.Fatalf("task byte not at %d: % x", taskOff, reply[:taskOff+2])
 	}
-	if reply[taskOff+2] != tagStruct {
+	if reply[taskOff+2] != demonware.TagStruct {
 		t.Fatalf("struct must follow the task byte, got %#x", reply[taskOff+2])
 	}
 }
@@ -107,7 +123,7 @@ func TestBalancesResponseCap(t *testing.T) {
 	n := 0
 	for i := 0; i < len(sb); {
 		i++
-		ln, next, err := readVarint(sb, i)
+		ln, next, err := demonware.ReadVarint(sb, i)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -120,25 +136,25 @@ func TestBalancesResponseCap(t *testing.T) {
 }
 
 func TestStructPayloadRejectsJunk(t *testing.T) {
-	if got := structPayload([]byte{0x50, 0x03, 0xf5}); got != nil {
+	if got := demonware.TaskStructPayload([]byte{0x50, 0x03, 0xf5}); got != nil {
 		t.Fatalf("short buffer returned % x", got)
 	}
-	if got := structPayload(bytes.Repeat([]byte{0xff}, 32)); got != nil {
+	if got := demonware.TaskStructPayload(bytes.Repeat([]byte{0xff}, 32)); got != nil {
 		t.Fatalf("junk returned % x", got)
 	}
 }
 
-// The game read a raw 10000 as 5000, so the amount must survive a zigzag round trip.
+// The game read a raw 10000 as 5000, so the amount must survive a demonware.ZigZag round trip.
 func TestAmountSurvivesZigzagRoundTrip(t *testing.T) {
 	for _, v := range []int64{0, 1, 7, 1234, 5000, 10000} {
-		enc := zigzag(v)
+		enc := demonware.ZigZag(v)
 		dec := int64(enc>>1) ^ -int64(enc&1)
 		if dec != v {
-			t.Fatalf("zigzag(%d) decoded to %d", v, dec)
+			t.Fatalf("demonware.ZigZag(%d) decoded to %d", v, dec)
 		}
 	}
-	if zigzag(10000) != 20000 {
-		t.Fatalf("zigzag(10000) = %d, want 20000 so the game shows 10000", zigzag(10000))
+	if demonware.ZigZag(10000) != 20000 {
+		t.Fatalf("demonware.ZigZag(10000) = %d, want 20000 so the game shows 10000", demonware.ZigZag(10000))
 	}
 }
 
@@ -162,7 +178,7 @@ func TestAchievementsRepliesCarryTheirStringField(t *testing.T) {
 func structBodyOf(t *testing.T, reply []byte) []byte {
 	t.Helper()
 	const off = 1 + 8 + 1 + 4 // u64 transaction, u32 error
-	if reply[off] != tagU8 || reply[off+2] != tagStruct {
+	if reply[off] != demonware.TagUint8 || reply[off+2] != demonware.TagStruct {
 		t.Fatalf("not a struct reply: % x", reply[:off+3])
 	}
 	return reply[off+3+5:]
@@ -175,7 +191,7 @@ func hasField(sb []byte, want byte) bool {
 		if wire != 2 {
 			return false
 		}
-		ln, next, err := readVarint(sb, i)
+		ln, next, err := demonware.ReadVarint(sb, i)
 		if err != nil {
 			return false
 		}

@@ -29,6 +29,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 var riftDir = "riftdata" // D3_RIFTDATA (config.go)
@@ -84,21 +86,13 @@ func riftDataFiles() []string {
 	return out
 }
 
-func readVarint(b []byte, i int) (uint64, int, error) {
-	v, n := binary.Uvarint(b[i:])
-	if n <= 0 {
-		return 0, i, errors.New("bad varint")
-	}
-	return v, i + n, nil
-}
-
 // patchChallengeConfig rewrites a captured ChallengeData: field 1 (number) is
 // replaced, fields 2-4 (start, last broadcast, end) get never-expiring values,
 // field 5 (hash) is kept.
 func patchChallengeConfig(src []byte, number uint32) ([]byte, error) {
 	var hash uint64
 	for i := 0; i < len(src); {
-		key, ni, err := readVarint(src, i)
+		key, ni, err := demonware.ReadVarint(src, i)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +100,7 @@ func patchChallengeConfig(src []byte, number uint32) ([]byte, error) {
 		if key&7 != 0 {
 			return nil, errors.New("unexpected wire type in challenge config")
 		}
-		v, ni, err := readVarint(src, i)
+		v, ni, err := demonware.ReadVarint(src, i)
 		if err != nil {
 			return nil, err
 		}

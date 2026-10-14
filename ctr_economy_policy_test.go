@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 func TestSQLiteUnlockAllOwnsCatalogWithoutWrites(t *testing.T) {
@@ -79,16 +81,16 @@ func TestPlatformMarketplaceUnlockAllInventory(t *testing.T) {
 	if sqliteChanges(t, db) != before {
 		t.Fatal("unlock-all purchase or balance push wrote rows")
 	}
-	w := &bdWriter{b: []byte{svcMarketplace, tagU8, taskGetInventoryPaginated}}
-	w.strv("octane_psn")
-	w.u32(1)
-	w.u32(4096)
-	w.b = append(w.b, 0)
-	reply := sharedTask(t, l, wire, w.b)
+	w := demonware.NewWriter([]byte{svcMarketplace, demonware.TagUint8, taskGetInventoryPaginated})
+	w.String("octane_psn")
+	w.Uint32(1)
+	w.Uint32(4096)
+	w.Raw([]byte{0})
+	reply := sharedTask(t, l, wire, w.Bytes())
 	marketplaceOutcome(t, reply, 0)
-	r := &bdReader{b: reply, off: 14}
-	task, e1 := r.u8()
-	count, e2 := r.u32()
+	r := demonware.NewReader(reply[14:])
+	task, e1 := r.Uint8()
+	count, e2 := r.Uint32()
 	if e1 != nil || e2 != nil || task != taskGetInventoryPaginated || int(count) != len(catalogItems) {
 		t.Fatalf("inventory count = %d", count)
 	}

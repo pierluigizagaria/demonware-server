@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 func TestCTRUmbrellaIssuedTicket(t *testing.T) {
@@ -49,18 +51,18 @@ func TestCTRUmbrellaIssuedTicket(t *testing.T) {
 func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
 	host := &lobbyConn{n: 5551, player: &playerID{Username: "Mars", PID: 1800000119}}
 	defer dropSessionsOf(host.n)
-	info := &bdWriter{}
-	info.blobv(make([]byte, 67))
-	info.u32(8)
-	info.u32(8)
-	host.onMatchMakingContext(mmCreateSession, &bdReader{b: info.b}, "ctr:Delta")
+	info := &demonware.Writer{}
+	info.Blob(make([]byte, 67))
+	info.Uint32(8)
+	info.Uint32(8)
+	host.onMatchMakingContext(mmCreateSession, demonware.NewReader(info.Bytes()), "ctr:Delta")
 
 	dropSessionsOf(host.n) // the host loses its connection
 
 	friend := &lobbyConn{n: 5552, player: &playerID{Username: "Collecting", PID: 1800003406}}
-	ask := &bdWriter{}
-	ask.u64(1800000119)
-	reply := friend.onFriendSessions(14, &bdReader{b: ask.b}, "ctr:Delta")
+	ask := &demonware.Writer{}
+	ask.Uint64(1800000119)
+	reply := friend.onFriendSessions(14, demonware.NewReader(ask.Bytes()), "ctr:Delta")
 	if n := binary.LittleEndian.Uint32(reply[17:21]); n != 1 {
 		t.Fatalf("orphaned host session not offered to friend: %d results", n)
 	}
@@ -73,7 +75,7 @@ func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
 	}
 	sessionsMu.Unlock()
 	reapSessionsOnce()
-	reply = friend.onFriendSessions(14, &bdReader{b: ask.b}, "ctr:Delta")
+	reply = friend.onFriendSessions(14, demonware.NewReader(ask.Bytes()), "ctr:Delta")
 	if n := binary.LittleEndian.Uint32(reply[17:21]); n != 0 {
 		t.Fatalf("abandoned session still offered: %d results", n)
 	}
@@ -85,10 +87,10 @@ func TestCTRHTTPProxyReplyEncoding(t *testing.T) {
 	body := []byte(`{"enrollments":[]}`)
 	reply := httpProxyReply(1, 200, body)
 	i := 16 // transaction + error + task; structured replies have no result counts.
-	if len(reply) < i+6 || reply[i] != tagStruct {
+	if len(reply) < i+6 || reply[i] != demonware.TagStruct {
 		t.Fatalf("no struct buffer immediately after task header: %x", reply)
 	}
-	sb := reply[i+6:] // tagStruct + (tagU32 + u32 length)
+	sb := reply[i+6:] // demonware.TagStruct + (demonware.TagUint32 + u32 length)
 	want := append([]byte{0x08, 0xC8, 0x01, 0x10, 0xC8, 0x01, 0x1A, byte(len(body))}, body...)
 	if !bytes.Equal(sb, want) {
 		t.Fatalf("struct buffer\n got %x\nwant %x", sb, want)
@@ -103,22 +105,22 @@ func TestCTRRichPresenceRoundTrip(t *testing.T) {
 	onlineMu.Unlock()
 	defer dropOnline(host.n)
 
-	set := &bdWriter{}
-	set.str("")
-	set.u64(1800000119)
-	set.str("nintendo")
-	set.u8(2)
-	set.blobv([]byte("racing"))
-	host.onRichPresence(rpSet, &bdReader{b: set.b})
+	set := &demonware.Writer{}
+	set.String("")
+	set.Uint64(1800000119)
+	set.String("nintendo")
+	set.Uint8(2)
+	set.Blob([]byte("racing"))
+	host.onRichPresence(rpSet, demonware.NewReader(set.Bytes()))
 
 	ask := func(id uint64) []byte {
-		q := &bdWriter{}
-		q.str("")
-		q.u32(1)
-		q.u64(id)
-		q.str("nintendo")
+		q := &demonware.Writer{}
+		q.String("")
+		q.Uint32(1)
+		q.Uint64(id)
+		q.String("nintendo")
 		peer := &lobbyConn{n: 7772, player: &playerID{Username: "Collecting", PID: 1800003406}}
-		return peer.onRichPresence(rpGetAndSubscribe, &bdReader{b: q.b})
+		return peer.onRichPresence(rpGetAndSubscribe, demonware.NewReader(q.Bytes()))
 	}
 	if n := binary.LittleEndian.Uint32(ask(1800000119)[17:21]); n != 1 {
 		t.Fatalf("online friend presence missing: %d results", n)
@@ -131,12 +133,12 @@ func TestCTRRichPresenceRoundTrip(t *testing.T) {
 func TestCTRSessionCreateDelete(t *testing.T) {
 	l := &lobbyConn{n: 987654}
 	defer dropSessionsOf(l.n)
-	info := &bdWriter{}
-	info.blobv(make([]byte, 67))
-	info.u32(8)
-	info.u32(8)
-	info.blobv([]byte("CTR attributes"))
-	response := l.onMatchMakingContext(1, &bdReader{b: info.b}, "ctr:Delta")
+	info := &demonware.Writer{}
+	info.Blob(make([]byte, 67))
+	info.Uint32(8)
+	info.Uint32(8)
+	info.Blob([]byte("CTR attributes"))
+	response := l.onMatchMakingContext(1, demonware.NewReader(info.Bytes()), "ctr:Delta")
 	if len(response) < 26 || binary.LittleEndian.Uint32(response[17:21]) != 1 {
 		t.Fatalf("create must return one session ID: %x", response)
 	}
@@ -152,17 +154,17 @@ func TestCTRSessionCreateDelete(t *testing.T) {
 	if session == nil || session.context != "ctr:Delta" {
 		t.Fatal("missing stored CTR session")
 	}
-	args := &bdWriter{}
-	args.blobv(session.id[:])
+	args := &demonware.Writer{}
+	args.Blob(session.id[:])
 	other := &lobbyConn{n: 987655}
-	other.onMatchMakingContext(3, &bdReader{b: args.b}, "ctr:Delta")
+	other.onMatchMakingContext(3, demonware.NewReader(args.Bytes()), "ctr:Delta")
 	sessionsMu.Lock()
 	_, exists := sessions[session.id]
 	sessionsMu.Unlock()
 	if !exists {
 		t.Fatal("another connection deleted the session")
 	}
-	l.onMatchMakingContext(3, &bdReader{b: args.b}, "ctr:Delta")
+	l.onMatchMakingContext(3, demonware.NewReader(args.Bytes()), "ctr:Delta")
 	sessionsMu.Lock()
 	_, exists = sessions[session.id]
 	sessionsMu.Unlock()

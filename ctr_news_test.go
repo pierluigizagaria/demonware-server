@@ -7,6 +7,8 @@ import (
 	"log"
 	"strings"
 	"testing"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 func setNews(t *testing.T, env map[string]string) {
@@ -21,50 +23,50 @@ func setNews(t *testing.T, env map[string]string) {
 }
 
 func newsFetch(key, language string, locations ...[2]uint32) []byte {
-	w := &bdWriter{b: []byte{104, tagU8, 5}}
-	w.strv(key)
-	w.strv(language)
-	w.u32(uint32(len(locations)))
+	w := demonware.NewWriter([]byte{104, demonware.TagUint8, 5})
+	w.String(key)
+	w.String(language)
+	w.Uint32(uint32(len(locations)))
 	for _, loc := range locations {
-		w.u32(loc[0])
-		w.u32(loc[1])
+		w.Uint32(loc[0])
+		w.Uint32(loc[1])
 	}
-	return append(w.b, 0)
+	return append(w.Bytes(), 0)
 }
 
 func newsViewed(key, language string, ids ...uint64) []byte {
-	w := &bdWriter{b: []byte{104, tagU8, 4}}
-	w.strv(key)
-	w.u32(uint32(len(ids)))
+	w := demonware.NewWriter([]byte{104, demonware.TagUint8, 4})
+	w.String(key)
+	w.Uint32(uint32(len(ids)))
 	for _, id := range ids {
-		w.strv(language)
-		w.u64(id)
-		w.u32(1)
+		w.String(language)
+		w.Uint64(id)
+		w.Uint32(1)
 	}
-	return append(w.b, 0)
+	return append(w.Bytes(), 0)
 }
 
-func newsReply(t *testing.T, reply []byte, task byte, code, count uint32) *bdReader {
+func newsReply(t *testing.T, reply []byte, task byte, code, count uint32) *demonware.Reader {
 	t.Helper()
-	r := &bdReader{b: reply}
-	if tx, err := r.u64(); err != nil || tx == 0 {
+	r := demonware.NewReader(reply)
+	if tx, err := r.Uint64(); err != nil || tx == 0 {
 		t.Fatalf("transaction = %d, %v", tx, err)
 	}
-	if got, err := r.u32(); err != nil || got != code {
+	if got, err := r.Uint32(); err != nil || got != code {
 		t.Fatalf("error = %d, %v; want %d", got, err, code)
 	}
 	if code != 0 {
 		newsEnd(t, r)
 		return r
 	}
-	if got, err := r.u8(); err != nil || got != task {
+	if got, err := r.Uint8(); err != nil || got != task {
 		t.Fatalf("task = %d, %v; want %d", got, err, task)
 	}
-	if got, err := r.u32(); err != nil || got != count {
+	if got, err := r.Uint32(); err != nil || got != count {
 		t.Fatalf("result count = %d, %v; want %d", got, err, count)
 	}
 	if count != 0 {
-		if got, err := r.u32(); err != nil || got != count {
+		if got, err := r.Uint32(); err != nil || got != count {
 			t.Fatalf("total = %d, %v; want %d", got, err, count)
 		}
 	} else {
@@ -73,33 +75,33 @@ func newsReply(t *testing.T, reply []byte, task byte, code, count uint32) *bdRea
 	return r
 }
 
-func newsEnd(t *testing.T, r *bdReader) {
+func newsEnd(t *testing.T, r *demonware.Reader) {
 	t.Helper()
-	if r.off != len(r.b) {
-		t.Fatalf("unexpected trailing reply bytes: %d", len(r.b)-r.off)
+	if len(r.Remaining()) != 0 {
+		t.Fatalf("unexpected trailing reply bytes: %d", len(r.Remaining()))
 	}
 }
 
-func newsLocation(t *testing.T, r *bdReader, location, count uint32) {
+func newsLocation(t *testing.T, r *demonware.Reader, location, count uint32) {
 	t.Helper()
-	if got, err := r.u32(); err != nil || got != location {
+	if got, err := r.Uint32(); err != nil || got != location {
 		t.Fatalf("location = %d, %v; want %d", got, err, location)
 	}
-	if got, err := r.u32(); err != nil || got != count {
+	if got, err := r.Uint32(); err != nil || got != count {
 		t.Fatalf("message count = %d, %v; want %d", got, err, count)
 	}
 }
 
-func newsMessage(t *testing.T, r *bdReader, language, text string) uint64 {
+func newsMessage(t *testing.T, r *demonware.Reader, language, text string) uint64 {
 	t.Helper()
-	id, err := r.u64()
+	id, err := r.Uint64()
 	if err != nil || id == 0 {
 		t.Fatalf("message ID = %d, %v", id, err)
 	}
-	if got, err := r.str(); err != nil || got != language || len(got) > 19 {
+	if got, err := r.String(); err != nil || got != language || len(got) > 19 {
 		t.Fatalf("language = %q, %v; want %q", got, err, language)
 	}
-	content, err := r.blob()
+	content, err := r.Blob()
 	if err != nil || len(content) >= 4096 {
 		t.Fatalf("content length = %d, %v", len(content), err)
 	}
@@ -107,7 +109,7 @@ func newsMessage(t *testing.T, r *bdReader, language, text string) uint64 {
 	if err := json.Unmarshal(content, &object); err != nil || len(object) != 1 || object["content_long"] != text {
 		t.Fatalf("content_long did not round-trip: %v", err)
 	}
-	if metadata, err := r.blob(); err != nil || string(metadata) != "{}" {
+	if metadata, err := r.Blob(); err != nil || string(metadata) != "{}" {
 		t.Fatalf("metadata = %q, %v", metadata, err)
 	}
 	return id
@@ -211,7 +213,7 @@ func TestCTRNewsRefusesMalformedRequests(t *testing.T) {
 		bad[len(bad)-1] = 1
 		newsReply(t, sharedTask(t, l, wire, bad), request[2], errUnhandled, 0)
 		bad = bytes.Clone(request)
-		bad[1] = tagBool
+		bad[1] = demonware.TagBool
 		newsReply(t, sharedTask(t, l, wire, bad), request[2], errUnhandled, 0)
 	}
 	// Wrong tags for every argument, including the u64 viewed message ID.
@@ -221,7 +223,7 @@ func TestCTRNewsRefusesMalformedRequests(t *testing.T) {
 	}{{fetch, []int{3, 8, 12, 17, 22}}, {viewed, []int{3, 15, 20, 24, 33}}} {
 		for _, offset := range tc.offsets {
 			bad := bytes.Clone(tc.request)
-			bad[offset] = tagBool
+			bad[offset] = demonware.TagBool
 			newsReply(t, sharedTask(t, l, wire, bad), bad[2], errUnhandled, 0)
 		}
 	}

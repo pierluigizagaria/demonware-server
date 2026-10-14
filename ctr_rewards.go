@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 // Extracted from the Switch 1.0.15 CSystemData::gpMapData table, not a
@@ -37,14 +39,14 @@ type achievementEvent struct {
 }
 
 func balanceUpdatePayload(pid uint64, amount int64) []byte {
-	owner := pbVarintField(nil, 1, pid)
-	owner = pbBytesField(owner, 2, []byte(marketplaceAccountType))
-	entry := pbBytesField(nil, 1, owner)
-	entry = pbVarintField(entry, 2, wumpaCurrency)
-	entry = pbVarintField(entry, 3, 0xffffffff) // legacy 32-bit balance sentinel
-	entry = pbVarintField(entry, 4, 0)
-	entry = pbVarintField(entry, 5, zigzag(amount))
-	return pbBytesField(nil, 1, entry)
+	owner := demonware.AppendVarintField(nil, 1, pid)
+	owner = demonware.AppendBytesField(owner, 2, []byte(marketplaceAccountType))
+	entry := demonware.AppendBytesField(nil, 1, owner)
+	entry = demonware.AppendVarintField(entry, 2, wumpaCurrency)
+	entry = demonware.AppendVarintField(entry, 3, 0xffffffff) // legacy 32-bit balance sentinel
+	entry = demonware.AppendVarintField(entry, 4, 0)
+	entry = demonware.AppendVarintField(entry, 5, demonware.ZigZag(amount))
+	return demonware.AppendBytesField(nil, 1, entry)
 }
 func (l *lobbyConn) pushCurrentBalance() {
 	a, err := economy.snapshot(l.pid())
@@ -52,94 +54,51 @@ func (l *lobbyConn) pushCurrentBalance() {
 		l.logf("CTR balance push read: %v", err)
 		return
 	}
-	if err := l.sendPush(76, func(w *bdWriter) { w.structv(balanceUpdatePayload(l.pid(), a.Balances[10])) }); err != nil {
+	if err := l.sendPush(76, func(w *demonware.Writer) { w.Struct(balanceUpdatePayload(l.pid(), a.Balances[10])) }); err != nil {
 		l.logf("CTR balance push: %v", err)
 	}
 }
 
-type economyProtoField struct {
-	number uint64
-	wire   uint64
-	value  uint64
-	data   []byte
-}
-
-func economyProto(b []byte) ([]economyProtoField, error) {
-	if len(b) > 1<<20 {
-		return nil, fmt.Errorf("event too large")
-	}
-	var out []economyProtoField
-	for i := 0; i < len(b); {
-		tag, next, err := readVarint(b, i)
-		if err != nil || tag>>3 == 0 {
-			return nil, fmt.Errorf("bad protobuf tag")
-		}
-		i = next
-		f := economyProtoField{number: tag >> 3, wire: tag & 7}
-		switch f.wire {
-		case 0:
-			f.value, i, err = readVarint(b, i)
-			if err != nil {
-				return nil, err
-			}
-		case 2:
-			n, nxt, e := readVarint(b, i)
-			if e != nil || n > uint64(len(b)-nxt) {
-				return nil, fmt.Errorf("truncated protobuf")
-			}
-			i = nxt
-			f.data = b[i : i+int(n)]
-			i += int(n)
-		default:
-			return nil, fmt.Errorf("unsupported event wire type")
-		}
-		out = append(out, f)
-		if len(out) > 4096 {
-			return nil, fmt.Errorf("too many fields")
-		}
-	}
-	return out, nil
-}
 func parseRewardEvents(payload []byte) ([]achievementEvent, error) {
-	sb := structPayload(payload)
+	sb := demonware.TaskStructPayload(payload)
 	if sb == nil {
 		return nil, fmt.Errorf("missing or truncated event struct")
 	}
-	fields, err := economyProto(sb)
+	fields, err := demonware.ParseFields(sb)
 	if err != nil {
 		return nil, err
 	}
 	var out []achievementEvent
 	for _, f := range fields {
-		if f.number != 2 || f.wire != 2 {
+		if f.Number != 2 || f.Wire != 2 {
 			continue
 		}
-		parts, err := economyProto(f.data)
+		parts, err := demonware.ParseFields(f.Data)
 		if err != nil {
 			return nil, err
 		}
 		e := achievementEvent{Values: map[string]uint64{}}
 		for _, p := range parts {
-			switch p.number {
+			switch p.Number {
 			case 1:
-				e.Name = string(p.data)
+				e.Name = string(p.Data)
 			case 2:
-				e.Timestamp = p.value
+				e.Timestamp = p.Value
 			case 4:
-				e.ID = p.value
+				e.ID = p.Value
 			case 3:
-				kv, err := economyProto(p.data)
+				kv, err := demonware.ParseFields(p.Data)
 				if err != nil {
 					return nil, err
 				}
 				var key string
 				var value uint64
 				for _, k := range kv {
-					if k.number == 1 {
-						key = string(k.data)
+					if k.Number == 1 {
+						key = string(k.Data)
 					}
-					if k.number == 2 {
-						value = k.value
+					if k.Number == 2 {
+						value = k.Value
 					}
 				}
 				if key == "" || len(key) > 100 {

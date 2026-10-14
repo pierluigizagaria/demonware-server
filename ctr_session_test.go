@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"testing"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 func TestCTRFriendBeyondFirstTwenty(t *testing.T) {
@@ -18,17 +20,17 @@ func TestCTRFriendBeyondFirstTwenty(t *testing.T) {
 			}
 		}
 	}()
-	info := &bdWriter{}
-	info.blobv(make([]byte, 67))
-	info.u32(8)
-	info.u32(8)
-	host.onMatchMakingContext(mmCreateSession, &bdReader{b: info.b}, "ctr:full-list-test")
+	info := &demonware.Writer{}
+	info.Blob(make([]byte, 67))
+	info.Uint32(8)
+	info.Uint32(8)
+	host.onMatchMakingContext(mmCreateSession, demonware.NewReader(info.Bytes()), "ctr:full-list-test")
 	for _, size := range []int{20, 80} {
-		ids := &bdWriter{}
+		ids := &demonware.Writer{}
 		for i := 1; i <= size; i++ {
-			ids.u64(uint64(90300 + i))
+			ids.Uint64(uint64(90300 + i))
 		}
-		reply := guest.onFriendSessions(14, &bdReader{b: ids.b}, "ctr:full-list-test")
+		reply := guest.onFriendSessions(14, demonware.NewReader(ids.Bytes()), "ctr:full-list-test")
 		want := uint32(0)
 		if size >= 43 {
 			want = 1
@@ -51,36 +53,36 @@ func TestCTRFriendResultUnpacksUploadedAttributes(t *testing.T) {
 			}
 		}
 	}()
-	attrs := &bdWriter{}
-	attrs.blobv(make([]byte, 8))
-	attrs.blobv(make([]byte, 16))
-	attrs.strv("PARTY-Test")
-	attrs.u64(host.pid())
-	attrs.u64(123)
+	attrs := &demonware.Writer{}
+	attrs.Blob(make([]byte, 8))
+	attrs.Blob(make([]byte, 16))
+	attrs.String("PARTY-Test")
+	attrs.Uint64(host.pid())
+	attrs.Uint64(123)
 	for i := 0; i < 12; i++ {
-		attrs.u32(uint32(i))
+		attrs.Uint32(uint32(i))
 	}
-	attrs.raw([]byte{0x0d, 0, 0, 0, 0})
-	request := &bdWriter{}
-	request.blobv(make([]byte, 67))
-	request.u32(8)
-	request.u32(8)
-	request.blobv(attrs.b)
-	request.u32(999) // request option must not leak into result fields
-	host.onMatchMakingContext(mmCreateSession, &bdReader{b: request.b}, "ctr:attrs-test")
-	ask := &bdWriter{}
-	ask.u64(host.pid())
-	result := guest.onFriendSessions(14, &bdReader{b: ask.b}, "ctr:attrs-test")
-	r := &bdReader{b: result, off: 26}
-	r.blob()
-	r.blob()
-	r.u32()
-	r.u32()
-	r.u32()
-	if !bytes.Equal(result[r.off:], attrs.b) {
+	attrs.Raw([]byte{0x0d, 0, 0, 0, 0})
+	request := &demonware.Writer{}
+	request.Blob(make([]byte, 67))
+	request.Uint32(8)
+	request.Uint32(8)
+	request.Blob(attrs.Bytes())
+	request.Uint32(999) // request option must not leak into result fields
+	host.onMatchMakingContext(mmCreateSession, demonware.NewReader(request.Bytes()), "ctr:attrs-test")
+	ask := &demonware.Writer{}
+	ask.Uint64(host.pid())
+	result := guest.onFriendSessions(14, demonware.NewReader(ask.Bytes()), "ctr:attrs-test")
+	r := demonware.NewReader(result[26:])
+	r.Blob()
+	r.Blob()
+	r.Uint32()
+	r.Uint32()
+	r.Uint32()
+	if !bytes.Equal(r.Remaining(), attrs.Bytes()) {
 		t.Fatal("CTR attributes retain upload wrapper or request options")
 	}
-	securityID, err := r.blob()
+	securityID, err := r.Blob()
 	if err != nil || len(securityID) != 8 {
 		t.Fatal("client cannot read first result attribute")
 	}
@@ -98,31 +100,31 @@ func TestCTRReservedSessionLifecycle(t *testing.T) {
 			}
 		}
 	}()
-	reply := host.onMatchMakingContext(mmRequestSessionID, &bdReader{}, "ctr:reserve-test")
-	r := &bdReader{b: reply, off: 26}
-	sid, err := r.blob()
+	reply := host.onMatchMakingContext(mmRequestSessionID, demonware.NewReader(nil), "ctr:reserve-test")
+	r := demonware.NewReader(reply[26:])
+	sid, err := r.Blob()
 	if err != nil || len(sid) != 8 {
 		t.Fatal("missing reserved session ID", err)
 	}
 	lookup := func() uint32 {
-		w := &bdWriter{}
-		w.u64(host.pid())
-		b := guest.onFriendSessions(14, &bdReader{b: w.b}, "ctr:reserve-test")
+		w := &demonware.Writer{}
+		w.Uint64(host.pid())
+		b := guest.onFriendSessions(14, demonware.NewReader(w.Bytes()), "ctr:reserve-test")
 		return binary.LittleEndian.Uint32(b[17:21])
 	}
 	if lookup() != 0 {
 		t.Fatal("uninitialized reservation exposed to friends")
 	}
-	w := &bdWriter{}
-	w.blobv(sid)
-	w.blobv(make([]byte, 67))
-	w.u32(1)
-	w.u32(8)
-	bad := guest.onMatchMakingContext(mmInitializeSession, &bdReader{b: w.b}, "ctr:reserve-test")
+	w := &demonware.Writer{}
+	w.Blob(sid)
+	w.Blob(make([]byte, 67))
+	w.Uint32(1)
+	w.Uint32(8)
+	bad := guest.onMatchMakingContext(mmInitializeSession, demonware.NewReader(w.Bytes()), "ctr:reserve-test")
 	if binary.LittleEndian.Uint32(bad[10:14]) == 0 {
 		t.Fatal("non-owner initialized session")
 	}
-	good := host.onMatchMakingContext(mmInitializeSession, &bdReader{b: w.b}, "ctr:reserve-test")
+	good := host.onMatchMakingContext(mmInitializeSession, demonware.NewReader(w.Bytes()), "ctr:reserve-test")
 	if binary.LittleEndian.Uint32(good[10:14]) != 0 || lookup() != 1 {
 		t.Fatal("initialized room not discoverable")
 	}

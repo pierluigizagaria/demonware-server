@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 // Extracted from Switch 1.0.15 AchievementMetadata, not an invented reward.
@@ -107,5 +109,5 @@ func (s *economyStore) awardWindowShopping(pid uint64, events []achievementEvent
 		}
 		state, _ = windowShoppingState(a, now)
 	}
-	return credit, pbBytesField(nil, 1, state.encode()), nil
+	return credit, demonware.AppendBytesField(nil, 1, state.encode()), nil
 }

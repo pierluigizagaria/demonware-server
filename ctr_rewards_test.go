@@ -3,6 +3,8 @@ package main
 import (
 	"testing"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 func capturedRace(at time.Time) achievementEvent {
@@ -71,22 +73,22 @@ func TestRewardRejectsUnknownTrackAndDuplicateEvents(t *testing.T) {
 	}
 }
 func TestRewardEventWireRoundTrip(t *testing.T) {
-	e := pbBytesField(nil, 1, []byte("end_race"))
-	e = pbVarintField(e, 2, 1789989691)
-	kv := pbBytesField(nil, 1, []byte("Track"))
-	kv = pbVarintField(kv, 2, 3273086243)
-	e = pbBytesField(e, 3, kv)
-	sb := pbBytesField(nil, 1, []byte("octane_switch"))
-	sb = pbBytesField(sb, 2, e)
-	w := &bdWriter{}
-	w.b = []byte{125, 3, 1}
-	w.structv(sb)
-	got, err := parseRewardEvents(w.b)
+	e := demonware.AppendBytesField(nil, 1, []byte("end_race"))
+	e = demonware.AppendVarintField(e, 2, 1789989691)
+	kv := demonware.AppendBytesField(nil, 1, []byte("Track"))
+	kv = demonware.AppendVarintField(kv, 2, 3273086243)
+	e = demonware.AppendBytesField(e, 3, kv)
+	sb := demonware.AppendBytesField(nil, 1, []byte("octane_switch"))
+	sb = demonware.AppendBytesField(sb, 2, e)
+	w := &demonware.Writer{}
+	w = demonware.NewWriter([]byte{125, 3, 1})
+	w.Struct(sb)
+	got, err := parseRewardEvents(w.Bytes())
 	if err != nil || len(got) != 1 || got[0].Values["Track"] != 3273086243 {
 		t.Fatalf("decode %v %v", got, err)
 	}
-	w.b = w.b[:len(w.b)-1]
-	if _, err := parseRewardEvents(w.b); err == nil {
+	w = demonware.NewWriter(w.Bytes()[:len(w.Bytes())-1])
+	if _, err := parseRewardEvents(w.Bytes()); err == nil {
 		t.Fatal("truncated event accepted")
 	}
 }

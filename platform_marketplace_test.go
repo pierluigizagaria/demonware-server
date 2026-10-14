@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"os"
 	"testing"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 // Synthetic request derived from the original PS4 0xac1e70 -> 0x97410 path,
@@ -33,14 +35,14 @@ func marketplaceHex(t *testing.T, s string) []byte {
 
 func marketplaceOutcome(t *testing.T, reply []byte, want uint32) {
 	t.Helper()
-	r := &bdReader{b: reply}
-	if _, err := r.u64(); err != nil {
+	r := demonware.NewReader(reply)
+	if _, err := r.Uint64(); err != nil {
 		t.Fatal(err)
 	}
-	if code, err := r.u32(); err != nil || code != want {
+	if code, err := r.Uint32(); err != nil || code != want {
 		t.Fatalf("task error = %d, %v; want %d", code, err, want)
 	}
-	if want != 0 && r.off != len(reply) {
+	if want != 0 && r.Position() != len(reply) {
 		t.Fatal("error reply contains success data")
 	}
 }
@@ -82,19 +84,19 @@ func TestPlatformMarketplaceRejectsWrongContexts(t *testing.T) {
 	for _, task := range []byte{taskGetBalancesV3, taskGetInventoryPaginated, taskPurchaseSkus} {
 		s := marketplaceTestStore(t)
 		l, wire := sharedPS4Lobby()
-		w := &bdWriter{b: []byte{svcMarketplace, tagU8, task}}
+		w := demonware.NewWriter([]byte{svcMarketplace, demonware.TagUint8, task})
 		switch task {
 		case taskGetBalancesV3:
-			w.structv(pbVarintField(pbBytesField(nil, 1, []byte("octane_switch")), 2, 3))
-			w.b = append(w.b, 0)
+			w.Struct(demonware.AppendVarintField(demonware.AppendBytesField(nil, 1, []byte("octane_switch")), 2, 3))
+			w.Raw([]byte{0})
 		case taskGetInventoryPaginated:
-			w.strv("octane_switch")
-			w.u32(1)
-			w.u32(16)
+			w.String("octane_switch")
+			w.Uint32(1)
+			w.Uint32(16)
 		case taskPurchaseSkus:
-			w.b = marketplaceHex(t, realPurchase)
+			w = demonware.NewWriter(marketplaceHex(t, realPurchase))
 		}
-		marketplaceOutcome(t, sharedTask(t, l, wire, w.b), errUnhandled)
+		marketplaceOutcome(t, sharedTask(t, l, wire, w.Bytes()), errUnhandled)
 		marketplaceNoFiles(t, s)
 	}
 }
@@ -113,9 +115,9 @@ func TestPS4MarketplaceRejectsUnsupportedTasksWithoutWrite(t *testing.T) {
 			payload[2] = byte(task)
 			marketplaceOutcome(t, sharedTask(t, l, wire, payload), errUnhandled)
 		}
-		payload[1] = tagBool
+		payload[1] = demonware.TagBool
 		marketplaceOutcome(t, sharedTask(t, l, wire, payload), errUnhandled)
-		payload[1] = tagU8
+		payload[1] = demonware.TagUint8
 	}
 	check()
 	marketplaceNoFiles(t, s)
@@ -170,9 +172,9 @@ func TestPS4MarketplaceRejectsMalformedBalances(t *testing.T) {
 		marketplaceOutcome(t, sharedTask(t, l, wire, payload[:n]), errUnhandled)
 	}
 	marketplaceOutcome(t, sharedTask(t, l, wire, append(payload, 0)), errUnhandled)
-	badLength := &bdWriter{b: []byte{svcMarketplace, tagU8, taskGetBalancesV3}}
-	badLength.structv(appendVarint([]byte{0x0a}, ^uint64(0)))
-	marketplaceOutcome(t, sharedTask(t, l, wire, badLength.b), errUnhandled)
+	badLength := demonware.NewWriter([]byte{svcMarketplace, demonware.TagUint8, taskGetBalancesV3})
+	badLength.Struct(demonware.AppendVarint([]byte{0x0a}, ^uint64(0)))
+	marketplaceOutcome(t, sharedTask(t, l, wire, badLength.Bytes()), errUnhandled)
 	marketplaceNoFiles(t, s)
 }
 
@@ -189,7 +191,7 @@ func marketplaceFrames(t *testing.T, l *lobbyConn, wire *platformWire) [][]byte 
 		if size < 50 || size > len(raw) {
 			t.Fatal("bad frame length")
 		}
-		plain, err := aesCBCDecrypt(l.keys.s2cAES, raw[10:26], raw[26:size-8])
+		plain, err := demonware.DecryptCBC(l.keys.S2CAES, raw[10:26], raw[26:size-8])
 		if err != nil || len(plain) < 5 {
 			t.Fatalf("frame decrypt: %v", err)
 		}
@@ -217,23 +219,23 @@ func TestPlatformMarketplacePurchaseInventoryAndBalancePush(t *testing.T) {
 			l.player.Title = tc.title
 			l.onTask(marketplaceHex(t, tc.request))
 			frames := marketplaceFrames(t, l, wire)
-			if len(frames) != 2 || frames[0][0] != innerTaskReply || frames[1][0] != innerPush {
+			if len(frames) != 2 || frames[0][0] != demonware.InnerTaskReply || frames[1][0] != demonware.InnerPush {
 				t.Fatal("purchase must reply before balance push")
 			}
 			marketplaceOutcome(t, frames[0][1:], 0)
 			wantBalance := int64(10000) - economyCatalog[200597].Price
-			// Check the entire push, including nested owner identity and zigzag amount.
-			owner := pbVarintField(nil, 1, l.pid())
-			owner = pbBytesField(owner, 2, []byte(tc.owner))
-			entry := pbBytesField(nil, 1, owner)
-			entry = pbVarintField(entry, 2, 10)
-			entry = pbVarintField(entry, 3, 0xffffffff)
-			entry = pbVarintField(entry, 4, 0)
-			entry = pbVarintField(entry, 5, zigzag(wantBalance))
-			push := &bdWriter{}
-			push.u32(76)
-			push.structv(pbBytesField(nil, 1, entry))
-			if !bytes.Equal(frames[1][1:], push.b) {
+			// Check the entire push, including nested owner identity and demonware.ZigZag amount.
+			owner := demonware.AppendVarintField(nil, 1, l.pid())
+			owner = demonware.AppendBytesField(owner, 2, []byte(tc.owner))
+			entry := demonware.AppendBytesField(nil, 1, owner)
+			entry = demonware.AppendVarintField(entry, 2, 10)
+			entry = demonware.AppendVarintField(entry, 3, 0xffffffff)
+			entry = demonware.AppendVarintField(entry, 4, 0)
+			entry = demonware.AppendVarintField(entry, 5, demonware.ZigZag(wantBalance))
+			push := &demonware.Writer{}
+			push.Uint32(76)
+			push.Struct(demonware.AppendBytesField(nil, 1, entry))
+			if !bytes.Equal(frames[1][1:], push.Bytes()) {
 				t.Fatal("wrong balance push owner or amount")
 			}
 			// Reload through a fresh store to prove the shared purchase was persisted.
@@ -241,20 +243,20 @@ func TestPlatformMarketplacePurchaseInventoryAndBalancePush(t *testing.T) {
 			if err != nil || a.Balances[10] != wantBalance || !ownsSKU(a, economyCatalog[200597]) {
 				t.Fatal("purchase debit/grant not persisted")
 			}
-			w := &bdWriter{b: []byte{svcMarketplace, tagU8, taskGetInventoryPaginated}}
-			w.strv(tc.context)
-			w.u32(1)
-			w.u32(16)
-			w.b = append(w.b, 0)
-			reply := sharedTask(t, l, wire, w.b)
+			w := demonware.NewWriter([]byte{svcMarketplace, demonware.TagUint8, taskGetInventoryPaginated})
+			w.String(tc.context)
+			w.Uint32(1)
+			w.Uint32(16)
+			w.Raw([]byte{0})
+			reply := sharedTask(t, l, wire, w.Bytes())
 			marketplaceOutcome(t, reply, 0)
-			r := &bdReader{b: reply, off: 14}
-			task, e1 := r.u8()
-			count, e2 := r.u32()
-			total, e3 := r.u32()
-			pid, e4 := r.u64()
-			kind, e5 := r.str()
-			item, e6 := r.u32()
+			r := demonware.NewReader(reply[14:])
+			task, e1 := r.Uint8()
+			count, e2 := r.Uint32()
+			total, e3 := r.Uint32()
+			pid, e4 := r.Uint64()
+			kind, e5 := r.String()
+			item, e6 := r.Uint32()
 			if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil || e6 != nil || task != taskGetInventoryPaginated || count != 1 || total != 1 || pid != l.pid() || kind != tc.owner || len(kind) > 10 || item != economyCatalog[200597].Items[0] {
 				t.Fatal("wrong inventory wire identity or catalog item")
 			}

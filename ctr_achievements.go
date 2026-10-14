@@ -1,6 +1,10 @@
 package main
 
-import "time"
+import (
+	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+)
 
 // Achievements use struct task replies; ordinary result-count replies fail decoding.
 const svcAchievements = 125
@@ -62,7 +66,7 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) []byte {
 			if len(updates) == 0 {
 				return
 			}
-			if err := l.sendPush(pushAchievementsUpdated, func(w *bdWriter) { w.structv(updates) }); err != nil {
+			if err := l.sendPush(pushAchievementsUpdated, func(w *demonware.Writer) { w.Struct(updates) }); err != nil {
 				l.logf("CTR achievements push: %v", err)
 				return
 			}
@@ -78,20 +82,20 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) []byte {
 		state := currentPitStopRefresh(a, time.Now())
 		var states []byte
 		if achievementRequested(payload, state) {
-			states = pbBytesField(nil, 1, state.encode())
+			states = demonware.AppendBytesField(nil, 1, state.encode())
 		}
 		for _, rule := range challengeRules.Rules {
 			if challenge, _, active := rule.current(a, time.Now()); active && achievementRequested(payload, challenge) {
-				states = pbBytesField(states, 1, challenge.encode())
+				states = demonware.AppendBytesField(states, 1, challenge.encode())
 			}
 		}
-		return structTaskReply(task, pbBytesField(states, 2, nil))
+		return structTaskReply(task, demonware.AppendBytesField(states, 2, nil))
 
 	case taskGetUserState:
 		// field 1 is the engine's user-state blob. Empty JSON keeps it valid and lets
 		// handleGetUserState fire CAEUserStateRefreshed, which is the refresh confirmation.
 		l.logf("CTR achievements getUserState -> empty state")
-		return structTaskReply(task, pbBytesField(nil, 1, []byte("{}")))
+		return structTaskReply(task, demonware.AppendBytesField(nil, 1, []byte("{}")))
 	}
 	// reportEvents and the activate/claim tasks take a request and return no body.
 	return structTaskReply(task, nil)
@@ -100,20 +104,20 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) []byte {
 // eventNames pulls the printable strings out of a reportEvents struct buffer so the race
 // reward event can be identified without dumping the whole payload.
 func eventNames(payload []byte) []string {
-	sb := structPayload(payload)
+	sb := demonware.TaskStructPayload(payload)
 	out := []string{}
 	for i := 0; i < len(sb) && len(out) < 12; {
 		wire := sb[i] & 7
 		i++
 		switch wire {
 		case 0:
-			_, next, err := readVarint(sb, i)
+			_, next, err := demonware.ReadVarint(sb, i)
 			if err != nil {
 				return out
 			}
 			i = next
 		case 2:
-			ln, next, err := readVarint(sb, i)
+			ln, next, err := demonware.ReadVarint(sb, i)
 			if err != nil || next+int(ln) > len(sb) {
 				return out
 			}

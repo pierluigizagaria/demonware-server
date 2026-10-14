@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 const (
@@ -67,68 +69,68 @@ func (c ctrNewsConfig) message(language string) ctrNewsMessage {
 
 // CUSA13795 01.21: 0x90e90 builds 104/5; 0x90170 and 0x91700 read
 // locations and messages. 0xcda540 consumes only content_long from the JSON.
-func (l *lobbyConn) onMarketingComms(task byte, r *bdReader) []byte {
+func (l *lobbyConn) onMarketingComms(task byte, r *demonware.Reader) []byte {
 	if l.player == nil || l.player.PID == 0 || !isCTRTitle(l.player.Title) {
 		return taskReply(task, errUnhandled, nil)
 	}
-	key, err := r.str()
+	key, err := r.String()
 	if err != nil || len(key) > 15 {
 		return taskReply(task, errUnhandled, nil)
 	}
 	switch task {
 	case taskGetMessagesForLocations:
-		language, err := r.str()
+		language, err := r.String()
 		if err != nil || len(language) > 19 {
 			return taskReply(task, errUnhandled, nil)
 		}
-		count, err := r.u32()
+		count, err := r.Uint32()
 		if err != nil || count == 0 || count > maxNewsEntries {
 			return taskReply(task, errUnhandled, nil)
 		}
 		locations := make([]struct{ location, capacity uint32 }, count)
 		for i := range locations {
-			location, e1 := r.u32()
-			capacity, e2 := r.u32()
+			location, e1 := r.Uint32()
+			capacity, e2 := r.Uint32()
 			if e1 != nil || e2 != nil {
 				return taskReply(task, errUnhandled, nil)
 			}
 			locations[i].location, locations[i].capacity = location, capacity
 		}
-		if r.off+1 != len(r.b) || r.b[r.off] != 0 {
+		if len(r.Remaining()) != 1 || r.Remaining()[0] != 0 {
 			return taskReply(task, errUnhandled, nil)
 		}
 		msg := ctrNews.message(language)
-		return taskReply(task, 0, func(w *bdWriter) uint32 {
+		return taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, loc := range locations {
-				w.u32(loc.location)
+				w.Uint32(loc.location)
 				if loc.location != 1 || loc.capacity == 0 || len(msg.content) == 0 {
-					w.u32(0)
+					w.Uint32(0)
 					continue
 				}
-				w.u32(1)
-				w.u64(msg.id)
-				w.strv(language)
-				w.blobv(msg.content)
-				w.blobv([]byte("{}"))
+				w.Uint32(1)
+				w.Uint64(msg.id)
+				w.String(language)
+				w.Blob(msg.content)
+				w.Blob([]byte("{}"))
 			}
 			return count
 		})
 	case taskReportMessagesViewed:
-		count, err := r.u32()
+		count, err := r.Uint32()
 		if err != nil || count > maxNewsEntries {
 			return taskReply(task, errUnhandled, nil)
 		}
 		ids := make([]uint64, count)
 		for i := range ids {
-			language, e1 := r.str()
-			id, e2 := r.u64()
-			_, e3 := r.u32()
+			language, e1 := r.String()
+			id, e2 := r.Uint64()
+			_, e3 := r.Uint32()
 			if e1 != nil || len(language) > 19 || e2 != nil || e3 != nil {
 				return taskReply(task, errUnhandled, nil)
 			}
 			ids[i] = id
 		}
-		if r.off+1 != len(r.b) || r.b[r.off] != 0 {
+		if len(r.Remaining()) != 1 || r.Remaining()[0] != 0 {
 			return taskReply(task, errUnhandled, nil)
 		}
 		l.logf("CTR news viewed count=%d", count)

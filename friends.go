@@ -14,9 +14,10 @@ package main
 // player is the identity its ticket was issued to (tickets.go).
 
 import (
-	"encoding/binary"
 	"strings"
 	"sync"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 type playerID struct {
@@ -112,45 +113,9 @@ func nicknameOnline(id uint64) string {
 	return ""
 }
 
-func (w *bdWriter) str(s string) {
-	w.b = append(w.b, tagString)
-	w.b = append(w.b, s...)
-	w.b = append(w.b, 0)
-}
-
-// u64s reads a run of typed u64s (0A) and, if present, a u64 array
-// (6E | 08 u32 size | u32 count | raw u64s).
-func (r *bdReader) u64s() []uint64 {
-	var out []uint64
-	for r.off < len(r.b) {
-		switch r.b[r.off] {
-		case tagU64:
-			if r.off+9 > len(r.b) {
-				return out
-			}
-			out = append(out, binary.LittleEndian.Uint64(r.b[r.off+1:]))
-			r.off += 9
-		case 100 + tagU64:
-			r.off++
-			if _, err := r.u32(); err != nil || r.off+4 > len(r.b) {
-				return out
-			}
-			n := int(binary.LittleEndian.Uint32(r.b[r.off:]))
-			r.off += 4
-			for i := 0; i < n && r.off+8 <= len(r.b); i++ {
-				out = append(out, binary.LittleEndian.Uint64(r.b[r.off:]))
-				r.off += 8
-			}
-		default:
-			return out
-		}
-	}
-	return out
-}
-
 // onGetUserNames: 12/9.
-func (l *lobbyConn) onGetUserNames(task byte, r *bdReader) []byte {
-	ids := r.u64s()
+func (l *lobbyConn) onGetUserNames(task byte, r *demonware.Reader) []byte {
+	ids := r.Uint64s()
 	type hit struct {
 		id   uint64
 		name string
@@ -162,21 +127,21 @@ func (l *lobbyConn) onGetUserNames(task byte, r *bdReader) []byte {
 		}
 	}
 	l.logf("friends getUserNames %d request(s) -> %d online %v", len(ids), len(hits), hits)
-	return taskReply(task, 0, func(w *bdWriter) uint32 {
+	return taskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, h := range hits {
-			w.u64(h.id)
-			w.str(h.name)
+			w.Uint64(h.id)
+			w.String(h.name)
 		}
 		return uint32(len(hits))
 	})
 }
 
 // onUserData: service 29. 1 = write own data, 4 = read a list's.
-func (l *lobbyConn) onUserData(task byte, r *bdReader) []byte {
-	ctx, _ := r.str()
+func (l *lobbyConn) onUserData(task byte, r *demonware.Reader) []byte {
+	ctx, _ := r.String()
 	switch task {
 	case 1:
-		data, err := r.blob()
+		data, err := r.Blob()
 		if err != nil || l.player == nil {
 			l.logf("userdata SET ctx=%q ignored (%v, player=%v)", ctx, err, l.player != nil)
 			return taskReply(task, 0, nil)
@@ -187,10 +152,10 @@ func (l *lobbyConn) onUserData(task byte, r *bdReader) []byte {
 		l.logf("userdata SET %s ctx=%q %d bytes", l.player.Username, ctx, len(data))
 		return taskReply(task, 0, nil)
 	case 4:
-		if r.off < len(r.b) && r.b[r.off] == tagBool {
-			r.off += 2
+		if len(r.Remaining()) > 0 && r.Remaining()[0] == demonware.TagBool {
+			_, _ = r.Bool()
 		}
-		ids := r.u64s()
+		ids := r.Uint64s()
 		type hit struct {
 			id   uint64
 			data []byte
@@ -209,10 +174,10 @@ func (l *lobbyConn) onUserData(task byte, r *bdReader) []byte {
 			}
 		}
 		l.logf("userdata GET ctx=%q %d request(s) -> %d", ctx, len(ids), len(hits))
-		return taskReply(task, 0, func(w *bdWriter) uint32 {
+		return taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, h := range hits {
-				w.u64(h.id)
-				w.blobv(h.data)
+				w.Uint64(h.id)
+				w.Blob(h.data)
 			}
 			return uint32(len(hits))
 		})
@@ -234,14 +199,14 @@ func pidOnline(id uint64) uint64 {
 // last issued a ticket under still resolves (player_names in ctrnf.db), so
 // a friend is found even before they connect to the lobby. Resolving an
 // identity does not make it joinable: only live sessions are advertised.
-func (l *lobbyConn) onGetUserIDs(task byte, r *bdReader) []byte {
-	count, err := r.u32()
+func (l *lobbyConn) onGetUserIDs(task byte, r *demonware.Reader) []byte {
+	count, err := r.Uint32()
 	if err != nil || count == 0 || count > 500 {
 		return taskReply(task, errUnhandled, nil)
 	}
 	names := make([]string, 0, count)
 	for i := uint32(0); i < count; i++ {
-		name, err := r.str()
+		name, err := r.String()
 		if err != nil || name == "" || len(name) > 63 {
 			return taskReply(task, errUnhandled, nil)
 		}
@@ -268,10 +233,10 @@ func (l *lobbyConn) onGetUserIDs(task byte, r *bdReader) []byte {
 		}
 	}
 	l.logf("friends getUserIDs %d request(s) -> %d resolved", len(names), len(found))
-	return taskReply(task, 0, func(w *bdWriter) uint32 {
+	return taskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, p := range found {
-			w.u64(p.PID)
-			w.str(p.Username)
+			w.Uint64(p.PID)
+			w.String(p.Username)
 		}
 		return uint32(len(found))
 	})

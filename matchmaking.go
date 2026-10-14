@@ -22,11 +22,12 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/binary"
 	"encoding/hex"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 const (
@@ -97,78 +98,39 @@ var (
 	sessions   = map[[8]byte]*mmSession{}
 )
 
-func (r *bdReader) u32() (uint32, error) {
-	if err := r.tag(tagU32); err != nil {
-		return 0, err
-	}
-	if r.off+4 > len(r.b) {
-		return 0, errShort
-	}
-	v := binary.LittleEndian.Uint32(r.b[r.off:])
-	r.off += 4
-	return v, nil
-}
-
-func (r *bdReader) blob() ([]byte, error) {
-	if err := r.tag(tagBlob); err != nil {
-		return nil, err
-	}
-	n, err := r.u32()
-	if err != nil {
-		return nil, err
-	}
-	if r.off+int(n) > len(r.b) {
-		return nil, errShort
-	}
-	v := append([]byte{}, r.b[r.off:r.off+int(n)]...)
-	r.off += int(n)
-	return v, nil
-}
-
-// rest returns the remaining bytes without the null byte that ends every request.
-func (r *bdReader) rest() []byte {
-	v := r.b[r.off:]
-	if len(v) > 0 && v[len(v)-1] == 0 {
-		v = v[:len(v)-1]
-	}
-	return append([]byte{}, v...)
-}
-
-func (w *bdWriter) raw(p []byte) { w.b = append(w.b, p...) }
-
 // readInfo reads a bdMatchMakingInfo sent by the client.
-func readInfo(r *bdReader) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
-	if host, err = r.blob(); err != nil {
+func readInfo(r *demonware.Reader) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
+	if host, err = r.Blob(); err != nil {
 		return
 	}
-	if gameType, err = r.u32(); err != nil {
+	if gameType, err = r.Uint32(); err != nil {
 		return
 	}
-	if maxPlayers, err = r.u32(); err != nil {
+	if maxPlayers, err = r.Uint32(); err != nil {
 		return
 	}
-	attrs = r.rest()
+	attrs = r.RequestTail()
 	return
 }
 
 // CTR wraps its title-specific attributes when uploading MatchMakingInfo,
 // but its result deserializer reads those fields directly after the base info.
 // Trailing request options are outside that blob and are not result fields.
-func readContextInfo(r *bdReader, context string) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
+func readContextInfo(r *demonware.Reader, context string) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
 	if !strings.HasPrefix(context, "ctr:") {
 		return readInfo(r)
 	}
-	if host, err = r.blob(); err != nil {
+	if host, err = r.Blob(); err != nil {
 		return
 	}
-	if gameType, err = r.u32(); err != nil {
+	if gameType, err = r.Uint32(); err != nil {
 		return
 	}
-	if maxPlayers, err = r.u32(); err != nil {
+	if maxPlayers, err = r.Uint32(); err != nil {
 		return
 	}
-	if r.off < len(r.b) {
-		attrs, err = r.blob()
+	if len(r.Remaining()) > 0 {
+		attrs, err = r.Blob()
 	}
 	return
 }
@@ -192,8 +154,8 @@ func dropSessionsOf(conn uint64) {
 
 // onFriendSessions (138/14): "of these ids, who hosts a game?"
 // Without an answer the game shows NOT JOINABLE for every online friend.
-func (l *lobbyConn) onFriendSessions(task byte, r *bdReader, context string) []byte {
-	ids := r.u64s()
+func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context string) []byte {
+	ids := r.Uint64s()
 	me := l.pid()
 	seen := map[[8]byte]bool{}
 	type hit struct {
@@ -225,25 +187,25 @@ func (l *lobbyConn) onFriendSessions(task byte, r *bdReader, context string) []b
 	// The game ties each result to a friend by the online id carried BY the game
 	// (Net::MatchMakingInfo +0x170, inside attrs): nothing prefixes the record,
 	// which is a raw bdMatchMakingInfo.
-	return taskReply(task, 0, func(w *bdWriter) uint32 {
+	return taskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, h := range found {
-			w.blobv(withRelay(h.s.hostAddr, h.s.ownerPID, l.pid()))
-			w.blobv(h.s.id[:])
-			w.u32(h.s.gameType)
-			w.u32(h.s.maxPlayers)
-			w.u32(h.s.numPlayers)
-			w.raw(h.s.attrs)
+			w.Blob(withRelay(h.s.hostAddr, h.s.ownerPID, l.pid()))
+			w.Blob(h.s.id[:])
+			w.Uint32(h.s.gameType)
+			w.Uint32(h.s.maxPlayers)
+			w.Uint32(h.s.numPlayers)
+			w.Raw(h.s.attrs)
 		}
 		return uint32(len(found))
 	})
 }
 
 // onMatchMaking handles service 21. Returns nil if the task isn't handled.
-func (l *lobbyConn) onMatchMaking(task byte, r *bdReader) []byte {
+func (l *lobbyConn) onMatchMaking(task byte, r *demonware.Reader) []byte {
 	return l.onMatchMakingContext(task, r, "d3")
 }
 
-func (l *lobbyConn) onMatchMakingContext(task byte, r *bdReader, context string) []byte {
+func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context string) []byte {
 	switch task {
 	case mmRequestSessionID:
 		s := &mmSession{context: context, owner: l.n, ownerPID: l.pid(), reserved: true, updated: time.Now()}
@@ -259,7 +221,7 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *bdReader, context string)
 		sessions[s.id] = s
 		sessionsMu.Unlock()
 		l.logf("matchmaking RESERVE session=%X", s.id)
-		return taskReply(task, 0, func(w *bdWriter) uint32 { w.blobv(s.id[:]); return 1 })
+		return taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
 	case mmCreateSession:
 		host, gt, maxp, attrs, err := readContextInfo(r, context)
 		if err != nil {
@@ -283,10 +245,10 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *bdReader, context string)
 		sessionsMu.Unlock()
 		l.logf("matchmaking CREATE session=%X gameType=%d max=%d host=%s (%d open games)",
 			s.id, gt, maxp, hex.EncodeToString(host[:min(6, len(host))]), n)
-		return taskReply(task, 0, func(w *bdWriter) uint32 { w.blobv(s.id[:]); return 1 })
+		return taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
 
 	case mmUpdateSession, mmInitializeSession:
-		sid, err := r.blob()
+		sid, err := r.Blob()
 		if err != nil || len(sid) != 8 {
 			l.logf("updateSession: id unreadable (%v)", err)
 			return taskReply(task, 0, nil)
@@ -318,12 +280,12 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *bdReader, context string)
 	case mmUpdatePlayers:
 		// Seen live when the console joined Citron's game:
 		// 13 blob sessionID | 08 u32 numPlayers | full info.
-		sid, err := r.blob()
+		sid, err := r.Blob()
 		if err != nil || len(sid) != 8 {
 			l.logf("updateSessionPlayers: id unreadable (%v)", err)
 			return taskReply(task, 0, nil)
 		}
-		players, _ := r.u32()
+		players, _ := r.Uint32()
 		host, gt, maxp, attrs, err := readContextInfo(r, context)
 		var id [8]byte
 		copy(id[:], sid)
@@ -342,7 +304,7 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *bdReader, context string)
 		return taskReply(task, 0, nil)
 
 	case mmDeleteSession:
-		sid, err := r.blob()
+		sid, err := r.Blob()
 		if err == nil && len(sid) == 8 {
 			var id [8]byte
 			copy(id[:], sid)
@@ -356,9 +318,9 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *bdReader, context string)
 		return taskReply(task, 0, nil)
 
 	case mmFindSessions:
-		query, _ := r.u32()
-		start, _ := r.u32()
-		maxr, _ := r.u32()
+		query, _ := r.Uint32()
+		start, _ := r.Uint32()
+		maxr, _ := r.Uint32()
 		if maxr == 0 || maxr > 50 {
 			maxr = 50
 		}
@@ -379,14 +341,14 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *bdReader, context string)
 			found = found[:maxr]
 		}
 		l.logf("matchmaking FIND query=%d start=%d max=%d -> %d game(s)", query, start, maxr, len(found))
-		return taskReply(task, 0, func(w *bdWriter) uint32 {
+		return taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, s := range found {
-				w.blobv(withRelay(s.hostAddr, s.ownerPID, l.pid()))
-				w.blobv(s.id[:])
-				w.u32(s.gameType)
-				w.u32(s.maxPlayers)
-				w.u32(s.numPlayers)
-				w.raw(s.attrs)
+				w.Blob(withRelay(s.hostAddr, s.ownerPID, l.pid()))
+				w.Blob(s.id[:])
+				w.Uint32(s.gameType)
+				w.Uint32(s.maxPlayers)
+				w.Uint32(s.numPlayers)
+				w.Raw(s.attrs)
 			}
 			return uint32(len(found))
 		})

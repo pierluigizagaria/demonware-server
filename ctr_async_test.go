@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
 func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctrSearch {
@@ -42,21 +44,21 @@ func TestCTRPublicPairingAndDocuments(t *testing.T) {
 		t.Fatal("lost incompatible search")
 	}
 	for _, n := range out {
-		w := &bdWriter{}
+		w := &demonware.Writer{}
 		n.write(w)
-		r := &bdReader{b: w.b}
+		r := demonware.NewReader(w.Bytes())
 		wantIDs := 2
 		if n.event == 2005 {
 			wantIDs = 3
 		}
 		for i := 0; i < wantIDs; i++ {
-			if id, err := r.u64(); err != nil || id == 0 {
+			if id, err := r.Uint64(); err != nil || id == 0 {
 				t.Fatal("invalid notification ID", err)
 			}
 		}
-		h, e1 := r.str()
-		b, e2 := r.str()
-		if e1 != nil || e2 != nil || r.off != len(r.b) {
+		h, e1 := r.String()
+		b, e2 := r.String()
+		if e1 != nil || e2 != nil || len(r.Remaining()) != 0 {
 			t.Fatal("notification wire layout")
 		}
 		var host, backend map[string]json.RawMessage

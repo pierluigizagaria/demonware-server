@@ -15,9 +15,10 @@ An unlock-all instance can explicitly select `CTR_ADMISSION=guest` with
 `CTR_UNLOCK_ALL=1`. It requires no shadNet service or account and assigns a fresh
 random publisher ID and nickname on each authentication. It needs a separate
 database and an anonymous game patch; server configuration alone cannot bypass
-CTR's platform sign-in checks. The client candidate is still under local test,
-with guest authentication and encrypted lobby observed, but no completed
-anonymous matchmaking/race or stock-emulator qualification yet.
+CTR's platform sign-in checks. On 2026-10-14 the user confirmed a complete
+anonymous two-client race on the 28-edit candidate, followed by a shared-lobby
+and peer-name check on the 27-edit candidate. Stock-emulator qualification
+remains pending. These results precede the protocol extraction described below.
 The normal progression instance continues to require verified shadNet tokens.
 
 **Status: experimental research code.** Validated only on one local machine,
@@ -35,6 +36,11 @@ original code are in [FORK.md](FORK.md). The authenticated path also needs shadN
 changes that are still under review upstream, and the
 [CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch):
 see [Client side](FORK.md#client-side).
+
+The shared wire implementation is now an internal package in this executable.
+[Demonware contracts and compatibility evidence](docs/DEMONWARE_PROTOCOL.md)
+distinguishes common CTR/Diablo behavior from CTR economy and unverified reuse.
+The refactor has not been installed or qualified in game.
 
 The PS4 code is on the `feat/ps4-platform` branch of this fork; build it with
 Go 1.25 or newer:
