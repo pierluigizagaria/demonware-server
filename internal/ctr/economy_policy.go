@@ -2,6 +2,7 @@ package ctr
 
 import (
 	"fmt"
+	"maps"
 )
 
 // Every item any catalog SKU grants. Read-only after initialization.
@@ -19,7 +20,7 @@ var catalogItems = func() map[uint32]bool {
 // Save-owned unlocks (Adventure, Time Trial, cheats) stay outside server control.
 func (s *EconomyStore) Inventory(pid uint64) (*EconomyAccount, error) {
 	if s.UnlockAll {
-		return &EconomyAccount{Version: 2, Balances: map[uint64]int64{}, Items: catalogItems}, nil
+		return &EconomyAccount{Version: 2, Balances: map[uint64]int64{}, Items: maps.Clone(catalogItems)}, nil
 	}
 	return s.Snapshot(pid)
 }
