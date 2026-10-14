@@ -4,6 +4,24 @@ Base: `c3400c312a739cf7598204a981156959910ed874` from
 [NextendoNetwork/nextendo-demonware](https://github.com/NextendoNetwork/nextendo-demonware).
 License unchanged: PolyForm Shield.
 
+Architecture decision (2026-10-14): this is now a detached CTR:NF fork;
+useful upstream CTR fixes are reviewed and ported by hand. The last reviewed
+upstream commit is `c3400c312a739cf7598204a981156959910ed874`. The binding
+implementation plan is [ARCHITECTURE_REFACTOR.md](docs/ARCHITECTURE_REFACTOR.md).
+Work proceeds on `refactor/ctrnf-architecture`; `feat/ps4-platform` remains at
+the accepted `33dc1c6` until the user accepts the final review.
+
+### Accepted protocol extraction, 2026-10-14
+
+The user accepted `33dc1c6` in game with the normal shadNet A/B pair: shared
+lobby and races through results. The corresponding server-log segment shows
+matched searches, accepted lobby synchronization, leaderboard uploads and
+persisted rewards, with no MAC errors. This acceptance does not cover the
+guest C/D instance (still on the previous build), LAN/WAN or the subsequent
+architecture refactor. Profile B crashed once on `Game:Main` with `0xc0000005`
+about five seconds after the first match notification; it did not recur after
+restart. The cause remains open and unattributed.
+
 This fork serves only Crash Team Racing Nitro-Fueled on PS4 (CUSA13795,
 Demonware title 5760). Normal instances require shadNet sign-in; an explicit
 guest provider is available for anonymous unlock-all instances. The PS4 game
@@ -206,7 +224,8 @@ and passed a shared-lobby check with both peer names visible. Stock-emulator
 qualification remains pending. The server unit/integration fixtures cover
 anonymous ticket issuance, lobby handshake, name lookup and Umbrella; these
 tests alone do not establish client acceptance. The protocol extraction below
-has not been installed or qualified in game.
+was subsequently accepted with shadNet A/B as recorded above; the guest C/D
+instance remains on the previous build.
 Platform friends and invitations are not promised for anonymous identities.
 
 ## Two publisher servers
@@ -270,7 +289,8 @@ checks verification, the signed response, ticket issuance and lobby admission.
 
 ## Following upstream
 
-Fixes from the original repository can still be merged with `git merge`.
+Upstream fixes are reviewed and ported by hand; merging upstream is no longer
+a design constraint. Record each newly reviewed upstream commit here.
 The 2026-10-14 protocol extraction deliberately changes the upstream layout:
 `internal/demonware` owns the codecs previously spread across `bdcrypto.go`,
 `handshake.go`, `services.go`, `matchmaking.go`, `friends.go` and CTR files.

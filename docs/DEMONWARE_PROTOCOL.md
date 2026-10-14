@@ -194,8 +194,14 @@ Validation: 370 named tests/subtests passed, together with `go vet ./...` and a
 server build. Dependency inspection found only standard-library imports beneath
 `internal/demonware`. A 15-second parser fuzz run completed 340,577 executions
 without a failure. The race detector was not run (no configured cgo compiler).
-The validated executable remains an ignored local build, not an installed server.
-In-game testing of this refactor and live Diablo compatibility remain unqualified.
+On 2026-10-14 the user accepted the installed `33dc1c6` build with shadNet A/B:
+shared lobby and races through results. The matching server-log segment records
+matched searches, accepted lobby synchronization, leaderboard uploads and
+persisted rewards, with no MAC errors. Guest C/D remained on the previous build;
+LAN/WAN and live Diablo compatibility remain unqualified. Profile B crashed once
+on `Game:Main` (`0xc0000005`) about five seconds after the first match notification,
+without recurrence after restart; the cause is open and unattributed. This
+acceptance does not automatically qualify the subsequent architecture refactor.
 
 ## Reusing this for another game
 
