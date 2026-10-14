@@ -51,6 +51,7 @@ type lobbyOptions struct {
 }
 
 type lobbyConn struct {
+	table     *serviceTable
 	telemetry *telemetry
 	*diagnostics
 	options    *lobbyOptions
@@ -139,8 +140,7 @@ func (l *lobbyConn) dump(tag string, b []byte) {
 
 func (l *lobbyConn) run() {
 	defer l.c.Close()
-	defer l.registry.dropSessionsOf(l.n)
-	defer func() { sendCTRNotices(l.matchmaker.leave(l, 0)) }()
+	defer l.table.CloseSession(l)
 	defer l.presence.dropOnline(l.n)
 	l.logf("==== CONNECT from=%s", l.c.RemoteAddr())
 
@@ -310,7 +310,7 @@ func (l *lobbyConn) onEncrypted(raw []byte) {
 		l.logf("msg 0x%02X seq=%d inner_len=%d inner_type=0x%02X plaintext:\n%s", encrypted.Type, encrypted.Sequence, n, inner, hex.Dump(message.Plaintext))
 	}
 	if inner == demonware.InnerTaskRequest {
-		l.onTask(message.Payload)
+		l.processTask(message.Payload)
 		return
 	}
 

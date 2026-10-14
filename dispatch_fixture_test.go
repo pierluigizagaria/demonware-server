@@ -33,3 +33,36 @@ func (l *lobbyConn) onPlatformIdentityReport(task byte, r *demonware.Reader) []b
 func (l *lobbyConn) onRichPresence(task byte, r *demonware.Reader) []byte {
 	return (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onRichPresence(l, task, r)
 }
+
+func (l *lobbyConn) owns(s *mmSession) bool {
+	return (&contextHandler{replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).owns(l, s)
+}
+func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context string) []byte {
+	return (&contextHandler{replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onFriendSessions(l, task, r, context)
+}
+func (l *lobbyConn) onMatchMaking(task byte, r *demonware.Reader) []byte {
+	return (&contextHandler{replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onMatchMaking(l, task, r)
+}
+func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context string) []byte {
+	return (&contextHandler{replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onMatchMakingContext(l, task, r, context)
+}
+func (l *lobbyConn) publisherFile(name string) ([]byte, string) {
+	return (&storageHandler{replyCounter: l.replyCounter, files: l.files, pubDir: l.pubDir}).publisherFile(l, name)
+}
+
+// Legacy fixtures replace dependencies between calls. Keep that test-only
+// wiring outside the production router, which receives one immutable table.
+func (l *lobbyConn) onTask(payload []byte) {
+	if l.table != nil {
+		l.processTask(payload)
+		return
+	}
+	table, async := newCTRServiceTable(l.replyCounter, l.ctr, l.presence, l.registry, l.matchmaker, l.files, l.pubDir, l.relay)
+	async.setPlayerInfo(l.n, l.lobbyDoc)
+	l.table = table
+	defer func() { l.table = nil; l.lobbyDoc = async.playerInfo(l.n) }()
+	l.processTask(payload)
+}
+func (l *lobbyConn) fixtureTable() {
+	l.table, _ = newCTRServiceTable(l.replyCounter, l.ctr, l.presence, l.registry, l.matchmaker, l.files, l.pubDir, l.relay)
+}

@@ -19,10 +19,8 @@ package main
 // 01 bool, 03 u8, 08 u32, 0A u64, 10 NUL-terminated string, 13 blob (08 u32 + bytes).
 
 import (
-	"encoding/hex"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -73,7 +71,7 @@ func (l *lobbyConn) sendPush(event uint32, build func(w *demonware.Writer)) erro
 }
 
 // onTask handles a decrypted request. payload = bytes after the inner type.
-func (l *lobbyConn) onTask(payload []byte) {
+func (l *lobbyConn) processTask(payload []byte) {
 	if len(payload) == 18 && payload[0] == 18 && payload[1] == 1 && payload[2] == 0 && payload[3] == 1 {
 		_ = l.sendEncrypted(demonware.InnerTaskReply, l.taskReply(1, errUnhandled, nil))
 		return
@@ -104,7 +102,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 	}
 	l.telemetry.noteTask(l, service, task)
 
-	l.deliverResult(l.handleTask(service, task, r, payload))
+	l.deliverResult(l.table.Handle(l, taskRequest{Service: service, Task: task, Args: r, Payload: payload}))
 }
 
 func (l *lobbyConn) deliverResult(result taskResult) {
@@ -130,212 +128,17 @@ type taskResult struct {
 	AfterReply func(sendErr error)
 }
 
-func (l *lobbyConn) handleTask(service, task byte, r *demonware.Reader, payload []byte) (result taskResult) {
-	var reply []byte
-	switch {
-	case service == 38 && task == 6:
-		reply = (&platformHandler{replyCounter: l.replyCounter}).onPlatformIdentityReport(l, task, r)
-	case service == 4 && l.player != nil && isCTRTitle(l.player.Title):
-		reply = (&statsHandler{replyCounter: l.replyCounter, stats: l.ctr.stats, presence: l.presence}).onCTRStats(l, task, r)
-	case service == svcTitleUtilities && task == taskGetServerTime:
-		now := uint32(l.now().Unix())
-		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Uint32(now); return 1 })
-		l.logf("task bdTitleUtilities.getServerTime -> %d", now)
-
-	case service == svcStorage && task == taskGetPublisherFile:
-		ctx, err1 := r.String()
-		name, err2 := r.String()
-		if err1 != nil || err2 != nil {
-			l.logf("getPublisherFile: unreadable arguments: %X", payload)
-			reply = l.taskReply(task, errUnhandled, nil)
-			break
-		}
-		data, path := l.publisherFile(name)
-		if data == nil {
-			// No result rather than an error: the game treats a "missing
-			// file" as a normal case.
-			reply = l.taskReply(task, 0, nil)
-			l.logf("task bdStorage.getPublisherFile ctx=%q file=%q -> MISSING", ctx, name)
-			break
-		}
-		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(data); return 1 })
-		l.logf("task bdStorage.getPublisherFile ctx=%q file=%q -> %s (%d bytes)", ctx, name, path, len(data))
-
-	case service == svcTitleUtilities && task == 9:
-		reply = (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onGetUserNames(l, task, r)
-
-	case service == svcTitleUtilities && task == 10:
-		reply = (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onGetUserIDs(l, task, r)
-
-	case service == 29 && (task == 1 || task == 4):
-		if reply = (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onUserData(l, task, r); reply == nil {
-			reply = l.taskReply(task, 0, nil)
-		}
-
-	case service == 138:
-		ctx, err := r.String()
-		if err != nil || ctx == "" {
-			reply = l.taskReply(task, errUnhandled, nil)
-			break
-		}
-		if task == mmCreateSession || task == mmUpdateSession || task == mmDeleteSession || task == mmUpdatePlayers || task == mmRequestSessionID || task == mmInitializeSession {
-			reply = l.onMatchMakingContext(task, r, "ctr:"+ctx)
-		} else if task == 14 {
-			reply = l.onFriendSessions(task, r, "ctr:"+ctx)
-		} else {
-			l.logf("CTR matchmaking unimplemented task=%d context=%q", task, ctx)
-			reply = l.taskReply(task, errUnhandled, nil)
-		}
-	case service == svcRichPresence:
-		reply = (&presenceHandler{replyCounter: l.replyCounter, presence: l.presence}).onRichPresence(l, task, r)
-
-	case service == svcAsyncMatchMaking && task == taskSetPlayerInfo:
-		// bdAsyncMatchMaking::setPlayerInfo(const char*, u32): the game uploads its
-		// listen_server{local_address,security_id,security_key} here. The function has no
-		// result, so an empty success is the right answer. It is the FIRST task of the
-		// matchmaking registration: failing it brings down everything after it.
-		if doc, err := r.String(); err == nil && doc != "" {
-			l.lobbyDoc = doc
-		}
-		reply = l.taskReply(task, 0, nil)
-		l.logf("task bdAsyncMatchMaking.setPlayerInfo -> success (%d bytes)", len(l.lobbyDoc))
-
-	case service == svcAsyncMatchMaking && task == taskSyncLobbyDocuments:
-		id, e1 := r.Uint64()
-		version, e2 := r.Uint64()
-		raw, e3 := r.String()
-		ok := false
-		if e1 == nil && e2 == nil && e3 == nil {
-			var notices []ctrNotice
-			ok, notices = l.matchmaker.syncDoc(l, id, version, raw)
-			result.AfterReply = func(sendErr error) { sendCTRNotices(notices) }
-		}
-		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
-		l.logf("CTR sync lobby=%d version=%d accepted=%v", id, version, ok)
-
-	case service == svcAsyncMatchMaking && task == taskGetPlayerToken:
-		// getMatchMakingPlayerToken -> bdUInt64Result (readUInt64). This is the
-		// requestPlayerToken step of CNetworkTaskAsyncMatchMakingRegistration: without a token the
-		// registration state machine cannot advance.
-		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Uint64(l.pid()); return 1 })
-		l.logf("task bdAsyncMatchMaking.getMatchMakingPlayerToken -> %d", l.pid())
-
-	case service == svcAsyncMatchMaking && task == taskStartSearch:
-		raw, err := r.String()
-		if err != nil {
-			reply = l.taskReply(task, errUnhandled, nil)
-			break
-		}
-		search, err := l.matchmaker.parseCTRSearch(l, raw, l.lobbyDoc)
-		if err == nil {
-			err = l.matchmaker.reserve(search)
-		}
-		if err != nil {
-			l.logf("CTR search rejected: %v", err)
-			reply = l.taskReply(task, errUnhandled, nil)
-			break
-		}
-		doc := "{\"mm_id\":" + strconv.FormatUint(search.id, 10) + "}"
-		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(doc); return 1 })
-		result.AfterReply = func(sendErr error) {
-			if sendErr != nil {
-				l.matchmaker.release(search) // the client never learned of this search
-				return
-			}
-			notices := l.matchmaker.activate(search)
-			l.logf("CTR search id=%d registered; seats=%d filter=%s notifications=%d",
-				search.id, search.seats, search.filterID, len(notices))
-			sendCTRNotices(notices)
-		}
-
-	case service == svcAsyncMatchMaking && task == 8:
-		id, err := r.Uint64()
-		ok := err == nil && l.matchmaker.cancel(l, id)
-		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
-	case service == svcAsyncMatchMaking && task == taskLobbyDisbanded:
-		id, err := r.Uint64()
-		if err == nil {
-			notices := l.matchmaker.leave(l, id)
-			result.AfterReply = func(sendErr error) { sendCTRNotices(notices) }
-		}
-		reply = l.taskReply(task, 0, nil)
-
-	case service == svcAsyncMatchMaking &&
-		(task == taskInitMatchMaking || task == taskStartMatchMaking ||
-			task == taskGetMMStatus || task == taskInitiateDCQoS):
-		// All of these return a bdStringResult (readString).
-		id := strconv.FormatUint(l.pid(), 10)
-		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(id); return 1 })
-		l.logf("task bdAsyncMatchMaking task=%d -> string %q", task, id)
-
-	case service == svcAsyncMatchMaking &&
-		(task == taskQoSHostsReply || task == taskAckExpectGame):
-		// No result.
-		reply = l.taskReply(task, 0, nil)
-		l.logf("task bdAsyncMatchMaking task=%d -> empty success", task)
-
-	case service == svcAsyncMatchMaking && task == taskGetLobbyDocuments:
-		id, err := r.Uint64()
-		h, b, ok := l.matchmaker.documents(l, id)
-		if err != nil || !ok {
-			reply = l.taskReply(task, errUnhandled, nil)
-			break
-		}
-		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(h); w.String(b); return 1 })
-
-	case service == svcHTTPProxy && task == 1:
-		// bdABTesting::enroll. The body is parsed as JSON: expiresIn, ABToken,
-		// enrollments. No experiment is active, but the reply must be well
-		// formed, or the task fails on every connection.
-		// ABToken NON-EMPTY: bdABTestingEnrollResponse reads it with getString, and an empty string
-		// fails deserialization -> bdRemoteTask error 4 -> the login sequence fails.
-		body := []byte(`{"expiresIn":3600,"ABToken":"nextendo","enrollments":[]}`)
-		reply = l.httpProxyReply(task, 200, body)
-		l.logf("task bdABTesting.enroll -> 200 (%d bytes)", len(body))
-
-	case service == svcMarketingComms:
-		reply = (&newsHandler{replyCounter: l.replyCounter, news: l.ctr.news}).onMarketingComms(l, task, r)
-
-	case service == svcAchievements:
-		result = (&economyHandler{replyCounter: l.replyCounter, economy: l.ctr.economy}).onAchievements(l, task, payload)
-		reply = result.Reply
-
-	case service == svcMarketplace:
-		result = (&economyHandler{replyCounter: l.replyCounter, economy: l.ctr.economy}).onMarketplace(l, task, payload)
-		reply = result.Reply
-		if reply == nil {
-			reply = l.taskReply(task, errUnhandled, nil)
-			l.logf("task marketplace UNHANDLED task=%d args:\n%s", task, hex.Dump(payload))
-		}
-
-	case service == svcMatchMaking:
-		if reply = l.onMatchMaking(task, r); reply == nil {
-			reply = l.taskReply(task, 0, nil)
-			l.logf("task matchmaking UNHANDLED task=%d args:\n%s", task, hex.Dump(payload))
-		}
-
-	default:
-		// Success with no result: harmless for list requests, whereas an
-		// error may mark the service unavailable on the game side.
-		reply = l.taskReply(task, 0, nil)
-		l.logf("task UNHANDLED service=%d task=%d (empty success) args:\n%s", service, task, hex.Dump(payload))
-	}
-
-	result.Reply = reply
-	return result
-}
-
 // publisherFile looks the file up in the pubfiles folder, ignoring case (the
 // game asks for "Config.txt", the generator writes "config.txt").
-func (l *lobbyConn) publisherFile(name string) ([]byte, string) {
-	if data, path, ok := l.files.riftFile(name, l.now()); ok {
+func (handler *storageHandler) publisherFile(peer taskSession, name string) ([]byte, string) {
+	if data, path, ok := handler.files.riftFile(name, peer.Now()); ok {
 		return data, path
 	}
-	if data, path, ok := l.files.generatedPubfile(name, l.now()); ok {
+	if data, path, ok := handler.files.generatedPubfile(name, peer.Now()); ok {
 		return data, path
 	}
 	base := filepath.Base(name)
-	entries, err := os.ReadDir(l.pubDir)
+	entries, err := os.ReadDir(handler.pubDir)
 	if err != nil {
 		return nil, ""
 	}
@@ -346,7 +149,7 @@ func (l *lobbyConn) publisherFile(name string) ([]byte, string) {
 	for _, want := range candidates {
 		for _, e := range entries {
 			if strings.EqualFold(e.Name(), want) {
-				p := filepath.Join(l.pubDir, e.Name())
+				p := filepath.Join(handler.pubDir, e.Name())
 				if b, err := os.ReadFile(p); err == nil {
 					return b, p
 				}

@@ -172,6 +172,7 @@ func TestEncryptedFramesFollowClientSequence(t *testing.T) {
 	task := (demonware.NewWriter([]byte{6, demonware.TagUint8, 1})).Bytes() // any request; the reply only needs to exist
 	replied := func(raw []byte) bool {
 		w.Reset()
+		l.fixtureTable()
 		l.onEncrypted(raw)
 		return w.Len() > 0
 	}
@@ -197,11 +198,13 @@ func TestEncryptedFrameRejectionPreservesSequencePolicy(t *testing.T) {
 	tampered := append([]byte(nil), first...)
 	tampered[len(tampered)-1] ^= 1
 	for _, raw := range [][]byte{first[:20], tampered} {
+		l.fixtureTable()
 		l.onEncrypted(raw)
 		if w.Len() != 0 || l.c2sSeq != 0 {
 			t.Fatal("unauthenticated or truncated frame consumed a sequence or replied")
 		}
 	}
+	l.fixtureTable()
 	l.onEncrypted(first)
 	if w.Len() == 0 || l.c2sSeq != 1 {
 		t.Fatal("valid frame refused after rejection")
@@ -220,10 +223,12 @@ func TestEncryptedFrameRejectionPreservesSequencePolicy(t *testing.T) {
 	copy(malformed[26:], ct)
 	n := len(malformed) - 8
 	copy(malformed[n:], demonware.HMACSHA1(l.keys.C2SMAC, malformed[:n])[:8])
+	l.fixtureTable()
 	l.onEncrypted(malformed)
 	if w.Len() != 0 || l.c2sSeq != 2 {
 		t.Fatal("authenticated malformed frame changed sequence policy")
 	}
+	l.fixtureTable()
 	l.onEncrypted(clientFrame(t, l, 3, task))
 	if w.Len() == 0 || l.c2sSeq != 3 {
 		t.Fatal("next valid frame refused after malformed payload")

@@ -13,6 +13,7 @@ import (
 )
 
 type lobbyServer struct {
+	table      *serviceTable
 	cfg        serverConfig
 	diag       *diagnostics
 	files      *publisherFiles
@@ -29,7 +30,7 @@ type lobbyServer struct {
 }
 
 func (server *lobbyServer) newConn(c net.Conn, dumps string) *lobbyConn {
-	return &lobbyConn{telemetry: server.monitor, diagnostics: server.diag, options: server.options, files: server.files, relay: server.relay, matchmaker: server.matchmaker, registry: server.registry, ctr: server.ctr, replyCounter: server.replies, presence: server.presence, tickets: server.tickets, c: c, n: server.ids.Add(1), dumpDir: dumps, pubDir: server.cfg.pubfilesDir}
+	return &lobbyConn{table: server.table, telemetry: server.monitor, diagnostics: server.diag, options: server.options, files: server.files, relay: server.relay, matchmaker: server.matchmaker, registry: server.registry, ctr: server.ctr, replyCounter: server.replies, presence: server.presence, tickets: server.tickets, c: c, n: server.ids.Add(1), dumpDir: dumps, pubDir: server.cfg.pubfilesDir}
 }
 
 func (server *lobbyServer) start() {

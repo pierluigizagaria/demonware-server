@@ -67,11 +67,11 @@ func (l *lobbyConn) pid() uint64 {
 	return l.player.PID
 }
 
-func (l *lobbyConn) owns(s *mmSession) bool {
-	if s.owner == l.n {
+func (handler *contextHandler) owns(peer taskSession, s *mmSession) bool {
+	if s.owner == peer.ConnID() {
 		return true
 	}
-	pid := l.pid()
+	pid := peer.PID()
 	return pid != 0 && s.ownerPID == pid
 }
 
@@ -157,9 +157,9 @@ func (registry *sessionRegistry) dropSessionsOf(conn uint64) {
 
 // onFriendSessions (138/14): "of these ids, who hosts a game?"
 // Without an answer the game shows NOT JOINABLE for every online friend.
-func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context string) []byte {
+func (handler *contextHandler) onFriendSessions(peer taskSession, task byte, r *demonware.Reader, context string) []byte {
 	ids := r.Uint64s()
-	me := l.pid()
+	me := peer.PID()
 	seen := map[[8]byte]bool{}
 	type hit struct {
 		id uint64
@@ -167,7 +167,7 @@ func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context str
 	}
 	var found []hit
 	for _, id := range ids {
-		pid := l.presence.pidOnline(id)
+		pid := handler.presence.pidOnline(id)
 		if pid == 0 {
 			// On Citron the friend id IS the PID; the host may be
 			// reconnecting and so missing from the online list.
@@ -176,23 +176,23 @@ func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context str
 		if pid == me {
 			continue
 		}
-		l.registry.mu.Lock()
-		for _, s := range l.registry.sessions {
+		handler.registry.mu.Lock()
+		for _, s := range handler.registry.sessions {
 			if s.ownerPID == pid && s.context == context && !s.reserved && !seen[s.id] {
 				seen[s.id] = true
 				copy := *s
 				found = append(found, hit{id, &copy})
 			}
 		}
-		l.registry.mu.Unlock()
+		handler.registry.mu.Unlock()
 	}
-	l.logf("matchmaking FRIENDS context=%q %d asked -> %d game(s)", context, len(ids), len(found))
+	peer.Logf("matchmaking FRIENDS context=%q %d asked -> %d game(s)", context, len(ids), len(found))
 	// The game ties each result to a friend by the online id carried BY the game
 	// (Net::MatchMakingInfo +0x170, inside attrs): nothing prefixes the record,
 	// which is a raw bdMatchMakingInfo.
-	return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
+	return handler.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, h := range found {
-			w.Blob(l.relay.withRelay(h.s.hostAddr, h.s.ownerPID, l.pid()))
+			w.Blob(handler.relay.withRelay(h.s.hostAddr, h.s.ownerPID, peer.PID()))
 			w.Blob(h.s.id[:])
 			w.Uint32(h.s.gameType)
 			w.Uint32(h.s.maxPlayers)
@@ -204,121 +204,121 @@ func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context str
 }
 
 // onMatchMaking handles service 21. Returns nil if the task isn't handled.
-func (l *lobbyConn) onMatchMaking(task byte, r *demonware.Reader) []byte {
-	return l.onMatchMakingContext(task, r, "d3")
+func (handler *contextHandler) onMatchMaking(peer taskSession, task byte, r *demonware.Reader) []byte {
+	return handler.onMatchMakingContext(peer, task, r, "d3")
 }
 
-func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context string) []byte {
+func (handler *contextHandler) onMatchMakingContext(peer taskSession, task byte, r *demonware.Reader, context string) []byte {
 	switch task {
 	case mmRequestSessionID:
-		s := &mmSession{context: context, owner: l.n, ownerPID: l.pid(), reserved: true, updated: l.now()}
-		if _, err := l.random(s.id[:]); err != nil {
-			return l.taskReply(task, errUnhandled, nil)
+		s := &mmSession{context: context, owner: peer.ConnID(), ownerPID: peer.PID(), reserved: true, updated: peer.Now()}
+		if _, err := peer.Random(s.id[:]); err != nil {
+			return handler.taskReply(task, errUnhandled, nil)
 		}
-		l.registry.mu.Lock()
-		for id, old := range l.registry.sessions {
-			if old.reserved && old.context == context && l.owns(old) {
-				delete(l.registry.sessions, id)
+		handler.registry.mu.Lock()
+		for id, old := range handler.registry.sessions {
+			if old.reserved && old.context == context && handler.owns(peer, old) {
+				delete(handler.registry.sessions, id)
 			}
 		}
-		l.registry.sessions[s.id] = s
-		l.registry.mu.Unlock()
-		l.logf("matchmaking RESERVE session=%X", s.id)
-		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
+		handler.registry.sessions[s.id] = s
+		handler.registry.mu.Unlock()
+		peer.Logf("matchmaking RESERVE session=%X", s.id)
+		return handler.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
 	case mmCreateSession:
 		host, gt, maxp, attrs, err := readContextInfo(r, context)
 		if err != nil {
-			l.logf("createSession unreadable: %v", err)
-			return l.taskReply(task, errUnhandled, nil)
+			peer.Logf("createSession unreadable: %v", err)
+			return handler.taskReply(task, errUnhandled, nil)
 		}
-		s := &mmSession{owner: l.n, ownerPID: l.pid(), hostAddr: host, gameType: gt, maxPlayers: maxp, numPlayers: 1, attrs: attrs, updated: l.now()}
-		_, _ = l.random(s.id[:])
+		s := &mmSession{owner: peer.ConnID(), ownerPID: peer.PID(), hostAddr: host, gameType: gt, maxPlayers: maxp, numPlayers: 1, attrs: attrs, updated: peer.Now()}
+		_, _ = peer.Random(s.id[:])
 		s.context = context
-		l.registry.mu.Lock()
+		handler.registry.mu.Lock()
 		// A host recreating its game after reconnecting replaces the old one.
 		if s.ownerPID != 0 {
-			for old, prev := range l.registry.sessions {
+			for old, prev := range handler.registry.sessions {
 				if prev.ownerPID == s.ownerPID && prev.context == context {
-					delete(l.registry.sessions, old)
+					delete(handler.registry.sessions, old)
 				}
 			}
 		}
-		l.registry.sessions[s.id] = s
-		n := len(l.registry.sessions)
-		l.registry.mu.Unlock()
-		l.logf("matchmaking CREATE session=%X gameType=%d max=%d host=%s (%d open games)",
+		handler.registry.sessions[s.id] = s
+		n := len(handler.registry.sessions)
+		handler.registry.mu.Unlock()
+		peer.Logf("matchmaking CREATE session=%X gameType=%d max=%d host=%s (%d open games)",
 			s.id, gt, maxp, hex.EncodeToString(host[:min(6, len(host))]), n)
-		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
+		return handler.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
 
 	case mmUpdateSession, mmInitializeSession:
 		sid, err := r.Blob()
 		if err != nil || len(sid) != 8 {
-			l.logf("updateSession: id unreadable (%v)", err)
-			return l.taskReply(task, 0, nil)
+			peer.Logf("updateSession: id unreadable (%v)", err)
+			return handler.taskReply(task, 0, nil)
 		}
 		host, gt, maxp, attrs, err := readContextInfo(r, context)
 		if err != nil {
-			l.logf("updateSession %X: info unreadable: %v", sid, err)
-			return l.taskReply(task, 0, nil)
+			peer.Logf("updateSession %X: info unreadable: %v", sid, err)
+			return handler.taskReply(task, 0, nil)
 		}
 		var id [8]byte
 		copy(id[:], sid)
-		l.registry.mu.Lock()
-		s, ok := l.registry.sessions[id]
-		if ok && s.context == context && l.owns(s) {
-			s.owner, s.ownerPID = l.n, l.pid()
-			s.hostAddr, s.gameType, s.maxPlayers, s.attrs, s.updated = host, gt, maxp, attrs, l.now()
+		handler.registry.mu.Lock()
+		s, ok := handler.registry.sessions[id]
+		if ok && s.context == context && handler.owns(peer, s) {
+			s.owner, s.ownerPID = peer.ConnID(), peer.PID()
+			s.hostAddr, s.gameType, s.maxPlayers, s.attrs, s.updated = host, gt, maxp, attrs, peer.Now()
 			if task == mmInitializeSession {
 				s.reserved = false
 				s.numPlayers = 1
 			}
 		} else {
-			l.registry.mu.Unlock()
-			return l.taskReply(task, errUnhandled, nil)
+			handler.registry.mu.Unlock()
+			return handler.taskReply(task, errUnhandled, nil)
 		}
-		l.registry.mu.Unlock()
-		l.logf("matchmaking UPDATE session=%X known=%v", id, ok)
-		return l.taskReply(task, 0, nil)
+		handler.registry.mu.Unlock()
+		peer.Logf("matchmaking UPDATE session=%X known=%v", id, ok)
+		return handler.taskReply(task, 0, nil)
 
 	case mmUpdatePlayers:
 		// Seen live when the console joined Citron's game:
 		// 13 blob sessionID | 08 u32 numPlayers | full info.
 		sid, err := r.Blob()
 		if err != nil || len(sid) != 8 {
-			l.logf("updateSessionPlayers: id unreadable (%v)", err)
-			return l.taskReply(task, 0, nil)
+			peer.Logf("updateSessionPlayers: id unreadable (%v)", err)
+			return handler.taskReply(task, 0, nil)
 		}
 		players, _ := r.Uint32()
 		host, gt, maxp, attrs, err := readContextInfo(r, context)
 		var id [8]byte
 		copy(id[:], sid)
-		l.registry.mu.Lock()
-		s, ok := l.registry.sessions[id]
-		if ok && s.context == context && l.owns(s) {
-			s.owner, s.ownerPID = l.n, l.pid()
+		handler.registry.mu.Lock()
+		s, ok := handler.registry.sessions[id]
+		if ok && s.context == context && handler.owns(peer, s) {
+			s.owner, s.ownerPID = peer.ConnID(), peer.PID()
 			s.numPlayers = players
 			if err == nil {
 				s.hostAddr, s.gameType, s.maxPlayers, s.attrs = host, gt, maxp, attrs
 			}
-			s.updated = l.now()
+			s.updated = peer.Now()
 		}
-		l.registry.mu.Unlock()
-		l.logf("matchmaking PLAYERS session=%X players=%d/%d known=%v", id, players, maxp, ok)
-		return l.taskReply(task, 0, nil)
+		handler.registry.mu.Unlock()
+		peer.Logf("matchmaking PLAYERS session=%X players=%d/%d known=%v", id, players, maxp, ok)
+		return handler.taskReply(task, 0, nil)
 
 	case mmDeleteSession:
 		sid, err := r.Blob()
 		if err == nil && len(sid) == 8 {
 			var id [8]byte
 			copy(id[:], sid)
-			l.registry.mu.Lock()
-			if s := l.registry.sessions[id]; s != nil && s.context == context && l.owns(s) {
-				delete(l.registry.sessions, id)
+			handler.registry.mu.Lock()
+			if s := handler.registry.sessions[id]; s != nil && s.context == context && handler.owns(peer, s) {
+				delete(handler.registry.sessions, id)
 			}
-			l.registry.mu.Unlock()
-			l.logf("matchmaking DELETE session=%X", id)
+			handler.registry.mu.Unlock()
+			peer.Logf("matchmaking DELETE session=%X", id)
 		}
-		return l.taskReply(task, 0, nil)
+		return handler.taskReply(task, 0, nil)
 
 	case mmFindSessions:
 		query, _ := r.Uint32()
@@ -327,14 +327,14 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		if maxr == 0 || maxr > 50 {
 			maxr = 50
 		}
-		l.registry.mu.Lock()
-		found := make([]*mmSession, 0, len(l.registry.sessions))
-		for _, s := range l.registry.sessions {
-			if !l.owns(s) && s.context == context && !s.reserved {
+		handler.registry.mu.Lock()
+		found := make([]*mmSession, 0, len(handler.registry.sessions))
+		for _, s := range handler.registry.sessions {
+			if !handler.owns(peer, s) && s.context == context && !s.reserved {
 				found = append(found, s)
 			}
 		}
-		l.registry.mu.Unlock()
+		handler.registry.mu.Unlock()
 		if int(start) < len(found) {
 			found = found[start:]
 		} else {
@@ -343,10 +343,10 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		if len(found) > int(maxr) {
 			found = found[:maxr]
 		}
-		l.logf("matchmaking FIND query=%d start=%d max=%d -> %d game(s)", query, start, maxr, len(found))
-		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
+		peer.Logf("matchmaking FIND query=%d start=%d max=%d -> %d game(s)", query, start, maxr, len(found))
+		return handler.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, s := range found {
-				w.Blob(l.relay.withRelay(s.hostAddr, s.ownerPID, l.pid()))
+				w.Blob(handler.relay.withRelay(s.hostAddr, s.ownerPID, peer.PID()))
 				w.Blob(s.id[:])
 				w.Uint32(s.gameType)
 				w.Uint32(s.maxPlayers)

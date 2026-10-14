@@ -47,6 +47,8 @@ func newInstance(cfg serverConfig, database *ctrSQLite) *serverInstance {
 	ids := &atomic.Uint64{}
 	i.nat = &natServer{diagnostics: diag, bindAddr: cfg.bindAddr, nextendoHost: cfg.publicIP, connNum: ids, natSeen: map[string]int{}}
 	i.monitor = newTelemetry(cfg, i.nat.natIntros.Load)
-	i.lobby = &lobbyServer{cfg: cfg, diag: diag, files: i.files, tickets: i.tickets, presence: i.presence, replies: &replyCounter{}, ctr: i.ctr, matchmaker: i.matchmaker, registry: i.registry, relay: i.relay, ids: ids, monitor: i.monitor, options: &lobbyOptions{migrateEnabled: cfg.migrate, publicHost: cfg.publicIP}}
+	replies := &replyCounter{}
+	table, _ := newCTRServiceTable(replies, i.ctr, i.presence, i.registry, i.matchmaker, i.files, cfg.pubfilesDir, i.relay)
+	i.lobby = &lobbyServer{table: table, cfg: cfg, diag: diag, files: i.files, tickets: i.tickets, presence: i.presence, replies: replies, ctr: i.ctr, matchmaker: i.matchmaker, registry: i.registry, relay: i.relay, ids: ids, monitor: i.monitor, options: &lobbyOptions{migrateEnabled: cfg.migrate, publicHost: cfg.publicIP}}
 	return i
 }

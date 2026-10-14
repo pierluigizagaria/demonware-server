@@ -69,3 +69,23 @@ type presenceHandler struct {
 	presence *presenceStore
 }
 type platformHandler struct{ *replyCounter }
+
+// One immutable table is wired for the instance; routing never selects a game
+// table from an untrusted request or from the current session's title.
+type serviceTable struct {
+	replies      *replyCounter
+	handlers     map[byte]taskHandler
+	closeSession func(taskSession)
+}
+
+func (table *serviceTable) Handle(peer taskSession, request taskRequest) taskResult {
+	if handler := table.handlers[request.Service]; handler != nil {
+		return handler.Handle(peer, request)
+	}
+	return defaultTask(table.replies, peer, request)
+}
+func (table *serviceTable) CloseSession(peer taskSession) {
+	if table.closeSession != nil {
+		table.closeSession(peer)
+	}
+}
