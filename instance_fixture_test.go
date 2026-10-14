@@ -41,9 +41,11 @@ func TestInstanceTicketDirectoriesAreIsolated(t *testing.T) {
 
 var testPresence = newPresenceStore(nil)
 
-func init()                                   { ctrMM.onlinePIDs = testPresence.onlinePIDs }
-func testBuildStats() apiStats                { return buildStats(testPresence) }
-func testBuildGameStats(game string) apiStats { return buildGameStats(testPresence, game) }
+func init()                    { testMatchmaker.onlinePIDs = testPresence.onlinePIDs }
+func testBuildStats() apiStats { return buildStats(testPresence, testMatchmaker, testRegistry) }
+func testBuildGameStats(game string) apiStats {
+	return buildGameStats(testPresence, testMatchmaker, testRegistry, game)
+}
 
 func TestInstancePresenceAndPersistentNamesAreIsolated(t *testing.T) {
 	firstDB := openTestCTR(t, filepath.Join(t.TempDir(), ctrDB), false)
@@ -164,5 +166,57 @@ func TestInstanceEconomyAndLeaderboardAreIsolated(t *testing.T) {
 	rows, err := bDB.read(89)
 	if err != nil || len(rows) != 0 {
 		t.Fatal("leaderboard crossed instance boundary")
+	}
+}
+
+var testMatchmaker = &ctrMatchmaker{rooms: map[uint64]*ctrRoom{}}
+var testRegistry = newSessionRegistry()
+
+func TestInstanceMatchmakingAndPushesAreIsolated(t *testing.T) {
+	a := &ctrMatchmaker{onlinePIDs: func() []uint64 { return []uint64{17, 18} }, rooms: map[uint64]*ctrRoom{}}
+	b := &ctrMatchmaker{onlinePIDs: func() []uint64 { return []uint64{17, 18} }, rooms: map[uint64]*ctrRoom{}}
+	prepare := func(m *ctrMatchmaker, pid uint64) (*ctrSearch, *architectureWire) {
+		s := m.testCTRSearch(t, pid, 0)
+		l, _ := sharedPS4Lobby()
+		l.n, l.player.PID, l.matchmaker = pid, pid, m
+		w := &architectureWire{}
+		l.c, s.conn = w, l
+		return s, w
+	}
+	aa, aw := prepare(a, 17)
+	ba, bw := prepare(b, 17)
+	ab, _ := prepare(a, 18)
+	bb, _ := prepare(b, 18)
+	if aa.id != ba.id || ab.id != bb.id {
+		t.Fatal("instance search ID sequences differ")
+	}
+	a.enqueue(aa)
+	b.enqueue(ba)
+	notices := a.enqueue(ab)
+	sendCTRNotices(notices)
+	if len(aw.writes) != 1 || len(bw.writes) != 0 || len(a.rooms) != 1 || len(b.rooms) != 0 {
+		t.Fatal("match or push crossed instances")
+	}
+	architectureFrames(t, aa.conn, aw, 0)
+	notices = b.enqueue(bb)
+	sendCTRNotices(notices)
+	if len(aw.writes) != 1 || len(bw.writes) != 1 || len(b.rooms) != 1 {
+		t.Fatal("second instance failed to form its own room")
+	}
+	architectureFrames(t, ba.conn, bw, 0)
+	a.leave(aa.conn, 0)
+	if len(a.rooms) != 0 || len(b.rooms) != 1 {
+		t.Fatal("disconnect crossed instances")
+	}
+}
+
+func TestInstanceContextRegistriesAreIsolated(t *testing.T) {
+	a, b := newSessionRegistry(), newSessionRegistry()
+	id := [8]byte{1}
+	a.sessions[id] = &mmSession{id: id, owner: 17, ownerPID: 17}
+	b.sessions[id] = &mmSession{id: id, owner: 17, ownerPID: 17}
+	a.dropSessionsOf(17)
+	if a.sessions[id].owner != 0 || b.sessions[id].owner != 17 {
+		t.Fatal("registry disconnect crossed instances")
 	}
 }

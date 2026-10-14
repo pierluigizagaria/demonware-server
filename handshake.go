@@ -46,7 +46,9 @@ import (
 var serverIDs atomic.Uint64
 
 type lobbyConn struct {
-	ctr *ctrServices
+	matchmaker *ctrMatchmaker
+	registry   *sessionRegistry
+	ctr        *ctrServices
 	*replyCounter
 	presence *presenceStore
 	tickets  *ticketStore
@@ -127,8 +129,8 @@ func (l *lobbyConn) dump(tag string, b []byte) {
 
 func (l *lobbyConn) run() {
 	defer l.c.Close()
-	defer dropSessionsOf(l.n)
-	defer func() { sendCTRNotices(ctrMM.leave(l, 0)) }()
+	defer l.registry.dropSessionsOf(l.n)
+	defer func() { sendCTRNotices(l.matchmaker.leave(l, 0)) }()
 	defer l.presence.dropOnline(l.n)
 	l.logf("==== CONNECT from=%s", l.c.RemoteAddr())
 

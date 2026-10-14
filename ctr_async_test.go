@@ -9,15 +9,15 @@ import (
 	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
-func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctrSearch {
+func (m *ctrMatchmaker) testCTRSearch(t *testing.T, pid uint64, playlist int) *ctrSearch {
 	t.Helper()
 	info := ctrPlayerInfo{}
 	info.Listen.Address = base64.StdEncoding.EncodeToString(make([]byte, 67))
 	info.Listen.ID = base64.StdEncoding.EncodeToString(make([]byte, 8))
 	info.Listen.Key = base64.StdEncoding.EncodeToString(make([]byte, 16))
 	raw, _ := json.Marshal(info)
-	l := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: pid, player: &playerID{PID: pid}, lobbyDoc: string(raw)}
-	search, err := parseCTRSearch(l, fmt.Sprintf(`{"members":[%d],"lobby_slots":{"min":2,"max":8},"ruleset_payload":{"filter":{"playlist_id":%d,"matchmaking_version":200}}}`, pid, playlist))
+	l := &lobbyConn{matchmaker: m, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: pid, player: &playerID{PID: pid}, lobbyDoc: string(raw)}
+	search, err := m.parseCTRSearch(l, fmt.Sprintf(`{"members":[%d],"lobby_slots":{"min":2,"max":8},"ruleset_payload":{"filter":{"playlist_id":%d,"matchmaking_version":200}}}`, pid, playlist))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctrSearch {
 }
 func TestCTRPublicPairingAndDocuments(t *testing.T) {
 	m := ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
-	a, b, c := testCTRSearch(t, 101, 0), testCTRSearch(t, 102, 0), testCTRSearch(t, 103, 1)
+	a, b, c := m.testCTRSearch(t, 101, 0), m.testCTRSearch(t, 102, 0), m.testCTRSearch(t, 103, 1)
 	if len(m.enqueue(a)) != 0 || len(m.enqueue(c)) != 0 {
 		t.Fatal("matched incompatible searches")
 	}
@@ -110,9 +110,9 @@ func TestCTRPublicPairingAndDocuments(t *testing.T) {
 }
 func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
 	m := ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
-	a := testCTRSearch(t, 201, 0)
+	a := m.testCTRSearch(t, 201, 0)
 	m.enqueue(a)
-	retry := testCTRSearch(t, 201, 0)
+	retry := m.testCTRSearch(t, 201, 0)
 	if len(m.enqueue(retry)) != 0 || len(m.waiting) != 1 {
 		t.Fatal("duplicate account matched")
 	}
@@ -120,4 +120,8 @@ func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
 	if len(m.waiting) != 0 {
 		t.Fatal("disconnected search retained")
 	}
+}
+
+func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctrSearch {
+	return testMatchmaker.testCTRSearch(t, pid, playlist)
 }

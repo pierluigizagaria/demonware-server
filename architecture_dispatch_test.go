@@ -87,14 +87,14 @@ type architectureSnapshot struct {
 // replaced registries; the instance refactor must retain these observations.
 func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *ctrSQLite) {
 	t.Helper()
-	oldSessions, oldOnline, oldUserData, oldRich := sessions, testPresence.online, testPresence.userData, testPresence.rich
+	oldSessions, oldOnline, oldUserData, oldRich := testRegistry.sessions, testPresence.online, testPresence.userData, testPresence.rich
 	oldEconomy, oldStats, oldNames, oldNews := testCTR.economy, testCTR.stats, testPresence.playerNames, testCTR.news
-	oldWaiting, oldPending, oldRooms := ctrMM.waiting, ctrMM.pending, ctrMM.rooms
-	oldTx, oldIDs := testReplies.transactions.Load(), ctrIDs.Load()
-	sessions, testPresence.online, testPresence.userData, testPresence.rich = map[[8]byte]*mmSession{}, map[uint64]*playerID{}, map[string][]byte{}, map[uint64]richPresence{}
-	ctrMM.waiting, ctrMM.pending, ctrMM.rooms = nil, nil, map[uint64]*ctrRoom{}
+	oldWaiting, oldPending, oldRooms := testMatchmaker.waiting, testMatchmaker.pending, testMatchmaker.rooms
+	oldTx, oldIDs := testReplies.transactions.Load(), testMatchmaker.ids.Load()
+	testRegistry.sessions, testPresence.online, testPresence.userData, testPresence.rich = map[[8]byte]*mmSession{}, map[uint64]*playerID{}, map[string][]byte{}, map[uint64]richPresence{}
+	testMatchmaker.waiting, testMatchmaker.pending, testMatchmaker.rooms = nil, nil, map[uint64]*ctrRoom{}
 	testReplies.transactions.Store(0)
-	ctrIDs.Store(0)
+	testMatchmaker.ids.Store(0)
 	e, db := newTestEconomy(t, false)
 	testCTR.economy, testCTR.stats, testPresence.playerNames, testCTR.news = e, db, db, ctrNewsConfig{}
 	setStartBalance(t, 10000)
@@ -104,11 +104,11 @@ func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *ctrSQLi
 	l.pubDir = t.TempDir()
 	testPresence.online[l.n] = l.player
 	t.Cleanup(func() {
-		sessions, testPresence.online, testPresence.userData, testPresence.rich = oldSessions, oldOnline, oldUserData, oldRich
+		testRegistry.sessions, testPresence.online, testPresence.userData, testPresence.rich = oldSessions, oldOnline, oldUserData, oldRich
 		testCTR.economy, testCTR.stats, testPresence.playerNames, testCTR.news = oldEconomy, oldStats, oldNames, oldNews
-		ctrMM.waiting, ctrMM.pending, ctrMM.rooms = oldWaiting, oldPending, oldRooms
+		testMatchmaker.waiting, testMatchmaker.pending, testMatchmaker.rooms = oldWaiting, oldPending, oldRooms
 		testReplies.transactions.Store(oldTx)
-		ctrIDs.Store(oldIDs)
+		testMatchmaker.ids.Store(oldIDs)
 	})
 	return l, w, db
 }
@@ -135,7 +135,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *ctrS
 	}
 	// A reservation returns the same random eight-byte ID used by the registry.
 	// Verify that relationship before normalizing this one entropy field.
-	if len(request) >= 3 && request[1] == 3 && request[2] == 19 && (request[0] == 21 || request[0] == 138) && len(sessions) == 1 {
+	if len(request) >= 3 && request[1] == 3 && request[2] == 19 && (request[0] == 21 || request[0] == 138) && len(testRegistry.sessions) == 1 {
 		for i := range frames {
 			p, _ := hex.DecodeString(frames[i].Payload)
 			if len(p) != 40 {
@@ -143,7 +143,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *ctrS
 			}
 			var id [8]byte
 			copy(id[:], p[32:40])
-			s := sessions[id]
+			s := testRegistry.sessions[id]
 			if s == nil || !s.reserved || s.owner != l.n || s.ownerPID != l.pid() || s.updated.Before(before) || s.updated.After(after) {
 				t.Fatal("reservation state does not match reply")
 			}
@@ -151,7 +151,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *ctrS
 			frames[i].Payload = hex.EncodeToString(p)
 		}
 	}
-	return architectureSnapshot{frames, testReplies.transactions.Load(), len(sessions), len(testPresence.userData), len(testPresence.rich), len(ctrMM.waiting), len(ctrMM.pending), len(ctrMM.rooms), l.lobbyDoc,
+	return architectureSnapshot{frames, testReplies.transactions.Load(), len(testRegistry.sessions), len(testPresence.userData), len(testPresence.rich), len(testMatchmaker.waiting), len(testMatchmaker.pending), len(testMatchmaker.rooms), l.lobbyDoc,
 		sqliteCount(t, db, "accounts"), sqliteCount(t, db, "inventory"), sqliteCount(t, db, "ledger"), l.afterReply != nil, l.replyErr != nil}
 }
 

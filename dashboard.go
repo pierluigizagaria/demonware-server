@@ -204,9 +204,11 @@ type apiStats struct {
 	Methods        []apiMethod    `json:"methods"`
 }
 
-func buildStats(presence *presenceStore) apiStats { return buildGameStats(presence, "") }
+func buildStats(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry) apiStats {
+	return buildGameStats(presence, matchmaker, registry, "")
+}
 
-func buildGameStats(presence *presenceStore, game string) apiStats {
+func buildGameStats(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry, game string) apiStats {
 	presence.onlineMu.Lock()
 	who := make(map[uint64]playerID, len(presence.online))
 	for n, p := range presence.online {
@@ -222,12 +224,12 @@ func buildGameStats(presence *presenceStore, game string) apiStats {
 		owner                            uint64
 		gameType, maxPlayers, numPlayers uint32
 	}
-	sessionsMu.Lock()
-	snaps := make([]sessSnap, 0, len(sessions))
-	for _, s := range sessions {
+	registry.mu.Lock()
+	snaps := make([]sessSnap, 0, len(registry.sessions))
+	for _, s := range registry.sessions {
 		snaps = append(snaps, sessSnap{s.id, s.owner, s.gameType, s.maxPlayers, s.numPlayers})
 	}
-	sessionsMu.Unlock()
+	registry.mu.Unlock()
 
 	hosting := map[uint64]apiGathering{} // host connection -> its public game
 	gs := make([]apiGathering, 0, len(snaps))
@@ -257,8 +259,8 @@ func buildGameStats(presence *presenceStore, game string) apiStats {
 		for _, p := range who {
 			names[p.PID] = p.Username
 		}
-		ctrMM.mu.Lock()
-		for _, room := range ctrMM.rooms {
+		matchmaker.mu.Lock()
+		for _, room := range matchmaker.rooms {
 			if room.host == nil || names[room.host.pid] == "" {
 				continue
 			}
@@ -285,7 +287,7 @@ func buildGameStats(presence *presenceStore, game string) apiStats {
 			}
 			gs = append(gs, g)
 		}
-		ctrMM.mu.Unlock()
+		matchmaker.mu.Unlock()
 	}
 	sort.Slice(gs, func(i, j int) bool { return gs[i].ID < gs[j].ID })
 
@@ -363,7 +365,7 @@ func buildGameStats(presence *presenceStore, game string) apiStats {
 	}
 }
 
-func startDashboard(presence *presenceStore) {
+func startDashboard(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry) {
 	port, token := strconv.Itoa(dashPort), dashToken
 
 	authed := func(w http.ResponseWriter, r *http.Request) bool {
@@ -381,7 +383,7 @@ func startDashboard(presence *presenceStore) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(buildGameStats(presence, r.URL.Query().Get("game")))
+		_ = json.NewEncoder(w).Encode(buildGameStats(presence, matchmaker, registry, r.URL.Query().Get("game")))
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 	mux.HandleFunc("/pubfiles/", pubfilesHandler)

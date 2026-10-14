@@ -114,7 +114,7 @@ func TestArchitectureSearchReplyFailureReleasesReservation(t *testing.T) {
 			w.fail = fail
 			frames := architectureCall(t, l, w, request.Bytes())
 			p := architectureReply(t, frames, 18, 0)
-			if len(frames) != 1 || len(ctrMM.pending) != 0 {
+			if len(frames) != 1 || len(testMatchmaker.pending) != 0 {
 				t.Fatal("reservation callback did not run exactly once")
 			}
 			r := demonware.NewReader(p[26:])
@@ -126,18 +126,18 @@ func TestArchitectureSearchReplyFailureReleasesReservation(t *testing.T) {
 				t.Fatal("search counter increment moved")
 			}
 			if fail == 1 {
-				if len(ctrMM.waiting) != 0 {
+				if len(testMatchmaker.waiting) != 0 {
 					t.Fatal("failed search reply retained seats")
 				}
 				return
 			}
-			if len(ctrMM.waiting) != 1 || ctrMM.waiting[0].id != id.ID {
+			if len(testMatchmaker.waiting) != 1 || testMatchmaker.waiting[0].id != id.ID {
 				t.Fatal("successful search not activated")
 			}
 			cancel := demonware.NewWriter([]byte{145, 3, 8})
 			cancel.Uint64(id.ID)
 			p = architectureReply(t, architectureCall(t, l, w, cancel.Bytes()), 8, 0)
-			if !bytes.Equal(p[26:], []byte{1, 1}) || len(ctrMM.waiting) != 0 {
+			if !bytes.Equal(p[26:], []byte{1, 1}) || len(testMatchmaker.waiting) != 0 {
 				t.Fatal("search cancellation changed")
 			}
 		})
@@ -184,24 +184,24 @@ func TestArchitectureContextRegistryLifecycle(t *testing.T) {
 				}
 				info(q)
 				architectureReply(t, architectureCall(t, l, w, q.Bytes()), task, 0)
-				s := sessions[key]
+				s := testRegistry.sessions[key]
 				if s == nil || s.reserved || s.owner != l.n || s.ownerPID != l.pid() || s.updated != now || !bytes.Equal(s.attrs, []byte{8, 9, 0, 0, 0}) {
 					t.Fatal("registry state changed")
 				}
 			}
-			if sessions[key].numPlayers != 2 {
+			if testRegistry.sessions[key].numPlayers != 2 {
 				t.Fatal("player count update changed")
 			}
 			q := request(3)
 			q.Blob(sid)
 			architectureReply(t, architectureCall(t, l, w, q.Bytes()), 3, 0)
-			if len(sessions) != 0 {
+			if len(testRegistry.sessions) != 0 {
 				t.Fatal("session not removed")
 			}
 			q = request(1)
 			info(q)
 			architectureReply(t, architectureCall(t, l, w, q.Bytes()), 1, 0)
-			if len(sessions) != 1 {
+			if len(testRegistry.sessions) != 1 {
 				t.Fatal("session not created")
 			}
 			// Find through a second connection with a distinct publisher identity.
@@ -275,9 +275,9 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	bw := &architectureWire{}
 	b.c = bw
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
-	oldClock := ctrMM.clock
-	ctrMM.clock = func() time.Time { return now }
-	t.Cleanup(func() { ctrMM.clock = oldClock })
+	oldClock := testMatchmaker.clock
+	testMatchmaker.clock = func() time.Time { return now }
+	t.Cleanup(func() { testMatchmaker.clock = oldClock })
 	search := func(l *lobbyConn, w *architectureWire) {
 		s := testCTRSearch(t, l.pid(), 0)
 		q := demonware.NewWriter([]byte{145, 3, 2})
@@ -347,7 +347,7 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	q.Uint64(roomID)
 	aw.fail = 1
 	architectureReply(t, architectureCall(t, a, aw, q.Bytes()), 10, 0)
-	if len(ctrMM.rooms) != 0 {
+	if len(testMatchmaker.rooms) != 0 {
 		t.Fatal("failed disband reply retained the room")
 	}
 }

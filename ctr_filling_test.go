@@ -9,12 +9,12 @@ import (
 
 func fillTestRoom(t *testing.T, m *ctrMatchmaker, base uint64, count int) *ctrRoom {
 	t.Helper()
-	a := testCTRSearch(t, base, 0)
+	a := m.testCTRSearch(t, base, 0)
 	m.enqueue(a)
-	out := m.enqueue(testCTRSearch(t, base+1, 0))
+	out := m.enqueue(m.testCTRSearch(t, base+1, 0))
 	r := m.rooms[out[0].ids[1]]
 	for i := 2; i < count; i++ {
-		m.enqueue(testCTRSearch(t, base+uint64(i), 0))
+		m.enqueue(m.testCTRSearch(t, base+uint64(i), 0))
 	}
 	states := map[string]int{}
 	for _, p := range r.players {
@@ -47,7 +47,7 @@ func TestCTRFailedReservationsAllowFivePlusThree(t *testing.T) {
 	if r.occupancy() != 5 {
 		t.Fatalf("failed joins consume seats: %d", r.occupancy())
 	}
-	party := testCTRSearch(t, 2000, 0)
+	party := m.testCTRSearch(t, 2000, 0)
 	party.doc.Members = []uint64{2000, 2001, 2002}
 	party.seats = 3
 	out := m.enqueue(party)
@@ -77,12 +77,12 @@ func TestCTRFullestOpenRoomWins(t *testing.T) {
 	fuller.hostDoc["lobby_open"] = false
 	smaller := fillTestRoom(t, &m, 4000, 2)
 	fuller.hostDoc["lobby_open"] = true
-	out := m.enqueue(testCTRSearch(t, 5000, 0))
+	out := m.enqueue(m.testCTRSearch(t, 5000, 0))
 	if len(out) != 1 || out[0].ids[0] != fuller.id {
 		t.Fatal("did not fill fullest room")
 	}
 	fuller.hostDoc["lobby_open"] = false
-	out = m.enqueue(testCTRSearch(t, 5001, 0))
+	out = m.enqueue(m.testCTRSearch(t, 5001, 0))
 	if len(out) != 1 || out[0].ids[0] != smaller.id {
 		t.Fatal("selected closed room")
 	}
@@ -92,12 +92,12 @@ func TestCTRRejectDuplicatePartyMembers(t *testing.T) {
 	s := testCTRSearch(t, 6000, 0)
 	s.doc.Members = []uint64{6000, 6000}
 	raw, _ := json.Marshal(s.doc)
-	if _, err := parseCTRSearch(s.conn, string(raw)); err == nil {
+	if _, err := testMatchmaker.parseCTRSearch(s.conn, string(raw)); err == nil {
 		t.Fatal("duplicate members accepted")
 	}
 	s.doc.Members = []uint64{6000, 0}
 	raw, _ = json.Marshal(s.doc)
-	if _, err := parseCTRSearch(s.conn, string(raw)); err == nil {
+	if _, err := testMatchmaker.parseCTRSearch(s.conn, string(raw)); err == nil {
 		t.Fatal("zero member accepted")
 	}
 }
@@ -106,7 +106,7 @@ func TestCTRWaitingSearchBackfilledWhenHostOpens(t *testing.T) {
 	m := ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
 	r := fillTestRoom(t, &m, 7000, 5)
 	r.hostDoc["lobby_open"] = false
-	guest := testCTRSearch(t, 8000, 0)
+	guest := m.testCTRSearch(t, 8000, 0)
 	if out := m.enqueue(guest); len(out) != 0 || len(m.waiting) != 1 {
 		t.Fatal("guest should wait while room closed")
 	}
@@ -123,9 +123,9 @@ func TestCTRWaitingSearchBackfilledWhenHostOpens(t *testing.T) {
 	}
 }
 
-func partySearch(t *testing.T, leader uint64, members ...uint64) *ctrSearch {
+func (m *ctrMatchmaker) partySearch(t *testing.T, leader uint64, members ...uint64) *ctrSearch {
 	t.Helper()
-	s := testCTRSearch(t, leader, 0)
+	s := m.testCTRSearch(t, leader, 0)
 	s.doc.Members = append([]uint64{leader}, members...)
 	s.seats = len(s.doc.Members)
 	return s
@@ -154,22 +154,22 @@ func seatsHeld(m *ctrMatchmaker) map[uint64]int {
 // three seats, whether the party is still waiting or already seated.
 func TestCTRPartyMemberSearchingAloneHoldsOneSeat(t *testing.T) {
 	m := &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
-	party := partySearch(t, 7000, 7001)
+	party := m.partySearch(t, 7000, 7001)
 	party.doc.Slots.Min = 8 // keeps waiting
 	m.enqueue(party)
-	m.enqueue(testCTRSearch(t, 7001, 1)) // another playlist: both stay waiting
+	m.enqueue(m.testCTRSearch(t, 7001, 1)) // another playlist: both stay waiting
 	if seats := seatsHeld(m); len(m.waiting) != 2 || seats[7000] != 1 || seats[7001] != 1 {
 		t.Fatalf("seats %v after a waiting party member searched alone", seats)
 	}
 
 	m = &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
 	r := fillTestRoom(t, m, 7100, 2)
-	m.enqueue(partySearch(t, 7110, 7111))
+	m.enqueue(m.partySearch(t, 7110, 7111))
 	if r.occupancy() != 4 {
 		t.Fatalf("party not seated: %d", r.occupancy())
 	}
 	version := r.version
-	out := m.enqueue(testCTRSearch(t, 7111, 0))
+	out := m.enqueue(m.testCTRSearch(t, 7111, 0))
 	if seats := seatsHeld(m); seats[7111] != 1 || seats[7110] != 1 || r.version <= version || len(out) == 0 || out[0].conn != r.host.conn {
 		t.Fatalf("seats %v after a seated party member searched alone", seats)
 	}
@@ -179,15 +179,15 @@ func TestCTRPartyMemberSearchingAloneHoldsOneSeat(t *testing.T) {
 // another player holds, whether that player waits or hosts a room.
 func TestCTRPartyClaimCannotEvictAnotherPlayer(t *testing.T) {
 	m := &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
-	m.enqueue(testCTRSearch(t, 7201, 1))
-	if err := m.reserve(partySearch(t, 7200, 7201)); err == nil {
+	m.enqueue(m.testCTRSearch(t, 7201, 1))
+	if err := m.reserve(m.partySearch(t, 7200, 7201)); err == nil {
 		t.Fatal("claim on a waiting player accepted")
 	}
 	if seats := seatsHeld(m); seats[7201] != 1 || len(m.waiting) != 1 || m.waiting[0].pid != 7201 || len(m.pending) != 0 {
 		t.Fatalf("waiting player's search changed: %v", seats)
 	}
 	r := fillTestRoom(t, m, 7300, 2)
-	if err := m.reserve(partySearch(t, 7310, r.host.pid)); err == nil {
+	if err := m.reserve(m.partySearch(t, 7310, r.host.pid)); err == nil {
 		t.Fatal("claim on a room host accepted")
 	}
 	if m.rooms[r.id] != r || r.occupancy() != 2 {
@@ -199,7 +199,7 @@ func TestCTRPartyClaimCannotEvictAnotherPlayer(t *testing.T) {
 // never both told they claimed the same free player.
 func TestCTRConcurrentPartyClaimsReserveAtomically(t *testing.T) {
 	m := &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
-	first, second := partySearch(t, 7400, 7402), partySearch(t, 7401, 7402)
+	first, second := m.partySearch(t, 7400, 7402), m.partySearch(t, 7401, 7402)
 	first.doc.Slots.Min, second.doc.Slots.Min = 8, 8
 	if err := m.reserve(first); err != nil {
 		t.Fatal(err)
@@ -223,12 +223,12 @@ func TestCTRConcurrentPartyClaimsReserveAtomically(t *testing.T) {
 func TestCTRReservedPartyShrinksBeforeActivation(t *testing.T) {
 	for _, replySent := range []bool{true, false} {
 		m := &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
-		leader := partySearch(t, 7450, 7451)
+		leader := m.partySearch(t, 7450, 7451)
 		leader.doc.Slots.Min = 8
 		if err := m.reserve(leader); err != nil {
 			t.Fatal(err)
 		}
-		m.enqueue(testCTRSearch(t, 7451, 1))
+		m.enqueue(m.testCTRSearch(t, 7451, 1))
 		if replySent {
 			m.activate(leader)
 			if len(m.waiting) != 2 || len(m.pending) != 0 || !slices.ContainsFunc(m.waiting, func(p *ctrSearch) bool { return p.id == leader.id && p.seats == 1 }) {
@@ -247,8 +247,8 @@ func TestCTRReservedPartyShrinksBeforeActivation(t *testing.T) {
 func TestCTRFollowerDisbandReleasesSeat(t *testing.T) {
 	m := &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
 	r := fillTestRoom(t, m, 7800, 2)
-	m.enqueue(partySearch(t, 7810, 7811))
-	follower := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7811, player: &playerID{PID: 7811}}
+	m.enqueue(m.partySearch(t, 7810, 7811))
+	follower := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7811, player: &playerID{PID: 7811}}
 	testPresence.onlineMu.Lock()
 	testPresence.online[follower.n] = follower.player
 	testPresence.onlineMu.Unlock()
@@ -264,7 +264,7 @@ func TestCTRFollowerDisbandReleasesSeat(t *testing.T) {
 func TestCTRPartyRetryReplacesOwnSearch(t *testing.T) {
 	m := &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
 	for range 2 {
-		s := partySearch(t, 7500, 7501)
+		s := m.partySearch(t, 7500, 7501)
 		s.doc.Slots.Min = 8
 		if err := m.reserve(s); err != nil {
 			t.Fatal("retry refused:", err)
@@ -280,10 +280,10 @@ func TestCTRPartyRetryReplacesOwnSearch(t *testing.T) {
 // newer connection holds.
 func TestCTRStaleDisconnectKeepsReplacementSeats(t *testing.T) {
 	m := &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
-	party := partySearch(t, 7600, 7601)
+	party := m.partySearch(t, 7600, 7601)
 	party.doc.Slots.Min = 8
 	m.enqueue(party)
-	old := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7699, player: &playerID{PID: 7601}}
+	old := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7699, player: &playerID{PID: 7601}}
 	testPresence.onlineMu.Lock()
 	testPresence.online[7698] = &playerID{PID: 7601} // the replacement connection
 	testPresence.onlineMu.Unlock()
@@ -300,7 +300,7 @@ func TestCTROldLobbyDisbandKeepsNewSearch(t *testing.T) {
 	m := &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
 	r := fillTestRoom(t, m, 7700, 3)
 	player := r.players[2]
-	again := testCTRSearch(t, player.pid, 1)
+	again := m.testCTRSearch(t, player.pid, 1)
 	again.conn = player.conn
 	m.enqueue(again)
 	m.leave(player.conn, r.id)

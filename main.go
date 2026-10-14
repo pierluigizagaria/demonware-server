@@ -119,7 +119,8 @@ func main() {
 	store.initialBalance = func() int64 { return cfg.startBalance }
 	ctr := &ctrServices{economy: economy, stats: store, news: cfg.news}
 	presence := newPresenceStore(store)
-	ctrMM.onlinePIDs = presence.onlinePIDs
+	matchmaker := &ctrMatchmaker{onlinePIDs: presence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
+	registry := newSessionRegistry()
 	if cfg.unlockAll {
 		log.Print("[D3] unlock-all: on")
 	} else {
@@ -127,11 +128,11 @@ func main() {
 	}
 
 	tickets := newTicketStore()
-	go startDashboard(presence)
+	go startDashboard(presence, matchmaker, registry)
 	go serveNAT(natPort)
 	startCTRRelay(cfg.relayLow, cfg.relayHigh, nextendoHost, presence.onlinePIDs)
-	go reapSessions()
-	startLobby(tickets, presence, &replyCounter{}, ctr)
+	go registry.reapSessions()
+	startLobby(tickets, presence, &replyCounter{}, ctr, matchmaker, registry)
 
 	if err := serveAuth(platform, tickets, presence); err != nil {
 		log.Fatalf("[D3 Auth] stopped: %v", err)

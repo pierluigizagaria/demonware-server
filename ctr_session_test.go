@@ -9,14 +9,14 @@ import (
 )
 
 func TestCTRFriendBeyondFirstTwenty(t *testing.T) {
-	host := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 90343, player: &playerID{PID: 90343}}
-	guest := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 99000, player: &playerID{PID: 99000}}
+	host := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 90343, player: &playerID{PID: 90343}}
+	guest := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 99000, player: &playerID{PID: 99000}}
 	defer func() {
-		sessionsMu.Lock()
-		defer sessionsMu.Unlock()
-		for id, s := range sessions {
+		testRegistry.mu.Lock()
+		defer testRegistry.mu.Unlock()
+		for id, s := range testRegistry.sessions {
 			if s.ownerPID == host.pid() {
-				delete(sessions, id)
+				delete(testRegistry.sessions, id)
 			}
 		}
 	}()
@@ -42,14 +42,14 @@ func TestCTRFriendBeyondFirstTwenty(t *testing.T) {
 }
 
 func TestCTRFriendResultUnpacksUploadedAttributes(t *testing.T) {
-	host := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89011, player: &playerID{PID: 89011}}
-	guest := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89012, player: &playerID{PID: 89012}}
+	host := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89011, player: &playerID{PID: 89011}}
+	guest := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89012, player: &playerID{PID: 89012}}
 	defer func() {
-		sessionsMu.Lock()
-		defer sessionsMu.Unlock()
-		for id, s := range sessions {
+		testRegistry.mu.Lock()
+		defer testRegistry.mu.Unlock()
+		for id, s := range testRegistry.sessions {
 			if s.ownerPID == host.pid() {
-				delete(sessions, id)
+				delete(testRegistry.sessions, id)
 			}
 		}
 	}()
@@ -89,14 +89,14 @@ func TestCTRFriendResultUnpacksUploadedAttributes(t *testing.T) {
 }
 
 func TestCTRReservedSessionLifecycle(t *testing.T) {
-	host := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89001, player: &playerID{PID: 89001}}
-	guest := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89002, player: &playerID{PID: 89002}}
+	host := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89001, player: &playerID{PID: 89001}}
+	guest := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89002, player: &playerID{PID: 89002}}
 	defer func() {
-		sessionsMu.Lock()
-		defer sessionsMu.Unlock()
-		for id, s := range sessions {
+		testRegistry.mu.Lock()
+		defer testRegistry.mu.Unlock()
+		for id, s := range testRegistry.sessions {
 			if s.ownerPID == host.pid() {
-				delete(sessions, id)
+				delete(testRegistry.sessions, id)
 			}
 		}
 	}()

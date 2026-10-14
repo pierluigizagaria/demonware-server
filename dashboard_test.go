@@ -9,13 +9,13 @@ import (
 func TestDashboardCTRMembershipAndTitleSplit(t *testing.T) {
 	oldOnline := testPresence.online
 	oldStats := connStats
-	oldRooms := ctrMM.rooms
-	oldSessions := sessions
+	oldRooms := testMatchmaker.rooms
+	oldSessions := testRegistry.sessions
 	defer func() {
 		testPresence.online = oldOnline
 		connStats = oldStats
-		ctrMM.rooms = oldRooms
-		sessions = oldSessions
+		testMatchmaker.rooms = oldRooms
+		testRegistry.sessions = oldSessions
 	}()
 	testPresence.online = map[uint64]*playerID{1: {PID: 101, Username: "host", Title: 5760}, 2: {PID: 102, Username: "joined", Title: 5760}, 3: {PID: 103, Username: "pending", Title: 5760}, 4: {PID: 104, Username: "diablo"}}
 	connStats = map[uint64]*connStat{}
@@ -24,8 +24,8 @@ func TestDashboardCTRMembershipAndTitleSplit(t *testing.T) {
 	}
 	host := &ctrSearch{pid: 101, doc: ctrSearchDoc{Members: []uint64{101}}}
 	guest := &ctrSearch{pid: 102, doc: ctrSearchDoc{Members: []uint64{102, 103}}}
-	ctrMM.rooms = map[uint64]*ctrRoom{88: {id: 88, host: host, players: []*ctrSearch{host, guest}, capacity: 8, hostDoc: map[string]any{"player_state": map[string]any{"101": json.Number("2"), "102": json.Number("2"), "103": json.Number("1")}}}}
-	sessions = map[[8]byte]*mmSession{{1}: {owner: 1, numPlayers: 2, maxPlayers: 8}, {2}: {owner: 2, numPlayers: 1, maxPlayers: 8}}
+	testMatchmaker.rooms = map[uint64]*ctrRoom{88: {id: 88, host: host, players: []*ctrSearch{host, guest}, capacity: 8, hostDoc: map[string]any{"player_state": map[string]any{"101": json.Number("2"), "102": json.Number("2"), "103": json.Number("1")}}}}
+	testRegistry.sessions = map[[8]byte]*mmSession{{1}: {owner: 1, numPlayers: 2, maxPlayers: 8}, {2}: {owner: 2, numPlayers: 1, maxPlayers: 8}}
 	s := testBuildGameStats("ctr")
 	if s.Connected != 3 || s.ActiveLobbies != 1 || s.InLobby != 2 || s.Gatherings[0].Count != 2 {
 		t.Fatalf("wrong counters: %+v", s)

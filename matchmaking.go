@@ -76,26 +76,30 @@ func (l *lobbyConn) owns(s *mmSession) bool {
 }
 
 // reapSessions removes games whose host never came back.
-func reapSessions() {
+func (registry *sessionRegistry) reapSessions() {
 	for range time.Tick(30 * time.Second) {
-		reapSessionsOnce()
+		registry.reapSessionsOnce()
 	}
 }
 
-func reapSessionsOnce() {
-	sessionsMu.Lock()
-	defer sessionsMu.Unlock()
-	for id, s := range sessions {
+func (registry *sessionRegistry) reapSessionsOnce() {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	for id, s := range registry.sessions {
 		if s.owner == 0 && time.Since(s.orphaned) > orphanGrace {
-			delete(sessions, id)
+			delete(registry.sessions, id)
 		}
 	}
 }
 
-var (
-	sessionsMu sync.Mutex
-	sessions   = map[[8]byte]*mmSession{}
-)
+type sessionRegistry struct {
+	mu       sync.Mutex
+	sessions map[[8]byte]*mmSession
+}
+
+func newSessionRegistry() *sessionRegistry {
+	return &sessionRegistry{sessions: map[[8]byte]*mmSession{}}
+}
 
 // readInfo reads a bdMatchMakingInfo sent by the client.
 func readInfo(r *demonware.Reader) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
@@ -136,15 +140,15 @@ func readContextInfo(r *demonware.Reader, context string) (host []byte, gameType
 
 // dropSessionsOf detaches the games of a closed connection; reapSessions removes
 // them if the host does not come back.
-func dropSessionsOf(conn uint64) {
-	sessionsMu.Lock()
-	defer sessionsMu.Unlock()
-	for id, s := range sessions {
+func (registry *sessionRegistry) dropSessionsOf(conn uint64) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	for id, s := range registry.sessions {
 		if s.owner != conn {
 			continue
 		}
 		if s.ownerPID == 0 {
-			delete(sessions, id)
+			delete(registry.sessions, id)
 			continue
 		}
 		s.owner, s.orphaned = 0, time.Now()
@@ -172,15 +176,15 @@ func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context str
 		if pid == me {
 			continue
 		}
-		sessionsMu.Lock()
-		for _, s := range sessions {
+		l.registry.mu.Lock()
+		for _, s := range l.registry.sessions {
 			if s.ownerPID == pid && s.context == context && !s.reserved && !seen[s.id] {
 				seen[s.id] = true
 				copy := *s
 				found = append(found, hit{id, &copy})
 			}
 		}
-		sessionsMu.Unlock()
+		l.registry.mu.Unlock()
 	}
 	l.logf("matchmaking FRIENDS context=%q %d asked -> %d game(s)", context, len(ids), len(found))
 	// The game ties each result to a friend by the online id carried BY the game
@@ -211,14 +215,14 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		if _, err := l.random(s.id[:]); err != nil {
 			return l.taskReply(task, errUnhandled, nil)
 		}
-		sessionsMu.Lock()
-		for id, old := range sessions {
+		l.registry.mu.Lock()
+		for id, old := range l.registry.sessions {
 			if old.reserved && old.context == context && l.owns(old) {
-				delete(sessions, id)
+				delete(l.registry.sessions, id)
 			}
 		}
-		sessions[s.id] = s
-		sessionsMu.Unlock()
+		l.registry.sessions[s.id] = s
+		l.registry.mu.Unlock()
 		l.logf("matchmaking RESERVE session=%X", s.id)
 		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
 	case mmCreateSession:
@@ -230,18 +234,18 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		s := &mmSession{owner: l.n, ownerPID: l.pid(), hostAddr: host, gameType: gt, maxPlayers: maxp, numPlayers: 1, attrs: attrs, updated: l.now()}
 		_, _ = l.random(s.id[:])
 		s.context = context
-		sessionsMu.Lock()
+		l.registry.mu.Lock()
 		// A host recreating its game after reconnecting replaces the old one.
 		if s.ownerPID != 0 {
-			for old, prev := range sessions {
+			for old, prev := range l.registry.sessions {
 				if prev.ownerPID == s.ownerPID && prev.context == context {
-					delete(sessions, old)
+					delete(l.registry.sessions, old)
 				}
 			}
 		}
-		sessions[s.id] = s
-		n := len(sessions)
-		sessionsMu.Unlock()
+		l.registry.sessions[s.id] = s
+		n := len(l.registry.sessions)
+		l.registry.mu.Unlock()
 		l.logf("matchmaking CREATE session=%X gameType=%d max=%d host=%s (%d open games)",
 			s.id, gt, maxp, hex.EncodeToString(host[:min(6, len(host))]), n)
 		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
@@ -259,8 +263,8 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		}
 		var id [8]byte
 		copy(id[:], sid)
-		sessionsMu.Lock()
-		s, ok := sessions[id]
+		l.registry.mu.Lock()
+		s, ok := l.registry.sessions[id]
 		if ok && s.context == context && l.owns(s) {
 			s.owner, s.ownerPID = l.n, l.pid()
 			s.hostAddr, s.gameType, s.maxPlayers, s.attrs, s.updated = host, gt, maxp, attrs, l.now()
@@ -269,10 +273,10 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 				s.numPlayers = 1
 			}
 		} else {
-			sessionsMu.Unlock()
+			l.registry.mu.Unlock()
 			return l.taskReply(task, errUnhandled, nil)
 		}
-		sessionsMu.Unlock()
+		l.registry.mu.Unlock()
 		l.logf("matchmaking UPDATE session=%X known=%v", id, ok)
 		return l.taskReply(task, 0, nil)
 
@@ -288,8 +292,8 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		host, gt, maxp, attrs, err := readContextInfo(r, context)
 		var id [8]byte
 		copy(id[:], sid)
-		sessionsMu.Lock()
-		s, ok := sessions[id]
+		l.registry.mu.Lock()
+		s, ok := l.registry.sessions[id]
 		if ok && s.context == context && l.owns(s) {
 			s.owner, s.ownerPID = l.n, l.pid()
 			s.numPlayers = players
@@ -298,7 +302,7 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 			}
 			s.updated = l.now()
 		}
-		sessionsMu.Unlock()
+		l.registry.mu.Unlock()
 		l.logf("matchmaking PLAYERS session=%X players=%d/%d known=%v", id, players, maxp, ok)
 		return l.taskReply(task, 0, nil)
 
@@ -307,11 +311,11 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		if err == nil && len(sid) == 8 {
 			var id [8]byte
 			copy(id[:], sid)
-			sessionsMu.Lock()
-			if s := sessions[id]; s != nil && s.context == context && l.owns(s) {
-				delete(sessions, id)
+			l.registry.mu.Lock()
+			if s := l.registry.sessions[id]; s != nil && s.context == context && l.owns(s) {
+				delete(l.registry.sessions, id)
 			}
-			sessionsMu.Unlock()
+			l.registry.mu.Unlock()
 			l.logf("matchmaking DELETE session=%X", id)
 		}
 		return l.taskReply(task, 0, nil)
@@ -323,14 +327,14 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		if maxr == 0 || maxr > 50 {
 			maxr = 50
 		}
-		sessionsMu.Lock()
-		found := make([]*mmSession, 0, len(sessions))
-		for _, s := range sessions {
+		l.registry.mu.Lock()
+		found := make([]*mmSession, 0, len(l.registry.sessions))
+		for _, s := range l.registry.sessions {
 			if !l.owns(s) && s.context == context && !s.reserved {
 				found = append(found, s)
 			}
 		}
-		sessionsMu.Unlock()
+		l.registry.mu.Unlock()
 		if int(start) < len(found) {
 			found = found[start:]
 		} else {

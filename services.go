@@ -180,7 +180,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 		ok := false
 		if e1 == nil && e2 == nil && e3 == nil {
 			var notices []ctrNotice
-			ok, notices = ctrMM.syncDoc(l, id, version, raw)
+			ok, notices = l.matchmaker.syncDoc(l, id, version, raw)
 			l.afterReply = func() { sendCTRNotices(notices) }
 		}
 		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
@@ -199,9 +199,9 @@ func (l *lobbyConn) onTask(payload []byte) {
 			reply = l.taskReply(task, errUnhandled, nil)
 			break
 		}
-		search, err := parseCTRSearch(l, raw)
+		search, err := l.matchmaker.parseCTRSearch(l, raw)
 		if err == nil {
-			err = ctrMM.reserve(search)
+			err = l.matchmaker.reserve(search)
 		}
 		if err != nil {
 			l.logf("CTR search rejected: %v", err)
@@ -212,10 +212,10 @@ func (l *lobbyConn) onTask(payload []byte) {
 		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(doc); return 1 })
 		l.afterReply = func() {
 			if l.replyErr != nil {
-				ctrMM.release(search) // the client never learned of this search
+				l.matchmaker.release(search) // the client never learned of this search
 				return
 			}
-			notices := ctrMM.activate(search)
+			notices := l.matchmaker.activate(search)
 			l.logf("CTR search id=%d registered; seats=%d filter=%s notifications=%d",
 				search.id, search.seats, search.filterID, len(notices))
 			sendCTRNotices(notices)
@@ -223,12 +223,12 @@ func (l *lobbyConn) onTask(payload []byte) {
 
 	case service == svcAsyncMatchMaking && task == 8:
 		id, err := r.Uint64()
-		ok := err == nil && ctrMM.cancel(l, id)
+		ok := err == nil && l.matchmaker.cancel(l, id)
 		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
 	case service == svcAsyncMatchMaking && task == taskLobbyDisbanded:
 		id, err := r.Uint64()
 		if err == nil {
-			notices := ctrMM.leave(l, id)
+			notices := l.matchmaker.leave(l, id)
 			l.afterReply = func() { sendCTRNotices(notices) }
 		}
 		reply = l.taskReply(task, 0, nil)
@@ -249,7 +249,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 
 	case service == svcAsyncMatchMaking && task == taskGetLobbyDocuments:
 		id, err := r.Uint64()
-		h, b, ok := ctrMM.documents(l, id)
+		h, b, ok := l.matchmaker.documents(l, id)
 		if err != nil || !ok {
 			reply = l.taskReply(task, errUnhandled, nil)
 			break

@@ -83,6 +83,7 @@ type ctrRoom struct {
 	mergeTarget uint64
 }
 type ctrMatchmaker struct {
+	ids        atomic.Uint64
 	onlinePIDs func() []uint64
 	clock      func() time.Time
 	mu         sync.Mutex
@@ -94,10 +95,7 @@ type ctrMatchmaker struct {
 	pending map[uint64]*ctrSearch
 }
 
-var ctrMM = ctrMatchmaker{rooms: make(map[uint64]*ctrRoom)}
-var ctrIDs atomic.Uint64
-
-func parseCTRSearch(l *lobbyConn, raw string) (*ctrSearch, error) {
+func (m *ctrMatchmaker) parseCTRSearch(l *lobbyConn, raw string) (*ctrSearch, error) {
 	s := &ctrSearch{conn: l, pid: l.pid()}
 	// A party searches as ONE request issued by its leader, listing every member.
 	// Refusing anything but a lone member meant a duo or trio never entered the
@@ -138,7 +136,7 @@ func parseCTRSearch(l *lobbyConn, raw string) (*ctrSearch, error) {
 	// The fingerprint makes that visible without logging the payload itself.
 	sum := sha256.Sum256(filter)
 	s.filterID = hex.EncodeToString(sum[:4])
-	s.id = ctrIDs.Add(1)
+	s.id = m.ids.Add(1)
 	return s, nil
 }
 
@@ -394,7 +392,7 @@ func (m *ctrMatchmaker) activate(reserved *ctrSearch) []ctrNotice {
 		return evicted
 	}
 	h := group[0]
-	r := &ctrRoom{clock: m.now, id: ctrIDs.Add(1), version: 1, created: m.now().Unix(), host: h, players: group, capacity: maximum, notified: map[*lobbyConn]bool{h.conn: true}}
+	r := &ctrRoom{clock: m.now, id: m.ids.Add(1), version: 1, created: m.now().Unix(), host: h, players: group, capacity: maximum, notified: map[*lobbyConn]bool{h.conn: true}}
 	r.hostDoc = map[string]any{
 		"update_id": r.version, "update_time": r.created, "game_id": r.id, "lobby_open": true, "lobby_open_for_pres_join": true,
 		"player_state":  map[string]uint32{strconv.FormatUint(h.pid, 10): 1},

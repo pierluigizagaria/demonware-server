@@ -49,17 +49,17 @@ func TestCTRUmbrellaIssuedTicket(t *testing.T) {
 
 // A friend stays joinable while their host reconnects.
 func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
-	host := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5551, player: &playerID{Username: "Mars", PID: 1800000119}}
-	defer dropSessionsOf(host.n)
+	host := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5551, player: &playerID{Username: "Mars", PID: 1800000119}}
+	defer testRegistry.dropSessionsOf(host.n)
 	info := &demonware.Writer{}
 	info.Blob(make([]byte, 67))
 	info.Uint32(8)
 	info.Uint32(8)
 	host.onMatchMakingContext(mmCreateSession, demonware.NewReader(info.Bytes()), "ctr:Delta")
 
-	dropSessionsOf(host.n) // the host loses its connection
+	testRegistry.dropSessionsOf(host.n) // the host loses its connection
 
-	friend := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5552, player: &playerID{Username: "Collecting", PID: 1800003406}}
+	friend := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5552, player: &playerID{Username: "Collecting", PID: 1800003406}}
 	ask := &demonware.Writer{}
 	ask.Uint64(1800000119)
 	reply := friend.onFriendSessions(14, demonware.NewReader(ask.Bytes()), "ctr:Delta")
@@ -67,14 +67,14 @@ func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
 		t.Fatalf("orphaned host session not offered to friend: %d results", n)
 	}
 
-	sessionsMu.Lock()
-	for _, s := range sessions {
+	testRegistry.mu.Lock()
+	for _, s := range testRegistry.sessions {
 		if s.ownerPID == 1800000119 {
 			s.orphaned = time.Now().Add(-2 * orphanGrace)
 		}
 	}
-	sessionsMu.Unlock()
-	reapSessionsOnce()
+	testRegistry.mu.Unlock()
+	testRegistry.reapSessionsOnce()
 	reply = friend.onFriendSessions(14, demonware.NewReader(ask.Bytes()), "ctr:Delta")
 	if n := binary.LittleEndian.Uint32(reply[17:21]); n != 0 {
 		t.Fatalf("abandoned session still offered: %d results", n)
@@ -99,7 +99,7 @@ func TestCTRHTTPProxyReplyEncoding(t *testing.T) {
 
 // A connected friend's presence comes back; a departed player's does not.
 func TestCTRRichPresenceRoundTrip(t *testing.T) {
-	host := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7771, player: &playerID{Username: "Mars", PID: 1800000119}}
+	host := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7771, player: &playerID{Username: "Mars", PID: 1800000119}}
 	testPresence.onlineMu.Lock()
 	testPresence.online[host.n] = host.player
 	testPresence.onlineMu.Unlock()
@@ -119,7 +119,7 @@ func TestCTRRichPresenceRoundTrip(t *testing.T) {
 		q.Uint32(1)
 		q.Uint64(id)
 		q.String("nintendo")
-		peer := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7772, player: &playerID{Username: "Collecting", PID: 1800003406}}
+		peer := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7772, player: &playerID{Username: "Collecting", PID: 1800003406}}
 		return peer.onRichPresence(rpGetAndSubscribe, demonware.NewReader(q.Bytes()))
 	}
 	if n := binary.LittleEndian.Uint32(ask(1800000119)[17:21]); n != 1 {
@@ -131,8 +131,8 @@ func TestCTRRichPresenceRoundTrip(t *testing.T) {
 }
 
 func TestCTRSessionCreateDelete(t *testing.T) {
-	l := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987654}
-	defer dropSessionsOf(l.n)
+	l := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987654}
+	defer testRegistry.dropSessionsOf(l.n)
 	info := &demonware.Writer{}
 	info.Blob(make([]byte, 67))
 	info.Uint32(8)
@@ -143,31 +143,31 @@ func TestCTRSessionCreateDelete(t *testing.T) {
 		t.Fatalf("create must return one session ID: %x", response)
 	}
 	var session *mmSession
-	sessionsMu.Lock()
-	for _, s := range sessions {
+	testRegistry.mu.Lock()
+	for _, s := range testRegistry.sessions {
 		if s.owner == l.n {
 			session = s
 			break
 		}
 	}
-	sessionsMu.Unlock()
+	testRegistry.mu.Unlock()
 	if session == nil || session.context != "ctr:Delta" {
 		t.Fatal("missing stored CTR session")
 	}
 	args := &demonware.Writer{}
 	args.Blob(session.id[:])
-	other := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987655}
+	other := &lobbyConn{matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987655}
 	other.onMatchMakingContext(3, demonware.NewReader(args.Bytes()), "ctr:Delta")
-	sessionsMu.Lock()
-	_, exists := sessions[session.id]
-	sessionsMu.Unlock()
+	testRegistry.mu.Lock()
+	_, exists := testRegistry.sessions[session.id]
+	testRegistry.mu.Unlock()
 	if !exists {
 		t.Fatal("another connection deleted the session")
 	}
 	l.onMatchMakingContext(3, demonware.NewReader(args.Bytes()), "ctr:Delta")
-	sessionsMu.Lock()
-	_, exists = sessions[session.id]
-	sessionsMu.Unlock()
+	testRegistry.mu.Lock()
+	_, exists = testRegistry.sessions[session.id]
+	testRegistry.mu.Unlock()
 	if exists {
 		t.Fatal("owner deletion did not remove the session")
 	}
