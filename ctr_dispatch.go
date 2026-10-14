@@ -18,6 +18,7 @@ type storageHandler struct {
 }
 type contextHandler struct {
 	*replyCounter
+	readInfo func(*demonware.Reader) ([]byte, uint32, uint32, []byte, error)
 	registry *sessionRegistry
 	presence *presenceStore
 	relay    *relayTable
@@ -367,13 +368,13 @@ func (handler *diabloMatchHandler) Handle(peer taskSession, request taskRequest)
 func newCTRServiceTable(replies *replyCounter, ctr *ctrServices, presence *presenceStore, registry *sessionRegistry, matchmaker *ctrMatchmaker, files *publisherFiles, pubDir string, relay *relayTable) (*serviceTable, *asyncHandler) {
 	friends := &presenceHandler{replyCounter: replies, presence: presence}
 	economy := &economyHandler{replyCounter: replies, economy: ctr.economy}
-	context := &contextHandler{replyCounter: replies, registry: registry, presence: presence, relay: relay}
+	context := &contextHandler{readInfo: readCTRInfo, replyCounter: replies, registry: registry, presence: presence, relay: relay}
 	async := &asyncHandler{replyCounter: replies, matchmaker: matchmaker, info: map[uint64]string{}}
 	table := &serviceTable{replies: replies, handlers: map[byte]taskHandler{
 		4:   &statsHandler{replyCounter: replies, stats: ctr.stats, presence: presence},
 		10:  &storageHandler{replyCounter: replies, files: files, pubDir: pubDir},
 		12:  &utilityHandler{friends},
-		21:  &diabloMatchHandler{context},
+		21:  &diabloMatchHandler{&contextHandler{readInfo: readInfo, replyCounter: replies, registry: registry, presence: presence, relay: relay}},
 		29:  &userDataHandler{friends},
 		38:  &platformHandler{replies},
 		68:  &richPresenceHandler{friends},

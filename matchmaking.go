@@ -22,7 +22,6 @@ package main
 
 import (
 	"encoding/hex"
-	"strings"
 	"sync"
 	"time"
 
@@ -119,10 +118,7 @@ func readInfo(r *demonware.Reader) (host []byte, gameType, maxPlayers uint32, at
 // CTR wraps its title-specific attributes when uploading MatchMakingInfo,
 // but its result deserializer reads those fields directly after the base info.
 // Trailing request options are outside that blob and are not result fields.
-func readContextInfo(r *demonware.Reader, context string) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
-	if !strings.HasPrefix(context, "ctr:") {
-		return readInfo(r)
-	}
+func readCTRInfo(r *demonware.Reader) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
 	if host, err = r.Blob(); err != nil {
 		return
 	}
@@ -226,7 +222,7 @@ func (handler *contextHandler) onMatchMakingContext(peer taskSession, task byte,
 		peer.Logf("matchmaking RESERVE session=%X", s.id)
 		return handler.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
 	case mmCreateSession:
-		host, gt, maxp, attrs, err := readContextInfo(r, context)
+		host, gt, maxp, attrs, err := handler.readInfo(r)
 		if err != nil {
 			peer.Logf("createSession unreadable: %v", err)
 			return handler.taskReply(task, errUnhandled, nil)
@@ -256,7 +252,7 @@ func (handler *contextHandler) onMatchMakingContext(peer taskSession, task byte,
 			peer.Logf("updateSession: id unreadable (%v)", err)
 			return handler.taskReply(task, 0, nil)
 		}
-		host, gt, maxp, attrs, err := readContextInfo(r, context)
+		host, gt, maxp, attrs, err := handler.readInfo(r)
 		if err != nil {
 			peer.Logf("updateSession %X: info unreadable: %v", sid, err)
 			return handler.taskReply(task, 0, nil)
@@ -289,7 +285,7 @@ func (handler *contextHandler) onMatchMakingContext(peer taskSession, task byte,
 			return handler.taskReply(task, 0, nil)
 		}
 		players, _ := r.Uint32()
-		host, gt, maxp, attrs, err := readContextInfo(r, context)
+		host, gt, maxp, attrs, err := handler.readInfo(r)
 		var id [8]byte
 		copy(id[:], sid)
 		handler.registry.mu.Lock()

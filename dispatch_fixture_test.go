@@ -1,6 +1,9 @@
 package main
 
-import "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+import (
+	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	"strings"
+)
 
 // Direct-handler compatibility fixtures use the same explicit dependencies.
 func (l *lobbyConn) onAchievements(task byte, payload []byte) (result taskResult) {
@@ -35,16 +38,20 @@ func (l *lobbyConn) onRichPresence(task byte, r *demonware.Reader) []byte {
 }
 
 func (l *lobbyConn) owns(s *mmSession) bool {
-	return (&contextHandler{replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).owns(l, s)
+	return (&contextHandler{readInfo: readInfo, replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).owns(l, s)
 }
 func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context string) []byte {
-	return (&contextHandler{replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onFriendSessions(l, task, r, context)
+	return (&contextHandler{readInfo: readInfo, replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onFriendSessions(l, task, r, context)
 }
 func (l *lobbyConn) onMatchMaking(task byte, r *demonware.Reader) []byte {
-	return (&contextHandler{replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onMatchMaking(l, task, r)
+	return (&contextHandler{readInfo: readInfo, replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onMatchMaking(l, task, r)
 }
 func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context string) []byte {
-	return (&contextHandler{replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onMatchMakingContext(l, task, r, context)
+	readInfo := readInfo
+	if strings.HasPrefix(context, "ctr:") {
+		readInfo = readCTRInfo
+	}
+	return (&contextHandler{readInfo: readInfo, replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onMatchMakingContext(l, task, r, context)
 }
 func (l *lobbyConn) publisherFile(name string) ([]byte, string) {
 	return (&storageHandler{replyCounter: l.replyCounter, files: l.files, pubDir: l.pubDir}).publisherFile(l, name)
