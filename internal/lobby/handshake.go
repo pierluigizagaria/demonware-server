@@ -82,10 +82,6 @@ type Session struct {
 	msgSeen  int
 	stateMu  sync.Mutex
 	stopping bool
-
-	// Sent after the in-flight task reply (pushed messages).
-	AfterReplyActive bool
-	ReplyErr         error // last attempted reply, retained for diagnostics
 }
 
 func (l *Session) now() time.Time {

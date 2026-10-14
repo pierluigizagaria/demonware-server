@@ -117,9 +117,15 @@ func TestPS4MarketplaceRejectsUnsupportedTasksWithoutWrite(t *testing.T) {
 			}
 			payload[2] = byte(task)
 			marketplaceOutcome(t, sharedTask(t, l, wire, payload), lobby.ErrUnhandled)
+			if len(marketplaceFrames(t, l, wire)) != 1 {
+				t.Fatal("unsupported task sent a push")
+			}
 		}
 		payload[1] = demonware.TagBool
 		marketplaceOutcome(t, sharedTask(t, l, wire, payload), lobby.ErrUnhandled)
+		if len(marketplaceFrames(t, l, wire)) != 1 {
+			t.Fatal("unsupported task sent a push")
+		}
 		payload[1] = demonware.TagUint8
 	}
 	check()
@@ -136,7 +142,7 @@ func TestPS4MarketplaceRejectsUnsupportedTasksWithoutWrite(t *testing.T) {
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("unsupported task changed an existing ledger")
 	}
-	if l.AfterReplyActive {
+	if len(marketplaceFrames(t, l, wire)) != 1 {
 		t.Fatal("unsupported task scheduled a push")
 	}
 }

@@ -92,13 +92,10 @@ func (l *Session) DeliverResult(result TaskResult) {
 	var sendErr error
 	if result.AfterReply != nil {
 		defer func() {
-			l.AfterReplyActive = true
-			defer func() { l.AfterReplyActive = false }()
 			result.AfterReply(sendErr)
 		}()
 	}
 	sendErr = l.sendEncrypted(demonware.InnerTaskReply, result.Reply)
-	l.ReplyErr = sendErr
 	if sendErr != nil {
 		l.logf("send reply: %v", sendErr)
 	}

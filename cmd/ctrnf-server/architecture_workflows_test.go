@@ -23,7 +23,7 @@ func architectureCall(t *testing.T, l *lobbyConn, w *architectureWire, payload [
 	before := l.ChannelSnapshot().ServerSequence
 	l.onTask(payload)
 	frames := architectureFrames(t, l, w, before)
-	if l.AfterReplyActive {
+	if l.callbackPending() {
 		t.Fatal("callback retained after reply attempt")
 	}
 	return frames
@@ -439,13 +439,15 @@ func TestArchitectureResultCallbackRunsOnceAfterSendAttempt(t *testing.T) {
 			w := &architectureWire{fail: fail}
 			l.C = w
 			calls := 0
+			completed := false
 			l.DeliverResult(lobby.TaskResult{Reply: l.TaskReply(1, 0, nil), AfterReply: func(err error) {
 				calls++
-				if len(w.writes) != 1 || (err != nil) != (fail == 1) {
+				if len(w.writes) != 1 || err != w.lastWriteError || (err != nil) != (fail == 1) {
 					t.Fatal("callback ran before send or received another send outcome")
 				}
+				completed = true
 			}})
-			if calls != 1 || l.AfterReplyActive {
+			if calls != 1 || !completed {
 				t.Fatal("callback was not completed exactly once")
 			}
 			architectureFrames(t, l, w, 0)

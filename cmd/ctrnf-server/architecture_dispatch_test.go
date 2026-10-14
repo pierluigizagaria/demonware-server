@@ -34,15 +34,18 @@ type architectureFrame struct {
 
 type architectureWire struct {
 	platformWire
-	writes [][]byte
-	fail   int
+	writes         [][]byte
+	fail           int
+	lastWriteError error
 }
 
 func (w *architectureWire) Write(p []byte) (int, error) {
 	w.writes = append(w.writes, bytes.Clone(p))
 	if w.fail == len(w.writes) {
-		return 0, errors.New("synthetic write failure")
+		w.lastWriteError = errors.New("synthetic write failure")
+		return 0, w.lastWriteError
 	}
+	w.lastWriteError = nil
 	return w.platformWire.Write(p)
 }
 
@@ -160,7 +163,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *stor
 		}
 	}
 	return architectureSnapshot{frames, testReplies.Transactions.Load(), len(testRegistry.Snapshot()), testPresence.Counts().UserData, testPresence.Counts().RichPresence, len(testMatchmaker.Snapshot().WaitingIDs), testMatchmaker.Snapshot().Pending, testMatchmaker.Snapshot().Rooms, l.lobbyDoc,
-		sqliteCount(t, db, "accounts"), sqliteCount(t, db, "inventory"), sqliteCount(t, db, "ledger"), l.AfterReplyActive, l.ReplyErr != nil}
+		sqliteCount(t, db, "accounts"), sqliteCount(t, db, "inventory"), sqliteCount(t, db, "ledger"), l.callbackPending(), l.replyError != nil}
 }
 
 func TestArchitectureDispatcherBaseline(t *testing.T) {

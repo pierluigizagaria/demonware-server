@@ -133,8 +133,14 @@ func TestCTRNewsGameRequestAndReply(t *testing.T) {
 	newsLocation(t, r, 1, 1)
 	id := newsMessage(t, r, "en", text)
 	newsEnd(t, r)
+	if len(marketplaceFrames(t, l, wire)) != 1 {
+		t.Fatal("news sent a push")
+	}
 	r = newsReply(t, sharedTask(t, l, wire, newsViewed("octane_psn", "en", id)), 4, 0, 0)
 	newsEnd(t, r)
+	if len(marketplaceFrames(t, l, wire)) != 1 {
+		t.Fatal("news sent a push")
+	}
 	// Reporting a view must not consume the instance's message.
 	r = newsReply(t, sharedTask(t, l, wire, request), 5, 0, 1)
 	newsLocation(t, r, 1, 1)
@@ -142,7 +148,10 @@ func TestCTRNewsGameRequestAndReply(t *testing.T) {
 		t.Fatal("view report changed the message")
 	}
 	newsEnd(t, r)
-	if l.AfterReplyActive {
+	if len(marketplaceFrames(t, l, wire)) != 1 {
+		t.Fatal("news sent a push")
+	}
+	if len(marketplaceFrames(t, l, wire)) != 1 {
 		t.Fatal("news scheduled a push")
 	}
 }

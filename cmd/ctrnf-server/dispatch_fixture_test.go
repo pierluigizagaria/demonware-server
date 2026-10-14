@@ -81,16 +81,59 @@ func (l *lobbyConn) PublisherFile(name string) ([]byte, string) {
 // wiring outside the production router, which receives one immutable table.
 func (l *lobbyConn) onTask(payload []byte) {
 	if l.Table != nil {
-		l.ProcessTask(payload)
+		l.observeTask(payload)
 		return
 	}
 	table, async := ctr.NewServiceTable(l.ReplyCounter, l.ctr, l.Presence, l.registry, l.matchmaker, l.pubDir, l.relay)
 	async.SetPlayerInfo(l.N, l.lobbyDoc)
 	l.Table = table
 	defer func() { l.Table = nil; l.lobbyDoc = async.PlayerInfo(l.N) }()
-	l.ProcessTask(payload)
+	l.observeTask(payload)
 }
 
 func (l *lobbyConn) fixtureTable() {
 	l.Table, _ = ctr.NewServiceTable(l.ReplyCounter, l.ctr, l.Presence, l.registry, l.matchmaker, l.pubDir, l.relay)
 }
+
+// Observe the result contract in fixtures, without diagnostic fields in Session.
+// The table's original policy and handlers are restored before returning. This
+// serial fixture wrapper also covers default services and keeps raw router
+// early returns outside DeliverResult, as in the immutable characterization.
+type observedHandler struct {
+	handle func(lobby.TaskSession, lobby.TaskRequest) lobby.TaskResult
+}
+
+func (h observedHandler) Handle(peer lobby.TaskSession, request lobby.TaskRequest) lobby.TaskResult {
+	return h.handle(peer, request)
+}
+
+func (l *lobbyConn) observeTask(payload []byte) {
+	original := l.Table.Handlers
+	wrapped := make(map[byte]lobby.TaskHandler, 256)
+	observer := observedHandler{handle: func(peer lobby.TaskSession, request lobby.TaskRequest) lobby.TaskResult {
+		var result lobby.TaskResult
+		if handler := original[request.Service]; handler != nil {
+			result = handler.Handle(peer, request)
+		} else {
+			result = lobby.DefaultTask(l.Table.Replies, peer, request)
+		}
+		callback := result.AfterReply
+		l.callbacksIssued++
+		result.AfterReply = func(err error) {
+			l.replyError = err
+			defer func() { l.callbacksCompleted++ }()
+			if callback != nil {
+				callback(err)
+			}
+		}
+		return result
+	}}
+	for service := 0; service < 256; service++ {
+		wrapped[byte(service)] = observer
+	}
+	l.Table.Handlers = wrapped
+	defer func() { l.Table.Handlers = original }()
+	l.ProcessTask(payload)
+}
+
+func (l *lobbyConn) callbackPending() bool { return l.callbacksIssued != l.callbacksCompleted }

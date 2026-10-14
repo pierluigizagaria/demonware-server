@@ -35,8 +35,10 @@ type lobbyDependencies struct {
 }
 
 type lobbyConn struct {
-	C    net.Conn               // Test-owned switchable destination, never the production socket.
-	Keys *demonware.SessionKeys // Derived independently by the fixture client.
+	callbacksIssued, callbacksCompleted int
+	replyError                          error
+	C                                   net.Conn               // Test-owned switchable destination, never the production socket.
+	Keys                                *demonware.SessionKeys // Derived independently by the fixture client.
 	*lobby.Session
 	lobbyDependencies
 }
