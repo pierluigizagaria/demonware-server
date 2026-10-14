@@ -1,9 +1,9 @@
 package ctr
 
 import (
-	json "encoding/json"
-	maps "maps"
-	slices "slices"
+	"encoding/json"
+	"maps"
+	"slices"
 )
 
 // Return owned copies of the immutable reference data for diagnostics and

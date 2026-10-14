@@ -1,8 +1,8 @@
 package ctr
 
 import (
-	sort "sort"
-	strconv "strconv"
+	"sort"
+	"strconv"
 )
 
 // All calls hold the matchmaker lock. Reserve seats and ask the destination

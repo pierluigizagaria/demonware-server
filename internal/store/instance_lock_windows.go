@@ -3,8 +3,9 @@
 package store
 
 import (
-	windows "golang.org/x/sys/windows"
-	os "os"
+	"os"
+
+	"golang.org/x/sys/windows"
 )
 
 func lockExclusive(f *os.File) error {

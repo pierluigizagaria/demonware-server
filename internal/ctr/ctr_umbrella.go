@@ -1,20 +1,21 @@
 package ctr
 
 import (
-	rand "crypto/rand"
-	base64 "encoding/base64"
-	binary "encoding/binary"
-	json "encoding/json"
-	fmt "fmt"
-	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
-	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	http "net/http"
-	os "os"
-	filepath "path/filepath"
-	strconv "strconv"
-	strings "strings"
-	time "time"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/auth"
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 // The client encodes its integers as JSON strings, so accept both forms.
@@ -31,7 +32,7 @@ func (v *jsonUint32) UnmarshalJSON(b []byte) error {
 
 // Umbrella is a separate API from /auth/. CTR's bdUmbrellaUserAccount
 // parser expects umbrellaID, accessToken, expires and accounts.
-func HandleCTRUmbrella(diag *diagnosticspkg.Diagnostics, tickets *authpkg.TicketStore, w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
+func HandleCTRUmbrella(diag *diagnostics.Diagnostics, tickets *auth.TicketStore, w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
 	deny := func(code int, reason string) {
 		preview := body
 		if len(preview) > 300 {
@@ -57,17 +58,17 @@ func HandleCTRUmbrella(diag *diagnosticspkg.Diagnostics, tickets *authpkg.Ticket
 		deny(400, fmt.Sprintf("unreadable request: %v", err))
 		return
 	}
-	if !ps4pkg.IsCTRTitle(uint32(req.TitleID)) {
+	if !ps4.IsCTRTitle(uint32(req.TitleID)) {
 		deny(400, fmt.Sprintf("unexpected title %d", req.TitleID))
 		return
 	}
 	ticket, err := base64.StdEncoding.DecodeString(req.Ticket)
-	if err != nil || len(ticket) != 128 || binary.LittleEndian.Uint32(ticket[:4]) != authpkg.TicketMagic || binary.LittleEndian.Uint32(ticket[5:9]) != uint32(req.TitleID) {
+	if err != nil || len(ticket) != 128 || binary.LittleEndian.Uint32(ticket[:4]) != auth.TicketMagic || binary.LittleEndian.Uint32(ticket[5:9]) != uint32(req.TitleID) {
 		deny(401, fmt.Sprintf("invalid ticket (decoded %d bytes, err %v)", len(ticket), err))
 		return
 	}
 	// Accept only a ticket issued by this private server, not arbitrary claims.
-	id, ok := tickets.IssuedTicketPlayer(ticket, time.Now(), ps4pkg.TicketWindow)
+	id, ok := tickets.IssuedTicketPlayer(ticket, time.Now(), ps4.TicketWindow)
 	if !ok {
 		deny(401, "ticket not issued here, too old or without identity")
 		return
@@ -87,7 +88,7 @@ func HandleCTRUmbrella(diag *diagnosticspkg.Diagnostics, tickets *authpkg.Ticket
 	}{id.PID, base64.RawURLEncoding.EncodeToString(token), time.Now().Add(time.Hour).Unix(), []any{}})
 }
 
-func NewUmbrellaHandler(diag *diagnosticspkg.Diagnostics, tickets *authpkg.TicketStore) authpkg.AuxiliaryAuthHandler {
+func NewUmbrellaHandler(diag *diagnostics.Diagnostics, tickets *auth.TicketStore) auth.AuxiliaryAuthHandler {
 	return func(w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
 		HandleCTRUmbrella(diag, tickets, w, r, body, n, dumps)
 	}

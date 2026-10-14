@@ -1,25 +1,25 @@
 package ctr
 
 import (
-	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
+	"github.com/pierluigizagaria/demonware-server/internal/config"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
 type EconomyHandler struct {
-	*lobbypkg.ReplyCounter
+	*lobby.ReplyCounter
 	Economy *EconomyStore
 }
 
 type StatsHandler struct {
-	*lobbypkg.ReplyCounter
+	*lobby.ReplyCounter
 	Stats    LeaderboardStore
-	Presence *presencepkg.PresenceStore
+	Presence *presence.PresenceStore
 }
 
 type NewsHandler struct {
-	*lobbypkg.ReplyCounter
-	News configpkg.CtrNewsConfig
+	*lobby.ReplyCounter
+	News config.CtrNewsConfig
 }
 
-type PlatformHandler struct{ *lobbypkg.ReplyCounter }
+type PlatformHandler struct{ *lobby.ReplyCounter }

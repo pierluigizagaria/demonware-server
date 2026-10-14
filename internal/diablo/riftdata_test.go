@@ -1,10 +1,10 @@
 package diablo
 
 import (
-	os "os"
-	filepath "path/filepath"
-	testing "testing"
-	time "time"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
 )
 
 func TestPatchChallengeConfig(t *testing.T) {

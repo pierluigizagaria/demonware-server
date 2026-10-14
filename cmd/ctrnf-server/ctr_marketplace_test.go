@@ -1,23 +1,24 @@
 package main
 
 import (
-	bytes "bytes"
-	binary "encoding/binary"
-	hex "encoding/hex"
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	testing "testing"
+	"bytes"
+	"encoding/binary"
+	"encoding/hex"
+	"testing"
+
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 func TestMarketplaceRejectsShortTaskHeaders(t *testing.T) {
-	l := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-	for _, task := range []byte{ctrpkg.TaskGetInventoryPaginated, ctrpkg.TaskPurchaseSkus} {
+	l := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	for _, task := range []byte{ctr.TaskGetInventoryPaginated, ctr.TaskPurchaseSkus} {
 		request := []byte{80, 3, task}
 		for n := 0; n <= len(request); n++ {
 			reply := l.onMarketplace(task, request[:n]).Reply
-			if len(reply) != 14 || binary.LittleEndian.Uint32(reply[10:14]) != lobbypkg.ErrUnhandled {
+			if len(reply) != 14 || binary.LittleEndian.Uint32(reply[10:14]) != lobby.ErrUnhandled {
 				t.Fatalf("task %d accepted %d-byte request", task, n)
 			}
 		}
@@ -33,7 +34,7 @@ func TestParseBalancesRequestFromRealCapture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, max := ctrpkg.ParseBalancesRequest(payload)
+	ctx, max := ctr.ParseBalancesRequest(payload)
 	if ctx != "octane_switch" {
 		t.Fatalf("context = %q, want %q", ctx, "octane_switch")
 	}
@@ -46,7 +47,7 @@ func TestParseBalancesRequestFromRealCapture(t *testing.T) {
 // wire shape: repeated field 1, each holding currency id, amount and kind.
 func TestBalancesResponseShape(t *testing.T) {
 	w := map[uint64]int64{10: 1234, 11: 0, 12: 7}
-	sb := ctrpkg.GetPlayerBalancesResponse(w, 3)
+	sb := ctr.GetPlayerBalancesResponse(w, 3)
 
 	var got []struct {
 		id     uint64
@@ -57,7 +58,7 @@ func TestBalancesResponseShape(t *testing.T) {
 			t.Fatalf("byte %d: tag %#x, want 0x0A", i, sb[i])
 		}
 		i++
-		ln, next, err := demonwarepkg.ReadVarint(sb, i)
+		ln, next, err := demonware.ReadVarint(sb, i)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -69,7 +70,7 @@ func TestBalancesResponseShape(t *testing.T) {
 		for j := 0; j < len(e); {
 			field := e[j] >> 3
 			j++
-			v, n, err := demonwarepkg.ReadVarint(e, j)
+			v, n, err := demonware.ReadVarint(e, j)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -91,28 +92,28 @@ func TestBalancesResponseShape(t *testing.T) {
 		t.Fatalf("%d balances, want 3", len(got))
 	}
 	// Amounts are demonware.ZigZag encoded; a raw varint arrives halved (10000 showed as 5000).
-	if got[0].id != 10 || got[0].amount != demonwarepkg.ZigZag(1234) {
-		t.Fatalf("first balance = %+v, want id 1 amount demonware.ZigZag(1234)=%d", got[0], demonwarepkg.ZigZag(1234))
+	if got[0].id != 10 || got[0].amount != demonware.ZigZag(1234) {
+		t.Fatalf("first balance = %+v, want id 1 amount demonware.ZigZag(1234)=%d", got[0], demonware.ZigZag(1234))
 	}
-	if got[2].id != 12 || got[2].amount != demonwarepkg.ZigZag(7) {
-		t.Fatalf("third balance = %+v, want id 3 amount demonware.ZigZag(7)=%d", got[2], demonwarepkg.ZigZag(7))
+	if got[2].id != 12 || got[2].amount != demonware.ZigZag(7) {
+		t.Fatalf("third balance = %+v, want id 3 amount demonware.ZigZag(7)=%d", got[2], demonware.ZigZag(7))
 	}
 }
 
 // bdStructBufferTask::deserializeTaskReply reads the struct straight after the task byte:
 // a result count in between makes the task fail with error 4.
 func TestStructTaskReplyLayout(t *testing.T) {
-	reply := testReplies.StructTaskReply(ctrpkg.TaskGetBalancesV3, []byte{0x0A, 0x02, 0x08, 0x01})
+	reply := testReplies.StructTaskReply(ctr.TaskGetBalancesV3, []byte{0x0A, 0x02, 0x08, 0x01})
 
-	if reply[0] != demonwarepkg.TagUint64 {
-		t.Fatalf("reply[0] = %#x, want transaction tag %#x", reply[0], demonwarepkg.TagUint64)
+	if reply[0] != demonware.TagUint64 {
+		t.Fatalf("reply[0] = %#x, want transaction tag %#x", reply[0], demonware.TagUint64)
 	}
 	// u64 tag + 8 bytes, u32 tag + 4 bytes, u8 tag + 1 byte.
 	const taskOff = 1 + 8 + 1 + 4
-	if reply[taskOff] != demonwarepkg.TagUint8 || reply[taskOff+1] != ctrpkg.TaskGetBalancesV3 {
+	if reply[taskOff] != demonware.TagUint8 || reply[taskOff+1] != ctr.TaskGetBalancesV3 {
 		t.Fatalf("task byte not at %d: % x", taskOff, reply[:taskOff+2])
 	}
-	if reply[taskOff+2] != demonwarepkg.TagStruct {
+	if reply[taskOff+2] != demonware.TagStruct {
 		t.Fatalf("struct must follow the task byte, got %#x", reply[taskOff+2])
 	}
 }
@@ -121,11 +122,11 @@ func TestStructTaskReplyLayout(t *testing.T) {
 // reading past the sixteenth and the rest would be silently dropped.
 func TestBalancesResponseCap(t *testing.T) {
 	t.Setenv("CTR_CURRENCY_IDS", "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18")
-	sb := ctrpkg.GetPlayerBalancesResponse(map[uint64]int64{}, 0)
+	sb := ctr.GetPlayerBalancesResponse(map[uint64]int64{}, 0)
 	n := 0
 	for i := 0; i < len(sb); {
 		i++
-		ln, next, err := demonwarepkg.ReadVarint(sb, i)
+		ln, next, err := demonware.ReadVarint(sb, i)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,10 +139,10 @@ func TestBalancesResponseCap(t *testing.T) {
 }
 
 func TestStructPayloadRejectsJunk(t *testing.T) {
-	if got := demonwarepkg.TaskStructPayload([]byte{0x50, 0x03, 0xf5}); got != nil {
+	if got := demonware.TaskStructPayload([]byte{0x50, 0x03, 0xf5}); got != nil {
 		t.Fatalf("short buffer returned % x", got)
 	}
-	if got := demonwarepkg.TaskStructPayload(bytes.Repeat([]byte{0xff}, 32)); got != nil {
+	if got := demonware.TaskStructPayload(bytes.Repeat([]byte{0xff}, 32)); got != nil {
 		t.Fatalf("junk returned % x", got)
 	}
 }
@@ -149,28 +150,28 @@ func TestStructPayloadRejectsJunk(t *testing.T) {
 // The game read a raw 10000 as 5000, so the amount must survive a demonware.ZigZag round trip.
 func TestAmountSurvivesZigzagRoundTrip(t *testing.T) {
 	for _, v := range []int64{0, 1, 7, 1234, 5000, 10000} {
-		enc := demonwarepkg.ZigZag(v)
+		enc := demonware.ZigZag(v)
 		dec := int64(enc>>1) ^ -int64(enc&1)
 		if dec != v {
 			t.Fatalf("demonware.ZigZag(%d) decoded to %d", v, dec)
 		}
 	}
-	if demonwarepkg.ZigZag(10000) != 20000 {
-		t.Fatalf("demonware.ZigZag(10000) = %d, want 20000 so the game shows 10000", demonwarepkg.ZigZag(10000))
+	if demonware.ZigZag(10000) != 20000 {
+		t.Fatalf("demonware.ZigZag(10000) = %d, want 20000 so the game shows 10000", demonware.ZigZag(10000))
 	}
 }
 
 // Both achievements responses end on a string read and return its result, so a missing
 // string field fails the whole deserialize. That is what broke the Pit Stop refresh.
 func TestAchievementsRepliesCarryTheirStringField(t *testing.T) {
-	l := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	l := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 
-	states := l.onAchievements(ctrpkg.TaskGetAchievementStates, nil).Reply
+	states := l.onAchievements(ctr.TaskGetAchievementStates, nil).Reply
 	if !hasField(structBodyOf(t, states), 2) {
 		t.Fatal("getAchievementStates reply lacks field 2, deserialize would return false")
 	}
 
-	user := l.onAchievements(ctrpkg.TaskGetUserState, nil).Reply
+	user := l.onAchievements(ctr.TaskGetUserState, nil).Reply
 	if !hasField(structBodyOf(t, user), 1) {
 		t.Fatal("getUserState reply lacks field 1, CAEUserStateRefreshed never fires")
 	}
@@ -180,7 +181,7 @@ func TestAchievementsRepliesCarryTheirStringField(t *testing.T) {
 func structBodyOf(t *testing.T, reply []byte) []byte {
 	t.Helper()
 	const off = 1 + 8 + 1 + 4 // u64 transaction, u32 error
-	if reply[off] != demonwarepkg.TagUint8 || reply[off+2] != demonwarepkg.TagStruct {
+	if reply[off] != demonware.TagUint8 || reply[off+2] != demonware.TagStruct {
 		t.Fatalf("not a struct reply: % x", reply[:off+3])
 	}
 	return reply[off+3+5:]
@@ -193,7 +194,7 @@ func hasField(sb []byte, want byte) bool {
 		if wire != 2 {
 			return false
 		}
-		ln, next, err := demonwarepkg.ReadVarint(sb, i)
+		ln, next, err := demonware.ReadVarint(sb, i)
 		if err != nil {
 			return false
 		}
@@ -215,8 +216,8 @@ func TestParsePurchaseSkuFromRealCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The PS4 build sends the same request with its own context (ps4PurchaseRequest).
-	payload = bytes.Replace(payload, []byte("octane_switch"), []byte(ps4pkg.MarketplaceContext), 1)
-	sku, ok := ctrpkg.ParsePurchaseSku(payload)
+	payload = bytes.Replace(payload, []byte("octane_switch"), []byte(ps4.MarketplaceContext), 1)
+	sku, ok := ctr.ParsePurchaseSku(payload)
 	if !ok {
 		t.Fatal("could not read the sku out of a real purchase request")
 	}

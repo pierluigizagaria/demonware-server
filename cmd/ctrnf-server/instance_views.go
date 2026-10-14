@@ -1,12 +1,12 @@
 package main
 
 import (
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	dashboardpkg "github.com/pierluigizagaria/demonware-server/internal/dashboard"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/dashboard"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
-func newDashboardViews(presence *presencepkg.PresenceStore, matchmaker *ctrpkg.CtrMatchmaker, registry *lobbypkg.SessionRegistry) dashboardpkg.DashboardViews {
-	return dashboardpkg.DashboardViews{Online: presence.Snapshot, Sessions: registry.Snapshot, Rooms: matchmaker.DashboardRooms}
+func newDashboardViews(presenceStore *presence.PresenceStore, matchmaker *ctr.CtrMatchmaker, registry *lobby.SessionRegistry) dashboard.DashboardViews {
+	return dashboard.DashboardViews{Online: presenceStore.Snapshot, Sessions: registry.Snapshot, Rooms: matchmaker.DashboardRooms}
 }

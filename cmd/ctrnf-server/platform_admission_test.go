@@ -1,30 +1,31 @@
 package main
 
 import (
-	bytes "bytes"
-	rand "crypto/rand"
-	rsa "crypto/rsa"
-	x509 "crypto/x509"
-	binary "encoding/binary"
-	json "encoding/json"
-	pem "encoding/pem"
-	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	io "io"
-	httptest "net/http/httptest"
-	os "os"
-	exec "os/exec"
-	filepath "path/filepath"
-	testing "testing"
-	iotest "testing/iotest"
-	time "time"
+	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/binary"
+	"encoding/json"
+	"encoding/pem"
+	"io"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+	"testing/iotest"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/auth"
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
-func testCTRSigner(t *testing.T) *authpkg.CtrAuthSigner {
+func testCTRSigner(t *testing.T) *auth.CtrAuthSigner {
 	t.Helper()
 	if _, err := exec.LookPath("openssl"); err != nil {
 		t.Skip("openssl unavailable")
@@ -37,22 +38,22 @@ func testCTRSigner(t *testing.T) *authpkg.CtrAuthSigner {
 	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0600); err != nil {
 		t.Fatal(err)
 	}
-	s, err := authpkg.LoadCTRAuthSigner(path)
+	s, err := auth.LoadCTRAuthSigner(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return s
 }
 
-func fixturePSNPlatform() ps4pkg.PsnPlatform {
-	return ps4pkg.PsnPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platformpkg.Identity, error) {
-		return platformpkg.Identity{AccountID: 17, Subject: "17", OnlineID: "fixture"}, nil
+func fixturePSNPlatform() ps4.PsnPlatform {
+	return ps4.PsnPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
+		return platform.Identity{AccountID: 17, Subject: "17", OnlineID: "fixture"}, nil
 	})}
 }
 
 func psnTicket(issued time.Time) []byte {
 	ticket := make([]byte, 128)
-	binary.LittleEndian.PutUint32(ticket, authpkg.TicketMagic)
+	binary.LittleEndian.PutUint32(ticket, auth.TicketMagic)
 	ticket[4] = 1
 	binary.LittleEndian.PutUint32(ticket[5:], 5760)
 	binary.LittleEndian.PutUint32(ticket[13:], uint32(issued.Unix()))
@@ -70,18 +71,18 @@ func handshake(t *testing.T, ticket []byte) *lobbyConn {
 	l, _ := sharedPS4Lobby()
 	l.Keys, l.Player = nil, nil
 	l.MaxLen, l.Nonce, l.Payload1 = 65536, make([]byte, 8), make([]byte, 20)
-	raw := demonwarepkg.Frame(append(append([]byte{demonwarepkg.MsgClientAuth}, ticket...), make([]byte, 8)...))
+	raw := demonware.Frame(append(append([]byte{demonware.MsgClientAuth}, ticket...), make([]byte, 8)...))
 	var transcript bytes.Buffer
-	transcript.Write(demonwarepkg.Uint32LE(210))
-	transcript.Write(demonwarepkg.Uint32LE(220))
-	transcript.Write(demonwarepkg.Uint32LE(l.MaxLen))
+	transcript.Write(demonware.Uint32LE(210))
+	transcript.Write(demonware.Uint32LE(220))
+	transcript.Write(demonware.Uint32LE(l.MaxLen))
 	transcript.Write(l.Nonce)
-	transcript.Write(demonwarepkg.Uint32LE(uint32(len(l.Payload1) + 2)))
-	transcript.WriteByte(demonwarepkg.FrameFlag)
-	transcript.WriteByte(demonwarepkg.MsgServerHi)
+	transcript.Write(demonware.Uint32LE(uint32(len(l.Payload1) + 2)))
+	transcript.WriteByte(demonware.FrameFlag)
+	transcript.WriteByte(demonware.MsgServerHi)
 	transcript.Write(l.Payload1)
 	transcript.Write(raw[:len(raw)-8])
-	k := demonwarepkg.DeriveKeys(transcript.Bytes(), ticket[97:121])
+	k := demonware.DeriveKeys(transcript.Bytes(), ticket[97:121])
 	copy(raw[len(raw)-8:], k.ClientTag[:])
 	l.OnClientAuth(raw)
 	return l
@@ -92,19 +93,19 @@ func TestPS4LobbyAdmitsOnlyFreshIssuedTickets(t *testing.T) {
 		t.Fatal("unissued self-supplied ticket established encrypted session")
 	}
 	fresh := psnTicket(time.Now())
-	issueTestTicket(fresh, platformpkg.PlayerID{PID: 17, Username: "fixture", Sub: "shadnet:17", Kind: "shadnet", Title: 5760})
+	issueTestTicket(fresh, platform.PlayerID{PID: 17, Username: "fixture", Sub: "shadnet:17", Kind: "shadnet", Title: 5760})
 	l := handshake(t, fresh)
 	defer testPresence.DropOnline(l.N)
 	if l.Keys == nil || l.Player == nil || l.Player.PID != 17 || l.Player.Title != 5760 {
 		t.Fatal("fresh issued ticket refused or identity lost")
 	}
 	stale := psnTicket(time.Now().Add(-121 * time.Second))
-	issueTestTicket(stale, platformpkg.PlayerID{PID: 17, Username: "fixture"})
+	issueTestTicket(stale, platform.PlayerID{PID: 17, Username: "fixture"})
 	if l := handshake(t, stale); l.Keys != nil {
 		t.Fatal("expired publisher ticket admitted")
 	}
 	foreign := psnTicket(time.Now())
-	issueTestTicket(foreign, platformpkg.PlayerID{PID: 18, Username: "other"})
+	issueTestTicket(foreign, platform.PlayerID{PID: 18, Username: "other"})
 	if l := handshake(t, foreign); l.Keys != nil {
 		t.Fatal("ticket bound to another account admitted")
 	}
@@ -133,7 +134,7 @@ func TestPS4UmbrellaUsesFreshIssuedTicket(t *testing.T) {
 	}
 	fresh, stale := psnTicket(time.Now()), psnTicket(time.Now().Add(-121*time.Second))
 	for _, ticket := range [][]byte{fresh, stale} {
-		issueTestTicket(ticket, platformpkg.PlayerID{PID: 17, Username: "fixture"})
+		issueTestTicket(ticket, platform.PlayerID{PID: 17, Username: "fixture"})
 	}
 	if call(fresh) != 200 || call(stale) != 401 || call(psnTicket(time.Now())) != 401 {
 		t.Fatal("Umbrella did not apply fresh issued-ticket admission")
@@ -147,10 +148,10 @@ func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
 	testPresence.Online[l.N] = l.Player
 	testPresence.OnlineMu.Unlock()
 	defer testPresence.DropOnline(l.N)
-	if err := testPresence.RememberPlayerName(platformpkg.PlayerID{PID: 42, Username: "OfflineFriend", Kind: "shadnet"}, time.Now().Add(-time.Hour)); err != nil {
+	if err := testPresence.RememberPlayerName(platform.PlayerID{PID: 42, Username: "OfflineFriend", Kind: "shadnet"}, time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	req := demonwarepkg.NewWriter([]byte{12, demonwarepkg.TagUint8, 10})
+	req := demonware.NewWriter([]byte{12, demonware.TagUint8, 10})
 	req.Uint32(3)
 	req.String("FIXTURE")
 	req.String("offlinefriend")
@@ -166,15 +167,15 @@ func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
 }
 
 func TestCTRFollowerLeaveKeepsPartyAndNotifiesHost(t *testing.T) {
-	m := &ctrpkg.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctrpkg.CtrRoom{}}
+	m := &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
 	r := fillTestRoom(t, m, 30000, 2)
 	leader := r.Players[1]
 	leader.Doc.Members = []uint64{leader.Pid, 30009}
 	leader.Seats = 2
-	follower := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 30009, Player: &platformpkg.PlayerID{PID: 30009}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	follower := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 30009, Player: &platform.PlayerID{PID: 30009}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	version := r.Version
 	out := m.Leave(follower, 0)
-	if len(out) != 1 || out[0].Conn != r.Host.Conn || out[0].Event != ctrpkg.CtrUpdateLobby || r.Version != version+1 {
+	if len(out) != 1 || out[0].Conn != r.Host.Conn || out[0].Event != ctr.CtrUpdateLobby || r.Version != version+1 {
 		t.Fatal("host not notified of the follower's departure")
 	}
 	if got := r.Players[1].Doc.Members; len(got) != 1 || got[0] != leader.Pid || r.Occupancy() != 2 {

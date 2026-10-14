@@ -1,18 +1,18 @@
 package ctr
 
 import (
-	dashboardpkg "github.com/pierluigizagaria/demonware-server/internal/dashboard"
+	"github.com/pierluigizagaria/demonware-server/internal/dashboard"
 )
 
-func (matchmaker *CtrMatchmaker) DashboardRooms(names map[uint64]string) ([]dashboardpkg.ApiGathering, map[uint64]dashboardpkg.ApiGathering) {
-	gs := []dashboardpkg.ApiGathering{}
-	ctrMembership := map[uint64]dashboardpkg.ApiGathering{}
+func (matchmaker *CtrMatchmaker) DashboardRooms(names map[uint64]string) ([]dashboard.ApiGathering, map[uint64]dashboard.ApiGathering) {
+	gs := []dashboard.ApiGathering{}
+	ctrMembership := map[uint64]dashboard.ApiGathering{}
 	matchmaker.mu.Lock()
 	for _, room := range matchmaker.Rooms {
 		if room.Host == nil || names[room.Host.Pid] == "" {
 			continue
 		}
-		g := dashboardpkg.ApiGathering{ID: uint32(room.Id), HostPID: room.Host.Pid, HostName: names[room.Host.Pid], Type: "Public matchmaking", Max: uint16(room.Capacity), State: "searching", Players: []dashboardpkg.ApiLobbyP{}}
+		g := dashboard.ApiGathering{ID: uint32(room.Id), HostPID: room.Host.Pid, HostName: names[room.Host.Pid], Type: "Public matchmaking", Max: uint16(room.Capacity), State: "searching", Players: []dashboard.ApiLobbyP{}}
 		seen := map[uint64]bool{}
 		for _, search := range room.Players {
 			for _, pid := range search.Doc.Members {
@@ -20,7 +20,7 @@ func (matchmaker *CtrMatchmaker) DashboardRooms(names map[uint64]string) ([]dash
 					continue
 				}
 				seen[pid] = true
-				g.Players = append(g.Players, dashboardpkg.ApiLobbyP{PID: pid, Name: names[pid], Host: pid == room.Host.Pid})
+				g.Players = append(g.Players, dashboard.ApiLobbyP{PID: pid, Name: names[pid], Host: pid == room.Host.Pid})
 			}
 		}
 		g.Count = len(g.Players)

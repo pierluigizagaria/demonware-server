@@ -1,11 +1,11 @@
 package diagnostics
 
 import (
-	fmt "fmt"
-	log "log"
-	os "os"
-	filepath "path/filepath"
-	reflect "reflect"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"reflect"
 )
 
 // NEXTENDO_REDACT_LOGS, on unless set to 0 or false (config.go).

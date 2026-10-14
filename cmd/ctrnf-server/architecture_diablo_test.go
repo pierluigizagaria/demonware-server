@@ -1,13 +1,14 @@
 package main
 
 import (
-	hex "encoding/hex"
-	fmt "fmt"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	os "os"
-	filepath "path/filepath"
-	strings "strings"
-	testing "testing"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 // Only these 12 snapshots differ from the immutable Phase 0 JSON. Service 21
@@ -21,7 +22,7 @@ func architectureDiabloDisconnection(name string, baseline architectureSnapshot)
 					continue
 				}
 				baseline.Frames = append([]architectureFrame(nil), baseline.Frames...)
-				baseline.Frames[0].Payload = hex.EncodeToString(demonwarepkg.TaskReply(1, task, 0, nil))
+				baseline.Frames[0].Payload = hex.EncodeToString(demonware.TaskReply(1, task, 0, nil))
 				baseline.Sessions = 0
 				return baseline
 			}
@@ -36,12 +37,12 @@ func TestCTRPublisherFilesExcludeDiabloOutputs(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(l.pubDir, name), []byte("synthetic file"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		q := demonwarepkg.NewWriter([]byte{10, 3, 21})
+		q := demonware.NewWriter([]byte{10, 3, 21})
 		q.String("fixture")
 		q.String(strings.ToUpper(name))
 		p := architectureReply(t, architectureCall(t, l, w, q.Bytes()), 21, 0)
 		if name == "CTR-fixture.dat" {
-			r := demonwarepkg.NewReader(p[26:])
+			r := demonware.NewReader(p[26:])
 			data, err := r.Blob()
 			if err != nil || string(data) != "synthetic file" {
 				t.Fatal("CTR physical file not served")

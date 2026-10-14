@@ -1,19 +1,21 @@
 package store
 
 import (
-	sql "database/sql"
-	json "encoding/json"
-	fmt "fmt"
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	math "math"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"math"
+	"net/url"
+	"os"
+	"reflect"
+	"sort"
+	"strings"
+	"time"
+
 	_ "modernc.org/sqlite"
-	url "net/url"
-	os "os"
-	reflect "reflect"
-	sort "sort"
-	strings "strings"
-	time "time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
 const CtrDB = "ctrnf.db"
@@ -231,14 +233,14 @@ CREATE TABLE player_names (
 CREATE INDEX player_names_lookup ON player_names(name_key, recorded_at DESC);
 `
 
-func newSQLiteAccount(balance int64) *ctrpkg.EconomyAccount {
-	return &ctrpkg.EconomyAccount{Version: 2, Balances: map[uint64]int64{ctrpkg.WumpaCurrency: balance}, Items: map[uint32]bool{}}
+func newSQLiteAccount(balance int64) *ctr.EconomyAccount {
+	return &ctr.EconomyAccount{Version: 2, Balances: map[uint64]int64{ctr.WumpaCurrency: balance}, Items: map[uint32]bool{}}
 }
 
 // Mutating operations receive an unsaved new account, so refusal cannot create
 // rows or an initial credit. A normal-economy snapshot creates it atomically;
 // unlock-all snapshots remain read-only. All account tables are read consistently.
-func (s *CtrSQLite) Load(pid uint64, create bool) (*ctrpkg.EconomyAccount, error) {
+func (s *CtrSQLite) Load(pid uint64, create bool) (*ctr.EconomyAccount, error) {
 	tx, err := s.Db.Begin()
 	if err != nil {
 		return nil, err
@@ -249,7 +251,7 @@ func (s *CtrSQLite) Load(pid uint64, create bool) (*ctrpkg.EconomyAccount, error
 		return nil, err
 	}
 	if !exists && create {
-		if err := saveSQLiteAccount(tx, pid, a, a, false, ctrpkg.EconomyChange{Source: "starting balance"}, s.now); err != nil {
+		if err := saveSQLiteAccount(tx, pid, a, a, false, ctr.EconomyChange{Source: "starting balance"}, s.now); err != nil {
 			return nil, err
 		}
 	}
@@ -273,7 +275,7 @@ func accountRows(tx *sql.Tx, query string, scan func(*sql.Rows) error, args ...a
 	return rows.Err()
 }
 
-func readSQLiteAccount(tx *sql.Tx, pid uint64, clock func() time.Time, balance func() int64) (*ctrpkg.EconomyAccount, bool, error) {
+func readSQLiteAccount(tx *sql.Tx, pid uint64, clock func() time.Time, balance func() int64) (*ctr.EconomyAccount, bool, error) {
 	var found int
 	err := tx.QueryRow(`SELECT 1 FROM accounts WHERE pid = ?`, int64(pid)).Scan(&found)
 	if err == sql.ErrNoRows {
@@ -282,7 +284,7 @@ func readSQLiteAccount(tx *sql.Tx, pid uint64, clock func() time.Time, balance f
 	if err != nil {
 		return nil, false, err
 	}
-	a := &ctrpkg.EconomyAccount{Version: 2, Balances: map[uint64]int64{}, Items: map[uint32]bool{}}
+	a := &ctr.EconomyAccount{Version: 2, Balances: map[uint64]int64{}, Items: map[uint32]bool{}}
 	queries := []struct {
 		query string
 		scan  func(*sql.Rows) error
@@ -332,7 +334,7 @@ func readSQLiteAccount(tx *sql.Tx, pid uint64, clock func() time.Time, balance f
 			if err := r.Scan(&key, &completed, &progress, &receipts, &distinct); err != nil {
 				return err
 			}
-			c := ctrpkg.ChallengeCompletion{Completed: uint64(completed), Progress: uint64(progress)}
+			c := ctr.ChallengeCompletion{Completed: uint64(completed), Progress: uint64(progress)}
 			if err := json.Unmarshal([]byte(receipts), &c.Receipts); err != nil {
 				return err
 			}
@@ -340,13 +342,13 @@ func readSQLiteAccount(tx *sql.Tx, pid uint64, clock func() time.Time, balance f
 				return err
 			}
 			if a.Challenges == nil {
-				a.Challenges = map[string]ctrpkg.ChallengeCompletion{}
+				a.Challenges = map[string]ctr.ChallengeCompletion{}
 			}
 			a.Challenges[key] = c
 			return nil
 		}},
 		{`SELECT day, count, receipts FROM pit_stop_refresh WHERE pid = ?`, func(r *sql.Rows) error {
-			p := &ctrpkg.PitStopRefreshRecord{}
+			p := &ctr.PitStopRefreshRecord{}
 			var count int64
 			var receipts string
 			if err := r.Scan(&p.Day, &count, &receipts); err != nil {
@@ -371,7 +373,7 @@ func readSQLiteAccount(tx *sql.Tx, pid uint64, clock func() time.Time, balance f
 	return a, true, nil
 }
 
-func (s *CtrSQLite) Save(pid uint64, a *ctrpkg.EconomyAccount, change ctrpkg.EconomyChange) error {
+func (s *CtrSQLite) Save(pid uint64, a *ctr.EconomyAccount, change ctr.EconomyChange) error {
 	tx, err := s.Db.Begin()
 	if err != nil {
 		return err
@@ -396,7 +398,7 @@ func jsonColumn(v any) string {
 // The account delta is the audit boundary: one row per changed currency and one
 // per newly granted item. A batch keeps all known SKU/receipt references. No
 // reward or pricing rules are reimplemented here.
-func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *ctrpkg.EconomyAccount, exists bool, change ctrpkg.EconomyChange, clock func() time.Time) error {
+func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *ctr.EconomyAccount, exists bool, change ctr.EconomyChange, clock func() time.Time) error {
 	if after.Version != 2 || after.Balances == nil || after.Items == nil {
 		return fmt.Errorf("invalid economy account")
 	}
@@ -410,8 +412,8 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *ctrpkg.EconomyAcco
 		if _, err := tx.Exec(`INSERT INTO accounts(pid, created_at) VALUES (?, ?)`, int64(pid), now); err != nil {
 			return err
 		}
-		if amount := before.Balances[ctrpkg.WumpaCurrency]; amount != 0 {
-			if _, err := tx.Exec(`INSERT INTO ledger(timestamp, pid, source, currency, delta) VALUES (?, ?, 'starting balance', ?, ?)`, now, int64(pid), int64(ctrpkg.WumpaCurrency), amount); err != nil {
+		if amount := before.Balances[ctr.WumpaCurrency]; amount != 0 {
+			if _, err := tx.Exec(`INSERT INTO ledger(timestamp, pid, source, currency, delta) VALUES (?, ?, 'starting balance', ?, ?)`, now, int64(pid), int64(ctr.WumpaCurrency), amount); err != nil {
 				return err
 			}
 		}
@@ -419,7 +421,7 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *ctrpkg.EconomyAcco
 	// Rows written before this account existed are not stored state.
 	stored := before
 	if !exists {
-		stored = &ctrpkg.EconomyAccount{}
+		stored = &ctr.EconomyAccount{}
 	}
 	var receipts, newReceipts []string
 	for key, paid := range after.RaceReceipts {
@@ -475,7 +477,7 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *ctrpkg.EconomyAcco
 		}
 		var sku any
 		for _, id := range change.Skus {
-			for _, granted := range ctrpkg.EconomySKUItems(id) {
+			for _, granted := range ctr.EconomySKUItems(id) {
 				if granted == item {
 					sku = id
 					break
@@ -575,7 +577,7 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *ctrpkg.EconomyAcco
 	return exec(`DELETE FROM online_seconds WHERE pid = ? AND updated_at < ?`, expired)
 }
 
-func (s *CtrSQLite) Write(writes []ctrpkg.CtrStatWrite) error {
+func (s *CtrSQLite) Write(writes []ctr.CtrStatWrite) error {
 	tx, err := s.Db.Begin()
 	if err != nil {
 		return err
@@ -609,15 +611,15 @@ func (s *CtrSQLite) Write(writes []ctrpkg.CtrStatWrite) error {
 	return tx.Commit()
 }
 
-func (s *CtrSQLite) Read(board uint32) ([]ctrpkg.CtrStat, error) {
+func (s *CtrSQLite) Read(board uint32) ([]ctr.CtrStat, error) {
 	rs, err := s.Db.Query(`SELECT pid, score, driver, name, updated FROM leaderboard WHERE board = ?`, board)
 	if err != nil {
 		return nil, err
 	}
 	defer rs.Close()
-	rows := []ctrpkg.CtrStat{}
+	rows := []ctr.CtrStat{}
 	for rs.Next() {
-		r := ctrpkg.CtrStat{Board: board}
+		r := ctr.CtrStat{Board: board}
 		var pid int64
 		if err := rs.Scan(&pid, &r.Score, &r.Driver, &r.Name, &r.Updated); err != nil {
 			return nil, err
@@ -646,7 +648,7 @@ func (s *CtrSQLite) Read(board uint32) ([]ctrpkg.CtrStat, error) {
 // leaderboard_rank index has the same expression, so pages are index scans.
 const LeaderboardOrder = `score DESC, pid < 0, pid`
 
-func (s *CtrSQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctrpkg.CtrStat, uint64, error) {
+func (s *CtrSQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctr.CtrStat, uint64, error) {
 	tx, err := s.Db.Begin()
 	if err != nil {
 		return nil, 0, err
@@ -659,7 +661,7 @@ func (s *CtrSQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctrpk
 	if start == 0 {
 		start = 1
 	}
-	rows := []ctrpkg.CtrStat{}
+	rows := []ctr.CtrStat{}
 	if start-1 >= total || limit == 0 {
 		return rows, total, nil
 	}
@@ -670,7 +672,7 @@ func (s *CtrSQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctrpk
 	}
 	defer rs.Close()
 	for rs.Next() {
-		r := ctrpkg.CtrStat{Board: board, Rank: start + uint64(len(rows))}
+		r := ctr.CtrStat{Board: board, Rank: start + uint64(len(rows))}
 		var pid int64
 		if err := rs.Scan(&pid, &r.Score, &r.Driver, &r.Name, &r.Updated); err != nil {
 			return nil, 0, err
@@ -683,8 +685,8 @@ func (s *CtrSQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctrpk
 
 // readEntities returns the given accounts' rows in rank order; each rank
 // counts the rows ordered before it.
-func (s *CtrSQLite) ReadEntities(board uint32, pids []uint64) ([]ctrpkg.CtrStat, error) {
-	rows := []ctrpkg.CtrStat{}
+func (s *CtrSQLite) ReadEntities(board uint32, pids []uint64) ([]ctr.CtrStat, error) {
+	rows := []ctr.CtrStat{}
 	if len(pids) == 0 {
 		return rows, nil
 	}
@@ -701,7 +703,7 @@ func (s *CtrSQLite) ReadEntities(board uint32, pids []uint64) ([]ctrpkg.CtrStat,
 	}
 	defer rs.Close()
 	for rs.Next() {
-		r := ctrpkg.CtrStat{Board: board}
+		r := ctr.CtrStat{Board: board}
 		var pid int64
 		if err := rs.Scan(&pid, &r.Score, &r.Driver, &r.Name, &r.Updated, &r.Rank); err != nil {
 			return nil, err
@@ -725,8 +727,8 @@ func (s *CtrSQLite) RememberName(pid uint64, name string, at time.Time) error {
 
 // namedPlayers returns, by lower-case name, the player most recently recorded
 // under each requested name.
-func (s *CtrSQLite) NamedPlayers(names []string) (map[string]*platformpkg.PlayerID, error) {
-	out := map[string]*platformpkg.PlayerID{}
+func (s *CtrSQLite) NamedPlayers(names []string) (map[string]*platform.PlayerID, error) {
+	out := map[string]*platform.PlayerID{}
 	for _, name := range names {
 		key := strings.ToLower(name)
 		if out[key] != nil {
@@ -742,7 +744,7 @@ func (s *CtrSQLite) NamedPlayers(names []string) (map[string]*platformpkg.Player
 		if err != nil {
 			return nil, err
 		}
-		out[key] = &platformpkg.PlayerID{PID: uint64(pid), Username: stored}
+		out[key] = &platform.PlayerID{PID: uint64(pid), Username: stored}
 	}
 	return out, nil
 }

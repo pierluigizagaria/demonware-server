@@ -1,54 +1,55 @@
 package main
 
 import (
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	sync "sync"
-	testing "testing"
-	time "time"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
 )
 
 func TestWindowShoppingOriginalScheduleAndReward(t *testing.T) {
 	now := time.Date(2026, 9, 23, 3, 29, 0, 0, time.UTC)
-	state, active := ctrpkg.WindowShoppingState(&ctrpkg.EconomyAccount{}, now)
-	if !active || state.Target != 1 || state.ID != 11 || ctrpkg.WindowShoppingSnapshot().Reward != 25 {
+	state, active := ctr.WindowShoppingState(&ctr.EconomyAccount{}, now)
+	if !active || state.Target != 1 || state.ID != 11 || ctr.WindowShoppingSnapshot().Reward != 25 {
 		t.Fatalf("wrong original rule: %+v %v", state, active)
 	}
-	s := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	s := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
 	setStartBalance(t, 10000)
-	e := ctrpkg.AchievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
-	credit, update, err := s.AwardWindowShopping(42, []ctrpkg.AchievementEvent{e, e}, now)
+	e := ctr.AchievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
+	credit, update, err := s.AwardWindowShopping(42, []ctr.AchievementEvent{e, e}, now)
 	if err != nil || credit != 25 || len(update) == 0 {
 		t.Fatalf("award %d %x %v", credit, update, err)
 	}
-	s = &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: s.Dir}
-	credit, update, err = s.AwardWindowShopping(42, []ctrpkg.AchievementEvent{e}, now)
+	s = &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: s.Dir}
+	credit, update, err = s.AwardWindowShopping(42, []ctr.AchievementEvent{e}, now)
 	if err != nil || credit != 0 || len(update) != 0 {
 		t.Fatalf("retry %d %v", credit, err)
 	}
 	a, _ := s.Snapshot(42)
-	state, _ = ctrpkg.WindowShoppingState(a, now)
+	state, _ = ctr.WindowShoppingState(a, now)
 	if a.Balances[10] != 10025 || state.Progress != 1 || state.Status != 3 || state.Completed != e.Timestamp {
 		t.Fatalf("not persisted %+v %+v", a, state)
 	}
 	next := now.Add(24 * time.Hour)
 	e.Timestamp = uint64(next.Unix())
-	credit, _, err = s.AwardWindowShopping(42, []ctrpkg.AchievementEvent{e}, next)
+	credit, _, err = s.AwardWindowShopping(42, []ctr.AchievementEvent{e}, next)
 	if err != nil || credit != 25 {
 		t.Fatalf("next active day %d %v", credit, err)
 	}
 }
 
 func TestWindowShoppingInactiveAndStaleEvents(t *testing.T) {
-	s := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	s := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
 	// Original cycle day 2 has no Window Shopping challenge.
-	now := time.Unix(ctrpkg.WindowShoppingSnapshot().CycleStart, 0).Add(2 * 24 * time.Hour)
-	e := ctrpkg.AchievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
-	credit, p, err := s.AwardWindowShopping(42, []ctrpkg.AchievementEvent{e}, now)
+	now := time.Unix(ctr.WindowShoppingSnapshot().CycleStart, 0).Add(2 * 24 * time.Hour)
+	e := ctr.AchievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
+	credit, p, err := s.AwardWindowShopping(42, []ctr.AchievementEvent{e}, now)
 	if err != nil || credit != 0 || len(p) != 0 {
 		t.Fatalf("inactive award %d %x %v", credit, p, err)
 	}
 	now = time.Date(2026, 9, 23, 3, 0, 0, 0, time.UTC)
-	credit, p, err = s.AwardWindowShopping(42, []ctrpkg.AchievementEvent{e}, now)
+	credit, p, err = s.AwardWindowShopping(42, []ctr.AchievementEvent{e}, now)
 	if err != nil || credit != 0 || len(p) != 0 {
 		t.Fatal("stale event rewarded")
 	}
@@ -56,15 +57,15 @@ func TestWindowShoppingInactiveAndStaleEvents(t *testing.T) {
 
 func TestWindowShoppingConcurrentVisitsAwardOnce(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	s := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
 	now := time.Date(2026, 9, 23, 3, 0, 0, 0, time.UTC)
-	e := ctrpkg.AchievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
+	e := ctr.AchievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, _, err := s.AwardWindowShopping(42, []ctrpkg.AchievementEvent{e}, now); err != nil {
+			if _, _, err := s.AwardWindowShopping(42, []ctr.AchievementEvent{e}, now); err != nil {
 				t.Error(err)
 			}
 		}()

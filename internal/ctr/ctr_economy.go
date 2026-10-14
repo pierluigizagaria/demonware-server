@@ -2,14 +2,15 @@ package ctr
 
 import (
 	_ "embed"
-	json "encoding/json"
-	fmt "fmt"
-	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
-	os "os"
-	filepath "path/filepath"
-	sort "sort"
-	strconv "strconv"
-	sync "sync"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"sync"
+
+	"github.com/pierluigizagaria/demonware-server/internal/config"
 )
 
 // Currency IDs are assigned from CMarketplaceData's baseCurrencyId (10).
@@ -55,7 +56,7 @@ type EconomyStore struct {
 type CtrServices struct {
 	Economy *EconomyStore
 	Stats   LeaderboardStore
-	News    configpkg.CtrNewsConfig
+	News    config.CtrNewsConfig
 }
 
 func readEconomyJSON(path string, value any) error {

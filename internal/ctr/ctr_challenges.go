@@ -2,10 +2,11 @@ package ctr
 
 import (
 	_ "embed"
-	json "encoding/json"
-	fmt "fmt"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	time "time"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 // Extracted from Switch 1.0.15 AchievementMetadata, not an invented reward.
@@ -108,5 +109,5 @@ func (s *EconomyStore) AwardWindowShopping(pid uint64, events []AchievementEvent
 		}
 		state, _ = WindowShoppingState(a, now)
 	}
-	return credit, demonwarepkg.AppendBytesField(nil, 1, state.Encode()), nil
+	return credit, demonware.AppendBytesField(nil, 1, state.Encode()), nil
 }

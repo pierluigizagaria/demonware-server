@@ -9,7 +9,7 @@
 package presence
 
 import (
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 const SvcRichPresence = 68
@@ -33,7 +33,7 @@ type RichPresence struct {
 }
 
 // accountIDs reads "u32 count | count x bdUserAccountID".
-func readAccountIDs(r *demonwarepkg.Reader) []accountID {
+func readAccountIDs(r *demonware.Reader) []accountID {
 	n, err := r.Uint32()
 	if err != nil || n > 4096 {
 		return nil
@@ -59,7 +59,7 @@ func (state *PresenceStore) onlinePIDSet() map[uint64]bool {
 	return out
 }
 
-func (h *PresenceHandler) OnRichPresence(peer presencePeer, task byte, r *demonwarepkg.Reader) []byte {
+func (h *PresenceHandler) OnRichPresence(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	ctx, _ := r.String()
 	switch task {
 	case RpSet:
@@ -112,7 +112,7 @@ func (h *PresenceHandler) OnRichPresence(peer presencePeer, task byte, r *demonw
 		}
 		h.Presence.RichMu.Unlock()
 		peer.Logf("[presence] richpresence GET ctx=%q %d demande(s) -> %d presence(s)", ctx, len(ids), len(hits))
-		return h.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
+		return h.TaskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, h := range hits {
 				w.Uint64(h.id)
 				w.String(h.p.Platform)

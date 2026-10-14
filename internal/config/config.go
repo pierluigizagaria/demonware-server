@@ -1,17 +1,18 @@
 package config
 
 import (
-	errors "errors"
-	fmt "fmt"
-	shadnetpkg "github.com/pierluigizagaria/demonware-server/internal/platform/shadnet"
-	net "net"
-	os "os"
-	regexp "regexp"
-	runtime "runtime"
-	slices "slices"
-	strconv "strconv"
-	strings "strings"
-	unicode "unicode"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"regexp"
+	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"unicode"
+
+	"github.com/pierluigizagaria/demonware-server/internal/platform/shadnet"
 )
 
 var settingPrefixes = []string{"CTR_", "D3_", "DASH_", "NEXTENDO_", "SHADNET_"}
@@ -29,7 +30,7 @@ type ServerConfig struct {
 	PubfilesConfig, PubfilesDir, Dumps string
 	Verbose                            bool
 	RiftData                           string
-	Shadnet                            shadnetpkg.Policy
+	Shadnet                            shadnet.Policy
 	Admission                          string
 	JwksURL                            string
 	SigningKey, DataDir                string
@@ -128,7 +129,7 @@ func LoadConfig(lookup func(string) string, check []string, serving bool) (Serve
 		Dumps:          r.text("D3_DUMPS", "off"),
 		Verbose:        r.flag("D3_VERBOSE", false),
 		RiftData:       r.text("D3_RIFTDATA", "riftdata"),
-		Shadnet: shadnetpkg.Policy{
+		Shadnet: shadnet.Policy{
 			Issuer:    r.required("SHADNET_ISSUER", needsShadNet),
 			ClientID:  r.required("SHADNET_CLIENT_ID", needsShadNet),
 			NPTitleID: r.required("SHADNET_TITLE_ID", needsShadNet),
@@ -156,7 +157,7 @@ func LoadConfig(lookup func(string) string, check []string, serving bool) (Serve
 	}
 	if needsShadNet && c.Shadnet.Issuer != "" && c.Shadnet.ClientID != "" && c.Shadnet.NPTitleID != "" &&
 		len(c.Shadnet.Scopes) != 0 && c.JwksURL != "" {
-		if err := shadnetpkg.Check(c.Shadnet, c.JwksURL); err != nil {
+		if err := shadnet.Check(c.Shadnet, c.JwksURL); err != nil {
 			r.fail("SHADNET_*: %v", err)
 		}
 	}

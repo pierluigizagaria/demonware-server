@@ -7,23 +7,24 @@ package lobby
 
 import (
 	"errors"
-	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
-	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
-	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
-	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
-	net "net"
-	strings "strings"
+	"net"
+	"strings"
 	"sync"
-	atomic "sync/atomic"
+	"sync/atomic"
+
+	"github.com/pierluigizagaria/demonware-server/internal/auth"
+	"github.com/pierluigizagaria/demonware-server/internal/config"
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
 type LobbyServer struct {
 	Table *ServiceTable
-	Cfg   configpkg.ServerConfig
-	Diag  *diagnosticspkg.Diagnostics
+	Cfg   config.ServerConfig
+	Diag  *diagnostics.Diagnostics
 
-	Tickets  *authpkg.TicketStore
-	Presence *presencepkg.PresenceStore
+	Tickets  *auth.TicketStore
+	Presence *presence.PresenceStore
 	Replies  *ReplyCounter
 
 	Ids     *atomic.Uint64

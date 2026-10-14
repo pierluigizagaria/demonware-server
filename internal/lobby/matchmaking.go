@@ -21,10 +21,11 @@
 package lobby
 
 import (
-	hex "encoding/hex"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	sync "sync"
-	time "time"
+	"encoding/hex"
+	"sync"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 const (
@@ -153,7 +154,7 @@ func (registry *SessionRegistry) DropSessionsOf(conn uint64) {
 
 // onFriendSessions (138/14): "of these ids, who hosts a game?"
 // Without an answer the game shows NOT JOINABLE for every online friend.
-func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *demonwarepkg.Reader, context string) []byte {
+func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *demonware.Reader, context string) []byte {
 	ids := r.Uint64s()
 	me := peer.PID()
 	seen := map[[8]byte]bool{}
@@ -186,7 +187,7 @@ func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *
 	// The game ties each result to a friend by the online id carried BY the game
 	// (Net::MatchMakingInfo +0x170, inside attrs): nothing prefixes the record,
 	// which is a raw bdMatchMakingInfo.
-	return handler.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
+	return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, h := range found {
 			w.Blob(handler.Relay.WithRelay(h.s.hostAddr, h.s.OwnerPID, peer.PID()))
 			w.Blob(h.s.Id[:])
@@ -199,7 +200,7 @@ func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *
 	})
 }
 
-func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte, r *demonwarepkg.Reader, context string) []byte {
+func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte, r *demonware.Reader, context string) []byte {
 	switch task {
 	case MmRequestSessionID:
 		s := &MmSession{Context: context, Owner: peer.ConnID(), OwnerPID: peer.PID(), Reserved: true, Updated: peer.Now()}
@@ -215,7 +216,7 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		handler.Registry.Sessions[s.Id] = s
 		handler.Registry.Mu.Unlock()
 		peer.Logf("matchmaking RESERVE session=%X", s.Id)
-		return handler.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 { w.Blob(s.Id[:]); return 1 })
+		return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.Id[:]); return 1 })
 	case MmCreateSession:
 		host, gt, maxp, attrs, err := handler.ReadInfo(r)
 		if err != nil {
@@ -239,7 +240,7 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		handler.Registry.Mu.Unlock()
 		peer.Logf("matchmaking CREATE session=%X gameType=%d max=%d host=%s (%d open games)",
 			s.Id, gt, maxp, hex.EncodeToString(host[:min(6, len(host))]), n)
-		return handler.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 { w.Blob(s.Id[:]); return 1 })
+		return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.Id[:]); return 1 })
 
 	case MmUpdateSession, MmInitializeSession:
 		sid, err := r.Blob()
@@ -335,7 +336,7 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 			found = found[:maxr]
 		}
 		peer.Logf("matchmaking FIND query=%d start=%d max=%d -> %d game(s)", query, start, maxr, len(found))
-		return handler.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
+		return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, s := range found {
 				w.Blob(handler.Relay.WithRelay(s.hostAddr, s.OwnerPID, peer.PID()))
 				w.Blob(s.Id[:])

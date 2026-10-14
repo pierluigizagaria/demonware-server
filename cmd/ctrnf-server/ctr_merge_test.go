@@ -1,14 +1,15 @@
 package main
 
 import (
-	json "encoding/json"
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	testing "testing"
+	"encoding/json"
+	"testing"
+
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
-func mergeTestRooms(t *testing.T) (*ctrpkg.CtrMatchmaker, *ctrpkg.CtrRoom, *ctrpkg.CtrRoom) {
-	m := &ctrpkg.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctrpkg.CtrRoom{}}
+func mergeTestRooms(t *testing.T) (*ctr.CtrMatchmaker, *ctr.CtrRoom, *ctr.CtrRoom) {
+	m := &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
 	a := fillTestRoom(t, m, 10000, 3)
 	a.HostDoc["lobby_open"] = false
 	b := fillTestRoom(t, m, 20000, 3)
@@ -20,13 +21,13 @@ func TestCTRMergeThreePlusThreeAfterDestinationAck(t *testing.T) {
 	m, a, b := mergeTestRooms(t)
 	h, _ := a.Documents()
 	ok, out := m.SyncDoc(a.Host.Conn, a.Id, a.Version, h)
-	if !ok || len(out) != 1 || out[0].Event != ctrpkg.CtrUpdateLobby {
+	if !ok || len(out) != 1 || out[0].Event != ctr.CtrUpdateLobby {
 		t.Fatal("merge did not reserve destination first")
 	}
 	if len(m.Rooms) != 2 || a.Occupancy() != 6 || len(a.Players) != 3 || b.MergeTarget != a.Id {
 		t.Fatal("invalid reserved merge state")
 	}
-	w := &demonwarepkg.Writer{}
+	w := &demonware.Writer{}
 	out[0].Write(w)
 	var backend struct {
 		Players map[string]string `json:"players"`
@@ -44,12 +45,12 @@ func TestCTRMergeThreePlusThreeAfterDestinationAck(t *testing.T) {
 		t.Fatal("merge not committed")
 	}
 	for _, n := range out {
-		if n.Event != ctrpkg.CtrMergeLobby || len(n.Ids) != 3 || n.Ids[1] != b.Id || n.Ids[2] != a.Id {
+		if n.Event != ctr.CtrMergeLobby || len(n.Ids) != 3 || n.Ids[1] != b.Id || n.Ids[2] != a.Id {
 			t.Fatal("invalid merge event routing")
 		}
-		w := &demonwarepkg.Writer{}
+		w := &demonware.Writer{}
 		n.Write(w)
-		rd := demonwarepkg.NewReader(w.Bytes())
+		rd := demonware.NewReader(w.Bytes())
 		for _, want := range n.Ids {
 			if got, err := rd.Uint64(); err != nil || got != want {
 				t.Fatal("merge wire IDs")
@@ -86,14 +87,14 @@ func TestCTRMergeCancelsIfSourceClosesOrLeaves(t *testing.T) {
 		} else {
 			// The source host's departure releases the reservation at once.
 			out := m.Leave(b.Host.Conn, b.Id)
-			if len(out) != 1 || out[0].Conn != a.Host.Conn || out[0].Event != ctrpkg.CtrUpdateLobby || a.MergeSource != nil || a.Occupancy() != 3 {
+			if len(out) != 1 || out[0].Conn != a.Host.Conn || out[0].Event != ctr.CtrUpdateLobby || a.MergeSource != nil || a.Occupancy() != 3 {
 				t.Fatal("source departure did not cancel the merge")
 			}
 			continue
 		}
 		h, _ := a.Documents()
 		ok, out := m.SyncDoc(a.Host.Conn, a.Id, a.Version, h)
-		if !ok || len(out) != 1 || out[0].Event != ctrpkg.CtrUpdateLobby || a.MergeSource != nil || a.Occupancy() != 3 {
+		if !ok || len(out) != 1 || out[0].Event != ctr.CtrUpdateLobby || a.MergeSource != nil || a.Occupancy() != 3 {
 			t.Fatal("unsafe merge not cancelled")
 		}
 	}
@@ -128,7 +129,7 @@ func TestCTRMergeKeepsPartyMembersTogether(t *testing.T) {
 	p := b.Players[0]
 	p.Doc.Members = []uint64{20000, 20001, 20002}
 	p.Seats = 3
-	b.Players = []*ctrpkg.CtrSearch{p}
+	b.Players = []*ctr.CtrSearch{p}
 	if len(m.StartMerge(a)) != 1 {
 		t.Fatal("party merge not reserved")
 	}
@@ -161,9 +162,9 @@ func TestCTRRequeueDuringMergeReleasesReservation(t *testing.T) {
 	if a.MergeSource != nil || b.MergeTarget != 0 || a.Version != version+1 || b.Occupancy() != 2 {
 		t.Fatal("reservation kept after the source membership changed")
 	}
-	hosts := map[ctrpkg.CtrPeer]bool{}
+	hosts := map[ctr.CtrPeer]bool{}
 	for _, n := range out {
-		if n.Event == ctrpkg.CtrUpdateLobby {
+		if n.Event == ctr.CtrUpdateLobby {
 			hosts[n.Conn] = true
 		}
 	}

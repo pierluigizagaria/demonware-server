@@ -28,23 +28,24 @@
 package lobby
 
 import (
-	hmac "crypto/hmac"
-	rand "crypto/rand"
-	hex "encoding/hex"
-	fmt "fmt"
-	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
-	io "io"
-	net "net"
-	os "os"
-	filepath "path/filepath"
-	sync "sync"
-	atomic "sync/atomic"
-	time "time"
+	"crypto/hmac"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/auth"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
 type LobbyOptions struct {
@@ -57,12 +58,12 @@ type LobbyOptions struct {
 type LobbySession struct {
 	Table     *ServiceTable
 	Telemetry sessionTelemetry
-	*diagnosticspkg.Diagnostics
+	*diagnostics.Diagnostics
 	Options *LobbyOptions
 
 	*ReplyCounter
-	Presence *presencepkg.PresenceStore
-	Tickets  *authpkg.TicketStore
+	Presence *presence.PresenceStore
+	Tickets  *auth.TicketStore
 	Clock    func() time.Time
 	Entropy  io.Reader
 	C        net.Conn
@@ -73,8 +74,8 @@ type LobbySession struct {
 	Nonce    []byte
 	Payload1 []byte // the sent 0x81's payload, for the transcript
 
-	Keys     *demonwarepkg.SessionKeys
-	Player   *platformpkg.PlayerID
+	Keys     *demonware.SessionKeys
+	Player   *platform.PlayerID
 	S2cSeq   uint32
 	C2sSeq   uint32 // last accepted client frame number
 	sendMu   sync.Mutex
@@ -140,7 +141,7 @@ func (l *LobbySession) isStopping() bool {
 
 // readFrame returns the RAW frame (length included), nil for a keepalive.
 func (l *LobbySession) readFrame() ([]byte, error) {
-	return demonwarepkg.ReadFrame(l.readFull, l.MaxLen)
+	return demonware.ReadFrame(l.readFull, l.MaxLen)
 }
 
 func (l *LobbySession) send(b []byte) error {
@@ -163,13 +164,13 @@ func (l *LobbySession) run() {
 	defer l.Presence.DropOnline(l.N)
 	l.logf("==== CONNECT from=%s", l.C.RemoteAddr())
 
-	hello, err := l.readFull(demonwarepkg.HelloLen)
+	hello, err := l.readFull(demonware.HelloLen)
 	if err != nil {
 		l.logf("hello: %v", err)
 		return
 	}
 	l.dump("hello", hello)
-	h, err := demonwarepkg.ParseHello(hello)
+	h, err := demonware.ParseHello(hello)
 	if err != nil {
 		l.logf("unexpected hello: %v", err)
 		return
@@ -183,12 +184,12 @@ func (l *LobbySession) run() {
 	id := 0x0D3000000000 + l.Options.serverIDs.Add(1)
 	var pad [8]byte
 	_, _ = rand.Read(pad[:])
-	l.Payload1 = demonwarepkg.ServerHelloPayload(id, pad)
-	if err := l.send(demonwarepkg.Frame(append([]byte{demonwarepkg.MsgServerHi}, l.Payload1...))); err != nil {
+	l.Payload1 = demonware.ServerHelloPayload(id, pad)
+	if err := l.send(demonware.Frame(append([]byte{demonware.MsgServerHi}, l.Payload1...))); err != nil {
 		l.logf("send 0x81: %v", err)
 		return
 	}
-	l.logf("-> 0x81 version=%d id=0x%X", demonwarepkg.LobbyVersion, id)
+	l.logf("-> 0x81 version=%d id=0x%X", demonware.LobbyVersion, id)
 
 	for {
 		raw, err := l.readFrame()
@@ -216,7 +217,7 @@ func (l *LobbySession) run() {
 		l.dump(fmt.Sprintf("in%02d_%02x", l.msgSeen, body[0]), raw)
 
 		switch {
-		case l.Keys == nil && body[0] == demonwarepkg.MsgClientAuth:
+		case l.Keys == nil && body[0] == demonware.MsgClientAuth:
 			if !l.OnClientAuth(raw) {
 				return
 			}
@@ -237,23 +238,23 @@ func (l *LobbySession) OnClientAuth(raw []byte) bool {
 	}
 	tag := raw[len(raw)-8:]
 
-	transcript := demonwarepkg.HandshakeTranscript(l.MaxLen, l.Nonce, l.Payload1, raw[:len(raw)-8])
+	transcript := demonware.HandshakeTranscript(l.MaxLen, l.Nonce, l.Payload1, raw[:len(raw)-8])
 
 	candidates := l.Candidates(raw)
 	for _, cand := range candidates {
 		for _, wrapped := range []bool{false, true} {
 			k24 := cand.Key24
 			if wrapped {
-				k24 = demonwarepkg.WrapKey24(k24, bdPublicKeyDER)
+				k24 = demonware.WrapKey24(k24, bdPublicKeyDER)
 			}
-			k := demonwarepkg.DeriveKeys(transcript, k24)
+			k := demonware.DeriveKeys(transcript, k24)
 			if hmac.Equal(k.ClientTag[:], tag) {
 				l.Keys = &k
 				l.logf("0x82 AUTHENTICATED — key=%s rsa=%v", cand.name, wrapped)
-				if tk := demonwarepkg.FindTicket(raw); tk != nil {
+				if tk := demonware.FindTicket(raw); tk != nil {
 					l.LoadIdentity(tk)
 				}
-				if err := l.send(demonwarepkg.Frame(append([]byte{demonwarepkg.MsgServerOK}, k.ServerCheck[:]...))); err != nil {
+				if err := l.send(demonware.Frame(append([]byte{demonware.MsgServerOK}, k.ServerCheck[:]...))); err != nil {
 					l.logf("send 0x83: %v", err)
 					return false
 				}
@@ -261,7 +262,7 @@ func (l *LobbySession) OnClientAuth(raw []byte) bool {
 				// The 0x83 already sets [+0x258]=3, the only condition for getStatus()==2: the 0x87 adds
 				// nothing and makes the game wait for a migration (closes after ~12 s). Kept behind CTR_MIGRATE.
 				if l.Options.MigrateEnabled {
-					if err := l.sendEncrypted(demonwarepkg.MsgMigrateInit, []byte{1}); err != nil {
+					if err := l.sendEncrypted(demonware.MsgMigrateInit, []byte{1}); err != nil {
 						l.logf("send 0x87: %v", err)
 						return false
 					}
@@ -294,8 +295,8 @@ func (l *LobbySession) Candidates(raw []byte) []keyCand {
 			keyCand{name + "[33:57]", append([]byte{}, t[33:57]...)},
 		)
 	}
-	if t := demonwarepkg.FindTicket(raw); t != nil {
-		if _, ok := l.Tickets.IssuedTicketPlayer(t, time.Now(), ps4pkg.TicketWindow); ok {
+	if t := demonware.FindTicket(raw); t != nil {
+		if _, ok := l.Tickets.IssuedTicketPlayer(t, time.Now(), ps4.TicketWindow); ok {
 			add("issued-ticket", t)
 		}
 	}
@@ -305,7 +306,7 @@ func (l *LobbySession) Candidates(raw []byte) []keyCand {
 // onEncrypted applies the connection's admission and sequence rules before
 // dispatching the decoded protocol message to the application.
 func (l *LobbySession) OnEncrypted(raw []byte) {
-	encrypted, err := demonwarepkg.ParseEncryptedFrame(raw)
+	encrypted, err := demonware.ParseEncryptedFrame(raw)
 	if err != nil {
 		l.logf("encrypted frame rejected: %v", err)
 		return
@@ -331,18 +332,18 @@ func (l *LobbySession) OnEncrypted(raw []byte) {
 	if l.Verbose {
 		l.logf("msg 0x%02X seq=%d inner_len=%d inner_type=0x%02X plaintext:\n%s", encrypted.Type, encrypted.Sequence, n, inner, hex.Dump(message.Plaintext))
 	}
-	if inner == demonwarepkg.InnerTaskRequest {
+	if inner == demonware.InnerTaskRequest {
 		l.ProcessTask(message.Payload)
 		return
 	}
 
-	if inner == demonwarepkg.MsgMigrateAck {
+	if inner == demonware.MsgMigrateAck {
 		// 0x88 closes 0x87: nothing is expected after it. A 0x89 would trigger a real migration.
 		if !l.Options.MigrateEnabled {
 			l.logf("0x88 migrate-ack — LSG login complete")
 			return
 		}
-		if err := l.sendEncrypted(demonwarepkg.MsgMigrateGo, l.Options.migrateGoPayload()); err != nil {
+		if err := l.sendEncrypted(demonware.MsgMigrateGo, l.Options.migrateGoPayload()); err != nil {
 			l.logf("sending 0x89: %v", err)
 			return
 		}
@@ -388,7 +389,7 @@ func (l *LobbySession) sendEncrypted(innerType byte, payload []byte) error {
 	if _, err := rand.Read(iv); err != nil {
 		return err
 	}
-	out, err := demonwarepkg.EncodeEncrypted(l.S2cSeq+1, innerType, payload, iv, l.Keys.S2CAES, l.Keys.S2CMAC)
+	out, err := demonware.EncodeEncrypted(l.S2cSeq+1, innerType, payload, iv, l.Keys.S2CAES, l.Keys.S2CMAC)
 	if err != nil {
 		return err
 	}

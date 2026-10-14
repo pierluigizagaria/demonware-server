@@ -1,10 +1,10 @@
 package diablo
 
 import (
-	json "encoding/json"
-	strings "strings"
-	testing "testing"
-	time "time"
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
 )
 
 func TestSeasonList(t *testing.T) {

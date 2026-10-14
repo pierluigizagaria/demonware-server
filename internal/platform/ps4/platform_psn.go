@@ -1,15 +1,16 @@
 package ps4
 
 import (
-	json "encoding/json"
-	fmt "fmt"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	shadnetpkg "github.com/pierluigizagaria/demonware-server/internal/platform/shadnet"
-	strictjsonpkg "github.com/pierluigizagaria/demonware-server/internal/strictjson"
-	strconv "strconv"
-	strings "strings"
-	time "time"
-	utf8 "unicode/utf8"
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/shadnet"
+	"github.com/pierluigizagaria/demonware-server/internal/strictjson"
 )
 
 // Crash Team Racing Nitro-Fueled on PS4 (CUSA13795).
@@ -28,12 +29,12 @@ func IsCTRTitle(title uint32) bool { return title == CtrTitle }
 // psnPlatform adapts the observed CTR PS4 request envelope to platform identity.
 // The supplied verifier determines trust; failed verification has no fallback.
 type PsnPlatform struct {
-	Verifier platformpkg.Verifier
+	Verifier platform.Verifier
 }
 
-func (p PsnPlatform) Authenticate(body []byte) (platformpkg.PlayerID, error) {
-	refused := func() (platformpkg.PlayerID, error) {
-		return platformpkg.PlayerID{}, fmt.Errorf("platform identity refused")
+func (p PsnPlatform) Authenticate(body []byte) (platform.PlayerID, error) {
+	refused := func() (platform.PlayerID, error) {
+		return platform.PlayerID{}, fmt.Errorf("platform identity refused")
 	}
 	token, ok := ReadPSNEnvelope(body)
 	if p.Verifier == nil || !ok || token == "" {
@@ -44,7 +45,7 @@ func (p PsnPlatform) Authenticate(body []byte) (platformpkg.PlayerID, error) {
 		return refused()
 	}
 	// Keep the publisher's subject namespace separate from shadNet's decimal sub.
-	return platformpkg.PlayerID{PID: id.AccountID, Username: id.OnlineID, Sub: "shadnet:" + id.Subject, Kind: "shadnet", Title: CtrTitle}, nil
+	return platform.PlayerID{PID: id.AccountID, Username: id.OnlineID, Sub: "shadnet:" + id.Subject, Kind: "shadnet", Title: CtrTitle}, nil
 }
 
 // Both admission providers consume the original PS4 envelope. Only the
@@ -74,14 +75,14 @@ func ReadPSNEnvelope(body []byte) (string, bool) {
 	return envelope.IDToken, true
 }
 
-func (PsnPlatform) AuthData(id platformpkg.PlayerID) map[string]string {
+func (PsnPlatform) AuthData(id platform.PlayerID) map[string]string {
 	return map[string]string{"extended_data": fmt.Sprintf("nextendo:shadnet:%d", id.PID)}
 }
 
 // loadPSNPlatform also returns the trust ID (issuer, client and title) that
 // the instance database is bound to.
-func LoadPSNPlatform(policy shadnetpkg.Policy, jwksURL string) (PsnPlatform, string, error) {
-	verifier, err := shadnetpkg.Load(policy, jwksURL)
+func LoadPSNPlatform(policy shadnet.Policy, jwksURL string) (PsnPlatform, string, error) {
+	verifier, err := shadnet.Load(policy, jwksURL)
 	if err != nil {
 		return PsnPlatform{}, "", err
 	}
@@ -92,7 +93,7 @@ func LoadPSNPlatform(policy shadnetpkg.Policy, jwksURL string) (PsnPlatform, str
 // so the auth handler's request parser and this adapter cannot disagree.
 func decodePSNObject(raw []byte, out any, required ...string) bool {
 	var fields map[string]json.RawMessage
-	if !utf8.Valid(raw) || !strictjsonpkg.Decode(string(raw), &fields) || fields == nil {
+	if !utf8.Valid(raw) || !strictjson.Decode(string(raw), &fields) || fields == nil {
 		return false
 	}
 	for _, name := range required {

@@ -1,13 +1,14 @@
 package main
 
 import (
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	storepkg "github.com/pierluigizagaria/demonware-server/internal/store"
-	os "os"
-	filepath "path/filepath"
-	reflect "reflect"
-	testing "testing"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
 
 func TestSQLiteUnlockAllOwnsCatalogWithoutWrites(t *testing.T) {
@@ -16,15 +17,15 @@ func TestSQLiteUnlockAllOwnsCatalogWithoutWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(a.Items, ctrpkg.CatalogItemsSnapshot()) || len(ctrpkg.CatalogItemsSnapshot()) == 0 {
+	if !reflect.DeepEqual(a.Items, ctr.CatalogItemsSnapshot()) || len(ctr.CatalogItemsSnapshot()) == 0 {
 		t.Fatal("inventory differs from catalog")
 	}
-	for _, sku := range ctrpkg.EconomyCatalogSnapshot() {
-		if !ctrpkg.OwnsSKU(a, sku) {
+	for _, sku := range ctr.EconomyCatalogSnapshot() {
+		if !ctr.OwnsSKU(a, sku) {
 			t.Fatal("catalog SKU not owned")
 		}
 	}
-	if got := ctrpkg.InventoryPage(a, 1, 4096); len(got) != len(ctrpkg.CatalogItemsSnapshot()) {
+	if got := ctr.InventoryPage(a, 1, 4096); len(got) != len(ctr.CatalogItemsSnapshot()) {
 		t.Fatalf("first page = %d items", len(got))
 	}
 	before := sqliteChanges(t, db)
@@ -55,7 +56,7 @@ func TestSQLiteNormalInventoryIsPersisted(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, err = s.Inventory(42)
-	if err != nil || len(a.Items) != len(ctrpkg.EconomyCatalogSnapshot()[200085].Items) || a.Balances[ctrpkg.WumpaCurrency] != 10000-ctrpkg.EconomyCatalogSnapshot()[200085].Price {
+	if err != nil || len(a.Items) != len(ctr.EconomyCatalogSnapshot()[200085].Items) || a.Balances[ctr.WumpaCurrency] != 10000-ctr.EconomyCatalogSnapshot()[200085].Price {
 		t.Fatal("inventory does not reflect persisted purchases")
 	}
 }
@@ -76,23 +77,23 @@ func TestPlatformMarketplaceUnlockAllInventory(t *testing.T) {
 	}
 	marketplaceOutcome(t, frames[0][1:], 0)
 	a, err := s.Snapshot(l.Pid())
-	if err != nil || a.Balances[ctrpkg.WumpaCurrency] != 10000 || len(a.Items) != 0 {
+	if err != nil || a.Balances[ctr.WumpaCurrency] != 10000 || len(a.Items) != 0 {
 		t.Fatal("unlock-all purchase debited or granted persisted items")
 	}
 	if sqliteChanges(t, db) != before {
 		t.Fatal("unlock-all purchase or balance push wrote rows")
 	}
-	w := demonwarepkg.NewWriter([]byte{ctrpkg.SvcMarketplace, demonwarepkg.TagUint8, ctrpkg.TaskGetInventoryPaginated})
+	w := demonware.NewWriter([]byte{ctr.SvcMarketplace, demonware.TagUint8, ctr.TaskGetInventoryPaginated})
 	w.String("octane_psn")
 	w.Uint32(1)
 	w.Uint32(4096)
 	w.Raw([]byte{0})
 	reply := sharedTask(t, l, wire, w.Bytes())
 	marketplaceOutcome(t, reply, 0)
-	r := demonwarepkg.NewReader(reply[14:])
+	r := demonware.NewReader(reply[14:])
 	task, e1 := r.Uint8()
 	count, e2 := r.Uint32()
-	if e1 != nil || e2 != nil || task != ctrpkg.TaskGetInventoryPaginated || int(count) != len(ctrpkg.CatalogItemsSnapshot()) {
+	if e1 != nil || e2 != nil || task != ctr.TaskGetInventoryPaginated || int(count) != len(ctr.CatalogItemsSnapshot()) {
 		t.Fatalf("inventory count = %d", count)
 	}
 }
@@ -103,17 +104,17 @@ func TestSQLiteUsesDataDir(t *testing.T) {
 	for _, ns := range []string{"", "nested"} {
 		t.Run(ns, func(t *testing.T) {
 			root := t.TempDir()
-			testCTR.Economy, testConfig.DataDir = &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }}, filepath.Join(root, ns)
+			testCTR.Economy, testConfig.DataDir = &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }}, filepath.Join(root, ns)
 			testLoadWallets()
 			if testCTR.Economy.Dir != filepath.Join(root, ns) {
 				t.Fatalf("wallet dir = %s", testCTR.Economy.Dir)
 			}
-			db := openTestCTR(t, filepath.Join(testCTR.Economy.Dir, storepkg.CtrDB), false)
+			db := openTestCTR(t, filepath.Join(testCTR.Economy.Dir, store.CtrDB), false)
 			testCTR.Economy.Backend = db
 			if _, err := testCTR.Economy.Snapshot(7); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.Write([]ctrpkg.CtrStatWrite{{CtrStat: ctrpkg.CtrStat{Board: 89, PID: 7, Score: 2}}}); err != nil {
+			if err := db.Write([]ctr.CtrStatWrite{{CtrStat: ctr.CtrStat{Board: 89, PID: 7, Score: 2}}}); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(filepath.Join(root, ns, "ctrnf.db")); err != nil {

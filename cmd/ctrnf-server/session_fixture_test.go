@@ -4,29 +4,29 @@
 package main
 
 import (
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	diablopkg "github.com/pierluigizagaria/demonware-server/internal/diablo"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	relaypkg "github.com/pierluigizagaria/demonware-server/internal/relay"
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/diablo"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/relay"
 )
 
 // Legacy integration fixtures retain component handles outside the production
 // session. The session itself has no dependency on CTR or Diablo implementations.
 type lobbyDependencies struct {
-	files      *diablopkg.PublisherFiles
-	relay      *relaypkg.RelayTable
-	matchmaker *ctrpkg.CtrMatchmaker
-	registry   *lobbypkg.SessionRegistry
-	ctr        *ctrpkg.CtrServices
+	files      *diablo.PublisherFiles
+	relay      *relay.RelayTable
+	matchmaker *ctr.CtrMatchmaker
+	registry   *lobby.SessionRegistry
+	ctr        *ctr.CtrServices
 	pubDir     string
 	lobbyDoc   string
 }
 
 type lobbyConn struct {
-	*lobbypkg.LobbySession
+	*lobby.LobbySession
 	lobbyDependencies
 }
 
-func newTestLobby(session *lobbypkg.LobbySession, dependencies lobbyDependencies) *lobbyConn {
+func newTestLobby(session *lobby.LobbySession, dependencies lobbyDependencies) *lobbyConn {
 	return &lobbyConn{LobbySession: session, lobbyDependencies: dependencies}
 }

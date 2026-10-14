@@ -1,8 +1,8 @@
 package ctr
 
 import (
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
 )
 
 // Achievements use struct task replies; ordinary result-count replies fail decoding.
@@ -19,7 +19,7 @@ const (
 )
 
 // onAchievements answers every achievements-engine task with a well formed struct.
-func (h *EconomyHandler) OnAchievements(peer lobbypkg.TaskSession, task byte, payload []byte) (result lobbypkg.TaskResult) {
+func (h *EconomyHandler) OnAchievements(peer lobby.TaskSession, task byte, payload []byte) (result lobby.TaskResult) {
 	switch task {
 	case taskReportEvents, taskReportUserEvents:
 		var credit int64
@@ -28,7 +28,7 @@ func (h *EconomyHandler) OnAchievements(peer lobbypkg.TaskSession, task byte, pa
 			events, err := ParseRewardEvents(payload)
 			if err != nil {
 				peer.Logf("[ctr] reward event rejected: %v", err)
-				result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+				result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 				return result
 			}
 			for _, e := range events {
@@ -37,19 +37,19 @@ func (h *EconomyHandler) OnAchievements(peer lobbypkg.TaskSession, task byte, pa
 			credit, err = h.Economy.AwardRaces(peer.PID(), events, peer.Now())
 			if err != nil {
 				peer.Logf("[ctr] reward persistence failed: %v", err)
-				result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+				result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 				return result
 			}
 			updates, err = h.Economy.ReportPitStopRefresh(peer.PID(), events, peer.Now())
 			if err != nil {
 				peer.Logf("[ctr] refresh persistence failed: %v", err)
-				result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+				result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 				return result
 			}
 			challengeCredit, challengeUpdates, err := h.Economy.AwardChallenges(peer.PID(), events, peer.Now())
 			if err != nil {
 				peer.Logf("[ctr] challenge persistence failed: %v", err)
-				result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+				result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 				return result
 			}
 			credit += challengeCredit
@@ -69,7 +69,7 @@ func (h *EconomyHandler) OnAchievements(peer lobbypkg.TaskSession, task byte, pa
 			if len(updates) == 0 {
 				return
 			}
-			if err := peer.SendPush(pushAchievementsUpdated, func(w *demonwarepkg.Writer) { w.Struct(updates) }); err != nil {
+			if err := peer.SendPush(pushAchievementsUpdated, func(w *demonware.Writer) { w.Struct(updates) }); err != nil {
 				peer.Logf("[ctr] achievements push: %v", err)
 				return
 			}
@@ -81,27 +81,27 @@ func (h *EconomyHandler) OnAchievements(peer lobbypkg.TaskSession, task byte, pa
 	case TaskGetAchievementStates:
 		a, err := h.Economy.Snapshot(peer.PID())
 		if err != nil {
-			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+			result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 			return result
 		}
 		state := CurrentPitStopRefresh(a, peer.Now())
 		var states []byte
 		if AchievementRequested(payload, state) {
-			states = demonwarepkg.AppendBytesField(nil, 1, state.Encode())
+			states = demonware.AppendBytesField(nil, 1, state.Encode())
 		}
 		for _, rule := range challengeRules.Rules {
 			if challenge, _, active := rule.Current(a, peer.Now()); active && AchievementRequested(payload, challenge) {
-				states = demonwarepkg.AppendBytesField(states, 1, challenge.Encode())
+				states = demonware.AppendBytesField(states, 1, challenge.Encode())
 			}
 		}
-		result.Reply = h.StructTaskReply(task, demonwarepkg.AppendBytesField(states, 2, nil))
+		result.Reply = h.StructTaskReply(task, demonware.AppendBytesField(states, 2, nil))
 		return result
 
 	case TaskGetUserState:
 		// field 1 is the engine's user-state blob. Empty JSON keeps it valid and lets
 		// handleGetUserState fire CAEUserStateRefreshed, which is the refresh confirmation.
 		peer.Logf("[ctr] achievements getUserState -> empty state")
-		result.Reply = h.StructTaskReply(task, demonwarepkg.AppendBytesField(nil, 1, []byte("{}")))
+		result.Reply = h.StructTaskReply(task, demonware.AppendBytesField(nil, 1, []byte("{}")))
 		return result
 	}
 	// reportEvents and the activate/claim tasks take a request and return no body.
@@ -112,20 +112,20 @@ func (h *EconomyHandler) OnAchievements(peer lobbypkg.TaskSession, task byte, pa
 // eventNames pulls the printable strings out of a reportEvents struct buffer so the race
 // reward event can be identified without dumping the whole payload.
 func eventNames(payload []byte) []string {
-	sb := demonwarepkg.TaskStructPayload(payload)
+	sb := demonware.TaskStructPayload(payload)
 	out := []string{}
 	for i := 0; i < len(sb) && len(out) < 12; {
 		wire := sb[i] & 7
 		i++
 		switch wire {
 		case 0:
-			_, next, err := demonwarepkg.ReadVarint(sb, i)
+			_, next, err := demonware.ReadVarint(sb, i)
 			if err != nil {
 				return out
 			}
 			i = next
 		case 2:
-			ln, next, err := demonwarepkg.ReadVarint(sb, i)
+			ln, next, err := demonware.ReadVarint(sb, i)
 			if err != nil || next+int(ln) > len(sb) {
 				return out
 			}

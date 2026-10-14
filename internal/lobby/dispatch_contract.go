@@ -1,9 +1,10 @@
 package lobby
 
 import (
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	time "time"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
 // taskSession exposes identity and messaging, never transport keys, sockets or
@@ -11,17 +12,17 @@ import (
 type TaskSession interface {
 	ConnID() uint64
 	PID() uint64
-	Identity() *platformpkg.PlayerID
+	Identity() *platform.PlayerID
 	Title() uint32
 	Logf(string, ...any)
-	SendPush(uint32, func(*demonwarepkg.Writer)) error
+	SendPush(uint32, func(*demonware.Writer)) error
 	Now() time.Time
 	Random([]byte) (int, error)
 }
 
 type TaskRequest struct {
 	Service, Task byte
-	Args          *demonwarepkg.Reader
+	Args          *demonware.Reader
 	Payload       []byte
 }
 
@@ -33,7 +34,7 @@ func (l *LobbySession) ConnID() uint64 { return l.N }
 
 func (l *LobbySession) PID() uint64 { return l.Pid() }
 
-func (l *LobbySession) Identity() *platformpkg.PlayerID {
+func (l *LobbySession) Identity() *platform.PlayerID {
 	if l.Player == nil {
 		return nil
 	}
@@ -50,7 +51,7 @@ func (l *LobbySession) Title() uint32 {
 
 func (l *LobbySession) Logf(format string, args ...any) { l.logf(format, args...) }
 
-func (l *LobbySession) SendPush(event uint32, write func(*demonwarepkg.Writer)) error {
+func (l *LobbySession) SendPush(event uint32, write func(*demonware.Writer)) error {
 	return l.sendPush(event, write)
 }
 
@@ -80,5 +81,5 @@ func (table *ServiceTable) CloseSession(peer TaskSession) {
 }
 
 type taskReplies interface {
-	TaskReply(byte, uint32, func(*demonwarepkg.Writer) uint32) []byte
+	TaskReply(byte, uint32, func(*demonware.Writer) uint32) []byte
 }

@@ -5,33 +5,34 @@
 package auth
 
 import (
-	rand "crypto/rand"
-	tls "crypto/tls"
-	base64 "encoding/base64"
-	binary "encoding/binary"
-	json "encoding/json"
-	fmt "fmt"
-	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
-	dashboardpkg "github.com/pierluigizagaria/demonware-server/internal/dashboard"
-	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
+	"crypto/rand"
+	"crypto/tls"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/config"
+	"github.com/pierluigizagaria/demonware-server/internal/dashboard"
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	"github.com/pierluigizagaria/demonware-server/internal/httpserver"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
-	io "io"
-	net "net"
-	http "net/http"
-	os "os"
-	filepath "path/filepath"
-	strconv "strconv"
-	strings "strings"
-	atomic "sync/atomic"
-	time "time"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
 // bdAuth ticket magic, read from the NSO (rodata 0xF07FB8): bytes DE AD BD EF.
 const TicketMagic uint32 = 0xEFBDADDE
 
-func StartAuth(platform PublisherPlatform, tickets *TicketStore, presence *presencepkg.PresenceStore, cfg configpkg.ServerConfig, diag *diagnosticspkg.Diagnostics, monitor *dashboardpkg.Telemetry, umbrella AuxiliaryAuthHandler) (*httpserver.Server, error) {
+func StartAuth(platform PublisherPlatform, tickets *TicketStore, presenceStore *presence.PresenceStore, cfg config.ServerConfig, diag *diagnostics.Diagnostics, monitor *dashboard.Telemetry, umbrella AuxiliaryAuthHandler) (*httpserver.Server, error) {
 	ctrSigner, err := LoadCTRAuthSigner(cfg.SigningKey)
 	if err != nil {
 		return nil, err
@@ -46,7 +47,7 @@ func StartAuth(platform PublisherPlatform, tickets *TicketStore, presence *prese
 	diag.DiagnosticLogf("[auth] signed replies enabled (client trust mod required)")
 	dumps := diag.RunDumpDir("auth")
 
-	h := NewPlatformAuthHandler(diag, monitor, tickets, presence, platform, ctrSigner, dumps, umbrella)
+	h := NewPlatformAuthHandler(diag, monitor, tickets, presenceStore, platform, ctrSigner, dumps, umbrella)
 
 	srv := &http.Server{
 		Addr:    net.JoinHostPort(cfg.BindAddr, strconv.Itoa(cfg.AuthPort)),
@@ -71,7 +72,7 @@ func StartAuth(platform PublisherPlatform, tickets *TicketStore, presence *prese
 	return httpserver.Start(srv, ln, true), nil
 }
 
-func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboardpkg.Telemetry, tickets *TicketStore, presence *presencepkg.PresenceStore, platform PublisherPlatform, ctrSigner *CtrAuthSigner, dumps string, umbrella AuxiliaryAuthHandler) http.Handler {
+func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Telemetry, tickets *TicketStore, presenceStore *presence.PresenceStore, platform PublisherPlatform, ctrSigner *CtrAuthSigner, dumps string, umbrella AuxiliaryAuthHandler) http.Handler {
 	var authReqNum atomic.Uint64
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := authReqNum.Add(1)
@@ -159,7 +160,7 @@ func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboard
 		// id that changes on every connection matches no friend. Guest admission
 		// intentionally has no platform friend association.
 		userID, expiry := uint64(1), uint64(time.Now().Unix()+86400)
-		if ps4pkg.IsCTRTitle(titleID) {
+		if ps4.IsCTRTitle(titleID) {
 			userID, expiry = id.PID, id.PID
 		}
 		binary.LittleEndian.PutUint64(clientTicket[17:], userID)
@@ -181,9 +182,9 @@ func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboard
 
 		// The lobby finds the ticket echoed in the 0x82 by its 8-byte tag and
 		// takes the session key and the player's identity from it (tickets.go).
-		tickets.RememberTicket(clientTicket, id, time.Now(), ps4pkg.TicketWindow)
+		tickets.RememberTicket(clientTicket, id, time.Now(), ps4.TicketWindow)
 		// 12/10 resolves friends by the names they were issued a ticket under.
-		if err := presence.RememberPlayerName(id, time.Now()); err != nil {
+		if err := presenceStore.RememberPlayerName(id, time.Now()); err != nil {
 			diag.DiagnosticLogf("[auth] #%d player name not recorded: %v", n, err)
 		}
 
@@ -231,7 +232,7 @@ func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboard
 			ExtraData:    string(extra),
 		}
 		out, _ := json.Marshal(resp)
-		if ps4pkg.IsCTRTitle(titleID) && ctrSigner != nil {
+		if ps4.IsCTRTitle(titleID) && ctrSigner != nil {
 			signature, err := ctrSigner.Sign(out)
 			if err != nil {
 				diag.DiagnosticLogf("[auth] %v", err)

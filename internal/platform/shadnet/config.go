@@ -1,6 +1,8 @@
 package shadnet
 
-import "errors"
+import (
+	"errors"
+)
 
 // Check validates a trust policy and its key endpoint without contacting it,
 // reporting every problem.

@@ -1,12 +1,13 @@
 package main
 
 import (
-	bytes "bytes"
-	json "encoding/json"
-	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	strings "strings"
-	testing "testing"
+	"bytes"
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/pierluigizagaria/demonware-server/internal/config"
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
 )
 
 func TestCTRNewsConfigValidation(t *testing.T) {
@@ -30,14 +31,14 @@ func TestCTRNewsConfigValidation(t *testing.T) {
 			t.Run(tc.name+"/"+name, func(t *testing.T) {
 				env := serverEnv()
 				env[name] = tc.text
-				_, err := configpkg.LoadConfig(lookupFrom(env), []string{name}, true)
+				_, err := config.LoadConfig(lookupFrom(env), []string{name}, true)
 				if err == nil || !strings.Contains(err.Error(), name+":") || !strings.Contains(err.Error(), tc.problem) {
 					t.Fatalf("invalid news not diagnosed: %v", err)
 				}
 			})
 		}
 	}
-	_, err := configpkg.LoadConfig(lookupFrom(map[string]string{"CTR_NEWS": "\n", "CTR_NEWS_IT": "\t"}), nil, true)
+	_, err := config.LoadConfig(lookupFrom(map[string]string{"CTR_NEWS": "\n", "CTR_NEWS_IT": "\t"}), nil, true)
 	for _, problem := range []string{"CTR_NEWS:", "CTR_NEWS_IT:", "SHADNET_ISSUER is required"} {
 		if err == nil || !strings.Contains(err.Error(), problem) {
 			t.Fatalf("startup did not collect every problem: %v", err)
@@ -48,7 +49,7 @@ func TestCTRNewsConfigValidation(t *testing.T) {
 func TestCTRNewsConfigAcceptsBoundaries(t *testing.T) {
 	for _, text := range []string{"", "  Keep spaces  ", "Gare: العربية 日本語", strings.Repeat("x", 2047),
 		strings.Repeat("é", 1023) + "x", strings.Repeat("<", 679) + "xx"} {
-		c, err := configpkg.LoadConfig(lookupFrom(map[string]string{"CTR_NEWS": text}), []string{"CTR_NEWS"}, false)
+		c, err := config.LoadConfig(lookupFrom(map[string]string{"CTR_NEWS": text}), []string{"CTR_NEWS"}, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -76,7 +77,7 @@ func TestCTRNewsConfigKnownOverridesOnly(t *testing.T) {
 		env[name] = code
 		names = append(names, name)
 	}
-	c, err := configpkg.LoadConfig(lookupFrom(env), names, false)
+	c, err := config.LoadConfig(lookupFrom(env), names, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +95,7 @@ func TestCTRNewsConfigKnownOverridesOnly(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"CTR_NEWS_XX", "CTR_NEWS_", "CTR_NEWS_EN_US", "CTR_NEWS_PT-BR", "CTR_NEWS_PT_BR_EXTRA"} {
-		_, err := configpkg.LoadConfig(lookupFrom(map[string]string{name: "test"}), []string{name}, false)
+		_, err := config.LoadConfig(lookupFrom(map[string]string{name: "test"}), []string{name}, false)
 		if err == nil || !strings.Contains(err.Error(), name+" is not a setting") {
 			t.Fatalf("unknown news variable accepted: %s", name)
 		}
@@ -104,12 +105,12 @@ func TestCTRNewsConfigKnownOverridesOnly(t *testing.T) {
 func TestCTRNewsConfigAppliedPerInstance(t *testing.T) {
 	request := newsFetch("ctr", "en", [2]uint32{1, 1})
 	for _, tc := range []struct{ mode, text string }{{"0", "Normal news"}, {"1", "Other news"}, {"0", "Other news"}} {
-		c, err := configpkg.LoadConfig(lookupFrom(map[string]string{"CTR_NEWS": tc.text, "CTR_UNLOCK_ALL": tc.mode}), nil, false)
+		c, err := config.LoadConfig(lookupFrom(map[string]string{"CTR_NEWS": tc.text, "CTR_UNLOCK_ALL": tc.mode}), nil, false)
 		if err != nil {
 			t.Fatal(err)
 		}
 		l, wire := sharedPS4Lobby()
-		l.ctr = &ctrpkg.CtrServices{News: c.News}
+		l.ctr = &ctr.CtrServices{News: c.News}
 		r := newsReply(t, sharedTask(t, l, wire, request), 5, 0, 1)
 		newsLocation(t, r, 1, 1)
 		newsMessage(t, r, "en", tc.text)
@@ -118,9 +119,9 @@ func TestCTRNewsConfigAppliedPerInstance(t *testing.T) {
 }
 
 func TestCTRNewsMessageIDFollowsText(t *testing.T) {
-	load := func(text string) configpkg.CtrNewsConfig {
+	load := func(text string) config.CtrNewsConfig {
 		t.Helper()
-		c, err := configpkg.LoadConfig(lookupFrom(map[string]string{"CTR_NEWS": text, "CTR_NEWS_IT": text}), nil, false)
+		c, err := config.LoadConfig(lookupFrom(map[string]string{"CTR_NEWS": text, "CTR_NEWS_IT": text}), nil, false)
 		if err != nil {
 			t.Fatal(err)
 		}

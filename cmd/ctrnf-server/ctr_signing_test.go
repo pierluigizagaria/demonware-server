@@ -1,18 +1,19 @@
 package main
 
 import (
-	bytes "bytes"
-	rand "crypto/rand"
-	rsa "crypto/rsa"
-	sha256 "crypto/sha256"
-	x509 "crypto/x509"
-	base64 "encoding/base64"
-	pem "encoding/pem"
-	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
-	os "os"
-	exec "os/exec"
-	filepath "path/filepath"
-	testing "testing"
+	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+
+	"github.com/pierluigizagaria/demonware-server/internal/auth"
 )
 
 func TestCTRAuthSigning(t *testing.T) {
@@ -28,7 +29,7 @@ func TestCTRAuthSigning(t *testing.T) {
 	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0600); err != nil {
 		t.Fatal(err)
 	}
-	s, err := authpkg.LoadCTRAuthSigner(path)
+	s, err := auth.LoadCTRAuthSigner(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,17 +68,17 @@ func TestCTRAuthSigning(t *testing.T) {
 }
 
 func TestCTRAuthSigningConfiguration(t *testing.T) {
-	if s, err := authpkg.LoadCTRAuthSigner(""); s != nil || err != nil {
+	if s, err := auth.LoadCTRAuthSigner(""); s != nil || err != nil {
 		t.Fatal("unset configuration should disable signing")
 	}
-	if _, err := authpkg.LoadCTRAuthSigner(filepath.Join(t.TempDir(), "missing.pem")); err == nil {
+	if _, err := auth.LoadCTRAuthSigner(filepath.Join(t.TempDir(), "missing.pem")); err == nil {
 		t.Fatal("missing configured key accepted")
 	}
 	path := filepath.Join(t.TempDir(), "invalid.pem")
 	if err := os.WriteFile(path, []byte("invalid"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authpkg.LoadCTRAuthSigner(path); err == nil {
+	if _, err := auth.LoadCTRAuthSigner(path); err == nil {
 		t.Fatal("invalid key accepted")
 	}
 }

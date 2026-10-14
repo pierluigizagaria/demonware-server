@@ -1,18 +1,18 @@
 package presence
 
 import (
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
 const presenceUnhandled = 1
 
 type presencePeer interface {
 	PID() uint64
-	Identity() *platformpkg.PlayerID
+	Identity() *platform.PlayerID
 	Logf(string, ...any)
 }
 
 type PresenceReplies interface {
-	TaskReply(byte, uint32, func(*demonwarepkg.Writer) uint32) []byte
+	TaskReply(byte, uint32, func(*demonware.Writer) uint32) []byte
 }

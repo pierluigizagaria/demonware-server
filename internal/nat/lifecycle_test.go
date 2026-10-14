@@ -2,11 +2,12 @@ package nat
 
 import (
 	"errors"
-	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	"net"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 )
 
 type failedPacket struct {

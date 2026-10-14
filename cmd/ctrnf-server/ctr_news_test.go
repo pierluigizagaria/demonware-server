@@ -1,23 +1,24 @@
 package main
 
 import (
-	bytes "bytes"
-	hex "encoding/hex"
-	json "encoding/json"
-	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
-	dashboardpkg "github.com/pierluigizagaria/demonware-server/internal/dashboard"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	log "log"
-	strings "strings"
-	testing "testing"
+	"bytes"
+	"encoding/hex"
+	"encoding/json"
+	"log"
+	"strings"
+	"testing"
+
+	"github.com/pierluigizagaria/demonware-server/internal/config"
+	"github.com/pierluigizagaria/demonware-server/internal/dashboard"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 func setNews(t *testing.T, env map[string]string) {
 	t.Helper()
-	c, err := configpkg.LoadConfig(lookupFrom(env), nil, false)
+	c, err := config.LoadConfig(lookupFrom(env), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +28,7 @@ func setNews(t *testing.T, env map[string]string) {
 }
 
 func newsFetch(key, language string, locations ...[2]uint32) []byte {
-	w := demonwarepkg.NewWriter([]byte{104, demonwarepkg.TagUint8, 5})
+	w := demonware.NewWriter([]byte{104, demonware.TagUint8, 5})
 	w.String(key)
 	w.String(language)
 	w.Uint32(uint32(len(locations)))
@@ -39,7 +40,7 @@ func newsFetch(key, language string, locations ...[2]uint32) []byte {
 }
 
 func newsViewed(key, language string, ids ...uint64) []byte {
-	w := demonwarepkg.NewWriter([]byte{104, demonwarepkg.TagUint8, 4})
+	w := demonware.NewWriter([]byte{104, demonware.TagUint8, 4})
 	w.String(key)
 	w.Uint32(uint32(len(ids)))
 	for _, id := range ids {
@@ -50,9 +51,9 @@ func newsViewed(key, language string, ids ...uint64) []byte {
 	return append(w.Bytes(), 0)
 }
 
-func newsReply(t *testing.T, reply []byte, task byte, code, count uint32) *demonwarepkg.Reader {
+func newsReply(t *testing.T, reply []byte, task byte, code, count uint32) *demonware.Reader {
 	t.Helper()
-	r := demonwarepkg.NewReader(reply)
+	r := demonware.NewReader(reply)
 	if tx, err := r.Uint64(); err != nil || tx == 0 {
 		t.Fatalf("transaction = %d, %v", tx, err)
 	}
@@ -79,14 +80,14 @@ func newsReply(t *testing.T, reply []byte, task byte, code, count uint32) *demon
 	return r
 }
 
-func newsEnd(t *testing.T, r *demonwarepkg.Reader) {
+func newsEnd(t *testing.T, r *demonware.Reader) {
 	t.Helper()
 	if len(r.Remaining()) != 0 {
 		t.Fatalf("unexpected trailing reply bytes: %d", len(r.Remaining()))
 	}
 }
 
-func newsLocation(t *testing.T, r *demonwarepkg.Reader, location, count uint32) {
+func newsLocation(t *testing.T, r *demonware.Reader, location, count uint32) {
 	t.Helper()
 	if got, err := r.Uint32(); err != nil || got != location {
 		t.Fatalf("location = %d, %v; want %d", got, err, location)
@@ -96,7 +97,7 @@ func newsLocation(t *testing.T, r *demonwarepkg.Reader, location, count uint32) 
 	}
 }
 
-func newsMessage(t *testing.T, r *demonwarepkg.Reader, language, text string) uint64 {
+func newsMessage(t *testing.T, r *demonware.Reader, language, text string) uint64 {
 	t.Helper()
 	id, err := r.Uint64()
 	if err != nil || id == 0 {
@@ -208,17 +209,17 @@ func TestCTRNewsRefusesMalformedRequests(t *testing.T) {
 	viewed := newsViewed("octane_psn", "en", 123)
 	for _, request := range [][]byte{fetch, viewed} {
 		for n := 3; n < len(request); n++ {
-			newsReply(t, sharedTask(t, l, wire, request[:n]), request[2], lobbypkg.ErrUnhandled, 0)
+			newsReply(t, sharedTask(t, l, wire, request[:n]), request[2], lobby.ErrUnhandled, 0)
 		}
 		for _, suffix := range []byte{0, 1} {
-			newsReply(t, sharedTask(t, l, wire, append(bytes.Clone(request), suffix)), request[2], lobbypkg.ErrUnhandled, 0)
+			newsReply(t, sharedTask(t, l, wire, append(bytes.Clone(request), suffix)), request[2], lobby.ErrUnhandled, 0)
 		}
 		bad := bytes.Clone(request)
 		bad[len(bad)-1] = 1
-		newsReply(t, sharedTask(t, l, wire, bad), request[2], lobbypkg.ErrUnhandled, 0)
+		newsReply(t, sharedTask(t, l, wire, bad), request[2], lobby.ErrUnhandled, 0)
 		bad = bytes.Clone(request)
-		bad[1] = demonwarepkg.TagBool
-		newsReply(t, sharedTask(t, l, wire, bad), request[2], lobbypkg.ErrUnhandled, 0)
+		bad[1] = demonware.TagBool
+		newsReply(t, sharedTask(t, l, wire, bad), request[2], lobby.ErrUnhandled, 0)
 	}
 	// Wrong tags for every argument, including the u64 viewed message ID.
 	for _, tc := range []struct {
@@ -227,8 +228,8 @@ func TestCTRNewsRefusesMalformedRequests(t *testing.T) {
 	}{{fetch, []int{3, 8, 12, 17, 22}}, {viewed, []int{3, 15, 20, 24, 33}}} {
 		for _, offset := range tc.offsets {
 			bad := bytes.Clone(tc.request)
-			bad[offset] = demonwarepkg.TagBool
-			newsReply(t, sharedTask(t, l, wire, bad), bad[2], lobbypkg.ErrUnhandled, 0)
+			bad[offset] = demonware.TagBool
+			newsReply(t, sharedTask(t, l, wire, bad), bad[2], lobby.ErrUnhandled, 0)
 		}
 	}
 	badRequests := [][]byte{
@@ -251,12 +252,12 @@ func TestCTRNewsRefusesMalformedRequests(t *testing.T) {
 		badRequests = append(badRequests, bad)
 	}
 	for _, bad := range badRequests {
-		newsReply(t, sharedTask(t, l, wire, bad), bad[2], lobbypkg.ErrUnhandled, 0)
+		newsReply(t, sharedTask(t, l, wire, bad), bad[2], lobby.ErrUnhandled, 0)
 	}
 	for _, task := range []byte{0, 1, 6, 7, 255} {
 		bad := bytes.Clone(fetch)
 		bad[2] = task
-		newsReply(t, sharedTask(t, l, wire, bad), task, lobbypkg.ErrUnhandled, 0)
+		newsReply(t, sharedTask(t, l, wire, bad), task, lobby.ErrUnhandled, 0)
 	}
 }
 
@@ -278,10 +279,10 @@ func TestCTRNewsRequestLimitsAccepted(t *testing.T) {
 func TestCTRNewsRequiresAdmittedPS4Player(t *testing.T) {
 	setNews(t, map[string]string{"CTR_NEWS": "Welcome"})
 	l, wire := sharedPS4Lobby()
-	for _, player := range []*platformpkg.PlayerID{nil, {Title: ps4pkg.CtrTitle}, {PID: 17, Title: 5775}, {PID: 17, Title: 5745}} {
+	for _, player := range []*platform.PlayerID{nil, {Title: ps4.CtrTitle}, {PID: 17, Title: 5775}, {PID: 17, Title: 5745}} {
 		l.Player = player
 		for _, request := range [][]byte{newsFetch("ctr", "en", [2]uint32{1, 1}), newsViewed("octane_psn", "en", 1)} {
-			newsReply(t, sharedTask(t, l, wire, request), request[2], lobbypkg.ErrUnhandled, 0)
+			newsReply(t, sharedTask(t, l, wire, request), request[2], lobby.ErrUnhandled, 0)
 		}
 	}
 }
@@ -303,7 +304,7 @@ func TestCTRNewsViewedLogsOnlyCountsAndIDs(t *testing.T) {
 			t.Fatal("viewed report did not log only counts and IDs")
 		}
 		out.Reset()
-		newsReply(t, sharedTask(t, l, wire, request[:len(request)-1]), 4, lobbypkg.ErrUnhandled, 0)
+		newsReply(t, sharedTask(t, l, wire, request[:len(request)-1]), 4, lobby.ErrUnhandled, 0)
 		if out.Len() != 0 {
 			t.Fatal("malformed report logged views")
 		}
@@ -311,8 +312,8 @@ func TestCTRNewsViewedLogsOnlyCountsAndIDs(t *testing.T) {
 }
 
 func TestCTRNewsDashboardTaskNames(t *testing.T) {
-	if dashboardpkg.TaskName(104, 4) != "bdMarketingComms::reportMessagesViewed" ||
-		dashboardpkg.TaskName(104, 5) != "bdMarketingComms::getMessagesForLocations" {
+	if dashboard.TaskName(104, 4) != "bdMarketingComms::reportMessagesViewed" ||
+		dashboard.TaskName(104, 5) != "bdMarketingComms::getMessagesForLocations" {
 		t.Fatal("marketing task names missing")
 	}
 }

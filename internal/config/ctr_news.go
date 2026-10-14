@@ -1,12 +1,12 @@
 package config
 
 import (
-	sha256 "crypto/sha256"
-	binary "encoding/binary"
-	json "encoding/json"
-	fmt "fmt"
-	unicode "unicode"
-	utf8 "unicode/utf8"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"unicode"
+	"unicode/utf8"
 )
 
 type CtrNewsMessage struct {

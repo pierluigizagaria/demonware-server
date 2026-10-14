@@ -1,14 +1,15 @@
 package ctr
 
 import (
-	sha256 "crypto/sha256"
+	"crypto/sha256"
 	_ "embed"
-	json "encoding/json"
-	fmt "fmt"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	time "time"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 // Extracted from the Switch 1.0.15 CSystemData::gpMapData table, not a
@@ -40,33 +41,33 @@ type AchievementEvent struct {
 }
 
 func BalanceUpdatePayload(pid uint64, amount int64) []byte {
-	owner := demonwarepkg.AppendVarintField(nil, 1, pid)
-	owner = demonwarepkg.AppendBytesField(owner, 2, []byte(ps4pkg.MarketplaceAccountType))
-	entry := demonwarepkg.AppendBytesField(nil, 1, owner)
-	entry = demonwarepkg.AppendVarintField(entry, 2, WumpaCurrency)
-	entry = demonwarepkg.AppendVarintField(entry, 3, 0xffffffff) // legacy 32-bit balance sentinel
-	entry = demonwarepkg.AppendVarintField(entry, 4, 0)
-	entry = demonwarepkg.AppendVarintField(entry, 5, demonwarepkg.ZigZag(amount))
-	return demonwarepkg.AppendBytesField(nil, 1, entry)
+	owner := demonware.AppendVarintField(nil, 1, pid)
+	owner = demonware.AppendBytesField(owner, 2, []byte(ps4.MarketplaceAccountType))
+	entry := demonware.AppendBytesField(nil, 1, owner)
+	entry = demonware.AppendVarintField(entry, 2, WumpaCurrency)
+	entry = demonware.AppendVarintField(entry, 3, 0xffffffff) // legacy 32-bit balance sentinel
+	entry = demonware.AppendVarintField(entry, 4, 0)
+	entry = demonware.AppendVarintField(entry, 5, demonware.ZigZag(amount))
+	return demonware.AppendBytesField(nil, 1, entry)
 }
 
-func (h *EconomyHandler) PushCurrentBalance(peer lobbypkg.TaskSession) {
+func (h *EconomyHandler) PushCurrentBalance(peer lobby.TaskSession) {
 	a, err := h.Economy.Snapshot(peer.PID())
 	if err != nil {
 		peer.Logf("[ctr] balance push read: %v", err)
 		return
 	}
-	if err := peer.SendPush(76, func(w *demonwarepkg.Writer) { w.Struct(BalanceUpdatePayload(peer.PID(), a.Balances[10])) }); err != nil {
+	if err := peer.SendPush(76, func(w *demonware.Writer) { w.Struct(BalanceUpdatePayload(peer.PID(), a.Balances[10])) }); err != nil {
 		peer.Logf("[ctr] balance push: %v", err)
 	}
 }
 
 func ParseRewardEvents(payload []byte) ([]AchievementEvent, error) {
-	sb := demonwarepkg.TaskStructPayload(payload)
+	sb := demonware.TaskStructPayload(payload)
 	if sb == nil {
 		return nil, fmt.Errorf("missing or truncated event struct")
 	}
-	fields, err := demonwarepkg.ParseFields(sb)
+	fields, err := demonware.ParseFields(sb)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +76,7 @@ func ParseRewardEvents(payload []byte) ([]AchievementEvent, error) {
 		if f.Number != 2 || f.Wire != 2 {
 			continue
 		}
-		parts, err := demonwarepkg.ParseFields(f.Data)
+		parts, err := demonware.ParseFields(f.Data)
 		if err != nil {
 			return nil, err
 		}
@@ -89,7 +90,7 @@ func ParseRewardEvents(payload []byte) ([]AchievementEvent, error) {
 			case 4:
 				e.ID = p.Value
 			case 3:
-				kv, err := demonwarepkg.ParseFields(p.Data)
+				kv, err := demonware.ParseFields(p.Data)
 				if err != nil {
 					return nil, err
 				}

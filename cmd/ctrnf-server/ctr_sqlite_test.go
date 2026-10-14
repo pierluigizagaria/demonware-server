@@ -1,26 +1,27 @@
 package main
 
 import (
-	bytes "bytes"
-	sql "database/sql"
-	json "encoding/json"
-	fmt "fmt"
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	storepkg "github.com/pierluigizagaria/demonware-server/internal/store"
-	math "math"
-	os "os"
-	filepath "path/filepath"
-	reflect "reflect"
-	sync "sync"
-	testing "testing"
-	time "time"
+	"bytes"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
 
 const testTrustID = "test-trust"
 
-func openTestCTR(t *testing.T, path string, unlockAll bool) *storepkg.CtrSQLite {
+func openTestCTR(t *testing.T, path string, unlockAll bool) *store.CtrSQLite {
 	t.Helper()
-	db, err := storepkg.OpenCTRSQLite(path, unlockAll, testTrustID)
+	db, err := store.OpenCTRSQLite(path, unlockAll, testTrustID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,14 +30,14 @@ func openTestCTR(t *testing.T, path string, unlockAll bool) *storepkg.CtrSQLite 
 	return db
 }
 
-func newTestEconomy(t *testing.T, unlockAll bool) (*ctrpkg.EconomyStore, *storepkg.CtrSQLite) {
+func newTestEconomy(t *testing.T, unlockAll bool) (*ctr.EconomyStore, *store.CtrSQLite) {
 	t.Helper()
 	dir := t.TempDir()
-	db := openTestCTR(t, filepath.Join(dir, storepkg.CtrDB), unlockAll)
-	return &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: dir, Backend: db, UnlockAll: unlockAll}, db
+	db := openTestCTR(t, filepath.Join(dir, store.CtrDB), unlockAll)
+	return &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: dir, Backend: db, UnlockAll: unlockAll}, db
 }
 
-func sqliteCount(t *testing.T, db *storepkg.CtrSQLite, table string) int {
+func sqliteCount(t *testing.T, db *store.CtrSQLite, table string) int {
 	t.Helper()
 	var n int
 	if err := db.Db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
@@ -45,7 +46,7 @@ func sqliteCount(t *testing.T, db *storepkg.CtrSQLite, table string) int {
 	return n
 }
 
-func sqliteChanges(t *testing.T, db *storepkg.CtrSQLite) int {
+func sqliteChanges(t *testing.T, db *store.CtrSQLite) int {
 	t.Helper()
 	var n int
 	if err := db.Db.QueryRow("SELECT total_changes()").Scan(&n); err != nil {
@@ -54,14 +55,14 @@ func sqliteChanges(t *testing.T, db *storepkg.CtrSQLite) int {
 	return n
 }
 
-func sqliteExec(t *testing.T, db *storepkg.CtrSQLite, query string, args ...any) {
+func sqliteExec(t *testing.T, db *store.CtrSQLite, query string, args ...any) {
 	t.Helper()
 	if _, err := db.Db.Exec(query, args...); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func accountJSON(t *testing.T, s *ctrpkg.EconomyStore, pid uint64) []byte {
+func accountJSON(t *testing.T, s *ctr.EconomyStore, pid uint64) []byte {
 	t.Helper()
 	a, err := s.Snapshot(pid)
 	if err != nil {
@@ -84,33 +85,33 @@ type economyResult struct {
 // every step. JSON encoding normalizes nil/empty maps omitted by the reference.
 func TestEconomyStoresAgree(t *testing.T) {
 	setStartBalance(t, 20000)
-	reference := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	reference := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
 	s, db := newTestEconomy(t, false)
 	const pid = uint64(math.MaxUint64)
 	type step struct {
 		name string
-		run  func(*ctrpkg.EconomyStore) economyResult
+		run  func(*ctr.EconomyStore) economyResult
 	}
-	purchase := func(ids ...uint32) func(*ctrpkg.EconomyStore) economyResult {
-		return func(s *ctrpkg.EconomyStore) economyResult {
+	purchase := func(ids ...uint32) func(*ctr.EconomyStore) economyResult {
+		return func(s *ctr.EconomyStore) economyResult {
 			c, err := s.Purchase(pid, ids)
 			return economyResult{credit: c, failed: err != nil}
 		}
 	}
-	race := func(now time.Time, events ...ctrpkg.AchievementEvent) func(*ctrpkg.EconomyStore) economyResult {
-		return func(s *ctrpkg.EconomyStore) economyResult {
+	race := func(now time.Time, events ...ctr.AchievementEvent) func(*ctr.EconomyStore) economyResult {
+		return func(s *ctr.EconomyStore) economyResult {
 			c, err := s.AwardRaces(pid, events, now)
 			return economyResult{credit: c, failed: err != nil}
 		}
 	}
-	challenge := func(now time.Time, events ...ctrpkg.AchievementEvent) func(*ctrpkg.EconomyStore) economyResult {
-		return func(s *ctrpkg.EconomyStore) economyResult {
+	challenge := func(now time.Time, events ...ctr.AchievementEvent) func(*ctr.EconomyStore) economyResult {
+		return func(s *ctr.EconomyStore) economyResult {
 			c, u, err := s.AwardChallenges(pid, events, now)
 			return economyResult{credit: c, update: u, failed: err != nil}
 		}
 	}
-	refresh := func(now time.Time, events ...ctrpkg.AchievementEvent) func(*ctrpkg.EconomyStore) economyResult {
-		return func(s *ctrpkg.EconomyStore) economyResult {
+	refresh := func(now time.Time, events ...ctr.AchievementEvent) func(*ctr.EconomyStore) economyResult {
+		return func(s *ctr.EconomyStore) economyResult {
 			u, err := s.ReportPitStopRefresh(pid, events, now)
 			return economyResult{update: u, failed: err != nil}
 		}
@@ -122,7 +123,7 @@ func TestEconomyStoresAgree(t *testing.T) {
 		{"purchase batch", purchase(200597, 200085)},
 	}
 	// Buy one component first, then its bundle at the remaining component price.
-	for id, sku := range ctrpkg.EconomyCatalogSnapshot() {
+	for id, sku := range ctr.EconomyCatalogSnapshot() {
 		if len(sku.Parts) > 1 {
 			steps = append(steps, step{"component", purchase(sku.Parts[0])}, step{"bundle", purchase(id)})
 			break
@@ -151,7 +152,7 @@ func TestEconomyStoresAgree(t *testing.T) {
 		e.Values["X"] = mode
 		steps = append(steps, step{"distinct battle modes", challenge(at, e)}, step{"battle replay", challenge(at, e)})
 	}
-	f := ctrpkg.AchievementEvent{Name: "pitstop_daily_refresh", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
+	f := ctr.AchievementEvent{Name: "pitstop_daily_refresh", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
 	steps = append(steps, step{"refresh", refresh(now, f, f)}, step{"refresh replay", refresh(now, f)})
 	for i := 1; i <= 2; i++ {
 		f.Timestamp++
@@ -174,9 +175,9 @@ func TestEconomyStoresAgree(t *testing.T) {
 			if err := db.Close(); err != nil {
 				t.Fatal(err)
 			}
-			db = openTestCTR(parent, filepath.Join(s.Dir, storepkg.CtrDB), false)
+			db = openTestCTR(parent, filepath.Join(s.Dir, store.CtrDB), false)
 			s.Backend = db
-			reference = &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: reference.Dir}
+			reference = &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: reference.Dir}
 			if got := accountJSON(t, s, pid); !bytes.Equal(got, wantState) {
 				t.Fatalf("reopen: %s", got)
 			}
@@ -253,21 +254,21 @@ func TestSQLiteRewardAndRefreshAtomic(t *testing.T) {
 	at := ruleTime(r)
 	tests := []struct {
 		table string
-		run   func(*ctrpkg.EconomyStore) error
+		run   func(*ctr.EconomyStore) error
 	}{
-		{"race_receipts", func(s *ctrpkg.EconomyStore) error {
+		{"race_receipts", func(s *ctr.EconomyStore) error {
 			e := capturedRace(now)
 			e.Values["Online"] = 1
-			_, err := s.AwardRaces(42, []ctrpkg.AchievementEvent{e}, now)
+			_, err := s.AwardRaces(42, []ctr.AchievementEvent{e}, now)
 			return err
 		}},
-		{"challenge_progress", func(s *ctrpkg.EconomyStore) error {
-			_, _, err := s.AwardChallenges(42, []ctrpkg.AchievementEvent{ruleEvent(r, at)}, at)
+		{"challenge_progress", func(s *ctr.EconomyStore) error {
+			_, _, err := s.AwardChallenges(42, []ctr.AchievementEvent{ruleEvent(r, at)}, at)
 			return err
 		}},
-		{"pit_stop_refresh", func(s *ctrpkg.EconomyStore) error {
-			e := ctrpkg.AchievementEvent{Name: "pitstop_daily_refresh", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
-			_, err := s.ReportPitStopRefresh(42, []ctrpkg.AchievementEvent{e}, now)
+		{"pit_stop_refresh", func(s *ctr.EconomyStore) error {
+			e := ctr.AchievementEvent{Name: "pitstop_daily_refresh", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
+			_, err := s.ReportPitStopRefresh(42, []ctr.AchievementEvent{e}, now)
 			return err
 		}},
 	}
@@ -292,7 +293,7 @@ func TestSQLiteRewardAndRefreshAtomic(t *testing.T) {
 			}
 			rows := sqliteCount(t, db, "ledger")
 			db.Close()
-			db = openTestCTR(t, filepath.Join(s.Dir, storepkg.CtrDB), false)
+			db = openTestCTR(t, filepath.Join(s.Dir, store.CtrDB), false)
 			s.Backend = db
 			if err := tc.run(s); err != nil {
 				t.Fatal(err)
@@ -311,7 +312,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	if _, err := s.Purchase(pid, []uint32{200085}); err != nil {
 		t.Fatal(err)
 	}
-	item := ctrpkg.EconomyCatalogSnapshot()[200085].Items[0]
+	item := ctr.EconomyCatalogSnapshot()[200085].Items[0]
 	var source string
 	var stamp int64
 	if err := db.Db.QueryRow("SELECT source, granted_at FROM inventory WHERE pid=? AND item=?", pid, item).Scan(&source, &stamp); err != nil || source != "purchase" || stamp <= 0 {
@@ -320,18 +321,18 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	var delta int64
 	var sku uint32
 	var skus string
-	if err := db.Db.QueryRow("SELECT delta, sku, skus FROM ledger WHERE source='purchase' AND currency=10").Scan(&delta, &sku, &skus); err != nil || delta != -ctrpkg.EconomyCatalogSnapshot()[200085].Price || sku != 200085 || skus != "[200085]" {
+	if err := db.Db.QueryRow("SELECT delta, sku, skus FROM ledger WHERE source='purchase' AND currency=10").Scan(&delta, &sku, &skus); err != nil || delta != -ctr.EconomyCatalogSnapshot()[200085].Price || sku != 200085 || skus != "[200085]" {
 		t.Fatalf("purchase audit = %d %d %s, %v", delta, sku, skus, err)
 	}
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	e1, e2 := capturedRace(now), capturedRace(now.Add(time.Second))
-	if c, err := s.AwardRaces(pid, []ctrpkg.AchievementEvent{e1, e2, e1}, now); err != nil || c != 54 {
+	if c, err := s.AwardRaces(pid, []ctr.AchievementEvent{e1, e2, e1}, now); err != nil || c != 54 {
 		t.Fatalf("race credit %d, %v", c, err)
 	}
 	r := ruleForTest(t, "drift_for_X_seconds_consecutively")
 	at := ruleTime(r)
 	e := ruleEvent(r, at)
-	if c, _, err := s.AwardChallenges(pid, []ctrpkg.AchievementEvent{e}, at); err != nil || c != r.Reward {
+	if c, _, err := s.AwardChallenges(pid, []ctr.AchievementEvent{e}, at); err != nil || c != r.Reward {
 		t.Fatalf("challenge credit %d, %v", c, err)
 	}
 	for _, tc := range []struct {
@@ -367,8 +368,8 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 			}
 		}
 		if tc.source == "challenge reward" {
-			state, _, _ := r.Current(&ctrpkg.EconomyAccount{}, at)
-			if refs[0] != ctrpkg.ChallengeKey(state) {
+			state, _, _ := r.Current(&ctr.EconomyAccount{}, at)
+			if refs[0] != ctr.ChallengeKey(state) {
 				t.Fatal("wrong completion reference")
 			}
 		}
@@ -380,7 +381,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	}
 	a.Balances[11] = 100
 	a.Items[math.MaxUint32] = true
-	if err := s.SaveChange(pid, a, ctrpkg.EconomyChange{Source: "manual grant"}); err != nil {
+	if err := s.SaveChange(pid, a, ctr.EconomyChange{Source: "manual grant"}); err != nil {
 		t.Fatal(err)
 	}
 	var unlogged int
@@ -398,7 +399,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 			t.Fatalf("currency %d: ledger %d balance %d, %v", currency, sum, amount, err)
 		}
 	}
-	if got := sqliteCount(t, db, "ledger"); got != 6+len(ctrpkg.EconomyCatalogSnapshot()[200085].Items) {
+	if got := sqliteCount(t, db, "ledger"); got != 6+len(ctr.EconomyCatalogSnapshot()[200085].Items) {
 		t.Fatalf("unexpected ledger rows: %d", got)
 	}
 	before := sqliteCount(t, db, "ledger")
@@ -408,14 +409,14 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	if _, err := s.Purchase(pid, []uint32{1}); err == nil {
 		t.Fatal("unknown SKU accepted")
 	}
-	if _, err := s.AwardRaces(pid, []ctrpkg.AchievementEvent{e1, e2}, now); err != nil {
+	if _, err := s.AwardRaces(pid, []ctr.AchievementEvent{e1, e2}, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.AwardChallenges(pid, []ctrpkg.AchievementEvent{e}, at); err != nil {
+	if _, _, err := s.AwardChallenges(pid, []ctr.AchievementEvent{e}, at); err != nil {
 		t.Fatal(err)
 	}
-	refresh := ctrpkg.AchievementEvent{Name: "pitstop_daily_refresh", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
-	if _, err := s.ReportPitStopRefresh(pid, []ctrpkg.AchievementEvent{refresh}, now); err != nil {
+	refresh := ctr.AchievementEvent{Name: "pitstop_daily_refresh", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
+	if _, err := s.ReportPitStopRefresh(pid, []ctr.AchievementEvent{refresh}, now); err != nil {
 		t.Fatal(err)
 	}
 	if got := sqliteCount(t, db, "ledger"); got != before {
@@ -473,7 +474,7 @@ func TestSQLiteConcurrentPurchaseRetry(t *testing.T) {
 	}
 	wg.Wait()
 	a, err := s.Snapshot(42)
-	if err != nil || a.Balances[10] != 10000-ctrpkg.EconomyCatalogSnapshot()[200085].Price {
+	if err != nil || a.Balances[10] != 10000-ctr.EconomyCatalogSnapshot()[200085].Price {
 		t.Fatalf("concurrent purchase: %+v, %v", a, err)
 	}
 	if sqliteCount(t, db, "ledger") != 2+len(a.Items) {
@@ -484,7 +485,7 @@ func TestSQLiteConcurrentPurchaseRetry(t *testing.T) {
 func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 	for _, unlockAll := range []bool{false, true} {
 		t.Run(map[bool]string{false: "off", true: "on"}[unlockAll], func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), storepkg.CtrDB)
+			path := filepath.Join(t.TempDir(), store.CtrDB)
 			db := openTestCTR(t, path, unlockAll)
 			var schema, mode, journal string
 			var version, synchronous, timeout int
@@ -516,20 +517,20 @@ func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 			if err := db.Db.QueryRow("PRAGMA busy_timeout").Scan(&timeout); err != nil {
 				t.Fatal(err)
 			}
-			if version != storepkg.CtrSchemaVersion || journal != "wal" || synchronous != 2 || timeout != 5000 || db.Db.Stats().MaxOpenConnections != 1 {
+			if version != store.CtrSchemaVersion || journal != "wal" || synchronous != 2 || timeout != 5000 || db.Db.Stats().MaxOpenConnections != 1 {
 				t.Fatalf("settings: %d %s %d %d", version, journal, synchronous, timeout)
 			}
 			db.Close()
 			db = openTestCTR(t, path, unlockAll)
 			db.Close()
-			if other, err := storepkg.OpenCTRSQLite(path, !unlockAll, testTrustID); err == nil {
+			if other, err := store.OpenCTRSQLite(path, !unlockAll, testTrustID); err == nil {
 				other.Close()
 				t.Fatal("mode mismatch accepted")
 			}
 			db = openTestCTR(t, path, unlockAll)
-			sqliteExec(t, db, fmt.Sprintf("PRAGMA user_version = %d", storepkg.CtrSchemaVersion+1))
+			sqliteExec(t, db, fmt.Sprintf("PRAGMA user_version = %d", store.CtrSchemaVersion+1))
 			db.Close()
-			if newer, err := storepkg.OpenCTRSQLite(path, unlockAll, testTrustID); err == nil {
+			if newer, err := store.OpenCTRSQLite(path, unlockAll, testTrustID); err == nil {
 				newer.Close()
 				t.Fatal("newer schema accepted")
 			}
@@ -537,11 +538,11 @@ func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 	}
 	for _, statement := range []string{"DELETE FROM meta", "UPDATE meta SET value='invalid'"} {
 		t.Run(statement, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), storepkg.CtrDB)
+			path := filepath.Join(t.TempDir(), store.CtrDB)
 			db := openTestCTR(t, path, false)
 			sqliteExec(t, db, statement)
 			db.Close()
-			if reopened, err := storepkg.OpenCTRSQLite(path, false, testTrustID); err == nil {
+			if reopened, err := store.OpenCTRSQLite(path, false, testTrustID); err == nil {
 				reopened.Close()
 				t.Fatal("missing/invalid mode accepted")
 			}
@@ -565,7 +566,7 @@ func TestSQLiteStartsFreshAndFixesStartingBalance(t *testing.T) {
 	}
 	setStartBalance(t, 999)
 	db.Close()
-	db = openTestCTR(t, filepath.Join(s.Dir, storepkg.CtrDB), false)
+	db = openTestCTR(t, filepath.Join(s.Dir, store.CtrDB), false)
 	s.Backend = db
 	a, err = s.Snapshot(42)
 	if err != nil || a.Balances[10] != 321 {
@@ -584,9 +585,9 @@ func TestSQLiteStartsFreshAndFixesStartingBalance(t *testing.T) {
 }
 
 func TestSQLiteRefusesSecondInstance(t *testing.T) {
-	path := filepath.Join(t.TempDir(), storepkg.CtrDB)
+	path := filepath.Join(t.TempDir(), store.CtrDB)
 	db := openTestCTR(t, path, false)
-	if other, err := storepkg.OpenCTRSQLite(path, false, testTrustID); err == nil {
+	if other, err := store.OpenCTRSQLite(path, false, testTrustID); err == nil {
 		other.Close()
 		t.Fatal("second instance opened the same database")
 	}

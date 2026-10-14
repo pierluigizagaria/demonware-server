@@ -1,30 +1,31 @@
 package main
 
 import (
-	bytes "bytes"
-	crypto "crypto"
-	rsa "crypto/rsa"
-	sha256 "crypto/sha256"
-	base64 "encoding/base64"
-	hex "encoding/hex"
-	json "encoding/json"
-	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	httptest "net/http/httptest"
-	testing "testing"
-	time "time"
+	"bytes"
+	"crypto"
+	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/auth"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 func TestArchitectureIdentityDoubleRead(t *testing.T) {
 	now := time.Now()
 	ticket := psnTicket(now)
-	issueTestTicket(ticket, platformpkg.PlayerID{PID: 17, Username: "fixture", Title: 5760})
+	issueTestTicket(ticket, platform.PlayerID{PID: 17, Username: "fixture", Title: 5760})
 	l, _ := sharedPS4Lobby()
 	l.Keys, l.Player = nil, nil
-	raw := demonwarepkg.Frame(append(append([]byte{demonwarepkg.MsgClientAuth}, ticket...), make([]byte, 8)...))
+	raw := demonware.Frame(append(append([]byte{demonware.MsgClientAuth}, ticket...), make([]byte, 8)...))
 	candidates := l.Candidates(raw)
 	if len(candidates) != 2 {
 		t.Fatal("fresh locally issued ticket did not supply candidates")
@@ -32,9 +33,9 @@ func TestArchitectureIdentityDoubleRead(t *testing.T) {
 	// Advance only the pruning call's explicit time, not the process clock.
 	// This is the interval between the two reads in onClientAuth. Key proof
 	// verification itself has no additional ticket-directory dependency.
-	other := psnTicket(now.Add(ps4pkg.TicketWindow + authpkg.IssuedIdentityGrace))
-	testTickets.RememberTicket(other, platformpkg.PlayerID{PID: 17}, now.Add(ps4pkg.TicketWindow+authpkg.IssuedIdentityGrace), ps4pkg.TicketWindow)
-	k := demonwarepkg.DeriveKeys([]byte("synthetic verified transcript"), candidates[0].Key24)
+	other := psnTicket(now.Add(ps4.TicketWindow + auth.IssuedIdentityGrace))
+	testTickets.RememberTicket(other, platform.PlayerID{PID: 17}, now.Add(ps4.TicketWindow+auth.IssuedIdentityGrace), ps4.TicketWindow)
+	k := demonware.DeriveKeys([]byte("synthetic verified transcript"), candidates[0].Key24)
 	l.Keys = &k
 	l.LoadIdentity(ticket)
 	if l.Keys == nil || l.Player != nil {
@@ -73,7 +74,7 @@ func TestArchitectureAuthSignatureBeforeInspection(t *testing.T) {
 	if err != nil || response["client_ticket"] != response["server_ticket"] {
 		t.Fatal("ticket copies changed")
 	}
-	if _, ok := testTickets.IssuedTicketPlayer(client, time.Now(), ps4pkg.TicketWindow); !ok {
+	if _, ok := testTickets.IssuedTicketPlayer(client, time.Now(), ps4.TicketWindow); !ok {
 		t.Fatal("signed ticket not admitted")
 	}
 }
@@ -86,9 +87,9 @@ func TestArchitectureStatsMissingIdentityAdapter(t *testing.T) {
 	if len(frames) != 1 {
 		t.Fatal("missing stats adapter reply")
 	}
-	want := demonwarepkg.TaskReply(1, 1, 0, nil)
+	want := demonware.TaskReply(1, 1, 0, nil)
 	if frames[0].Payload != hex.EncodeToString(want) {
 		t.Fatal("stats adapter no-player empty success changed")
 	}
-	marketplaceOutcome(t, l.onCTRStats(1, demonwarepkg.NewReader(nil)), lobbypkg.ErrUnhandled)
+	marketplaceOutcome(t, l.onCTRStats(1, demonware.NewReader(nil)), lobby.ErrUnhandled)
 }

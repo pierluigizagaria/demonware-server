@@ -1,10 +1,11 @@
 package lobby
 
 import (
-	hex "encoding/hex"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
-	relaypkg "github.com/pierluigizagaria/demonware-server/internal/relay"
+	"encoding/hex"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
+	"github.com/pierluigizagaria/demonware-server/internal/relay"
 )
 
 type StorageHandler struct {
@@ -14,10 +15,10 @@ type StorageHandler struct {
 
 type ContextHandler struct {
 	*ReplyCounter
-	ReadInfo func(*demonwarepkg.Reader) ([]byte, uint32, uint32, []byte, error)
+	ReadInfo func(*demonware.Reader) ([]byte, uint32, uint32, []byte, error)
 	Registry *SessionRegistry
-	Presence *presencepkg.PresenceStore
-	Relay    *relaypkg.RelayTable
+	Presence *presence.PresenceStore
+	Relay    *relay.RelayTable
 }
 
 func DefaultTask(replies taskReplies, peer TaskSession, request TaskRequest) TaskResult {
@@ -46,7 +47,7 @@ func (handler *StorageHandler) Handle(peer TaskSession, request TaskRequest) (re
 			peer.Logf("task bdStorage.getPublisherFile ctx=%q file=%q -> MISSING", ctx, name)
 			break
 		}
-		reply = handler.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 { w.Blob(data); return 1 })
+		reply = handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(data); return 1 })
 		peer.Logf("task bdStorage.getPublisherFile ctx=%q file=%q -> %s (%d bytes)", ctx, name, path, len(data))
 
 	default:

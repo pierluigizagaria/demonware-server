@@ -3,24 +3,25 @@
 package main
 
 import (
-	bytes "bytes"
-	crypto "crypto"
-	rand "crypto/rand"
-	rsa "crypto/rsa"
-	sha256 "crypto/sha256"
-	x509 "crypto/x509"
-	base64 "encoding/base64"
-	json "encoding/json"
-	pem "encoding/pem"
-	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	shadnetpkg "github.com/pierluigizagaria/demonware-server/internal/platform/shadnet"
-	httptest "net/http/httptest"
-	os "os"
-	filepath "path/filepath"
-	strings "strings"
-	testing "testing"
-	time "time"
+	"bytes"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/auth"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/shadnet"
 )
 
 // An external native shadNet fixture supplies disposable credentials. The
@@ -43,14 +44,14 @@ func TestShadNetPublisherInterop(t *testing.T) {
 	}
 	// The fixture names a JSON trust file with the SHADNET_* values.
 	var trust struct {
-		shadnetpkg.Policy
+		shadnet.Policy
 		JWKSURL string `json:"jwks_url"`
 	}
 	raw, err = os.ReadFile(f.Config)
 	if err != nil || json.Unmarshal(raw, &trust) != nil {
 		t.Fatal("invalid fixture trust file")
 	}
-	p, _, err := ps4pkg.LoadPSNPlatform(trust.Policy, trust.JWKSURL)
+	p, _, err := ps4.LoadPSNPlatform(trust.Policy, trust.JWKSURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestShadNetPublisherInterop(t *testing.T) {
 	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0600); err != nil {
 		t.Fatal(err)
 	}
-	signer, err := authpkg.LoadCTRAuthSigner(keyPath)
+	signer, err := auth.LoadCTRAuthSigner(keyPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +109,7 @@ func TestShadNetPublisherInterop(t *testing.T) {
 		if err != nil || response.AuthTask != "47" {
 			t.Fatal("unexpected publisher response")
 		}
-		id, ok := testTickets.IssuedTicketPlayer(ticket, time.Now(), ps4pkg.TicketWindow)
+		id, ok := testTickets.IssuedTicketPlayer(ticket, time.Now(), ps4.TicketWindow)
 		if !ok || id.PID != user.ID || id.Username != user.Name || id.Title != 5760 {
 			t.Fatal("issued ticket does not carry the verified identity")
 		}

@@ -1,11 +1,12 @@
 package main
 
 import (
-	authpkg "github.com/pierluigizagaria/demonware-server/internal/auth"
-	io "io"
-	net "net"
-	testing "testing"
-	time "time"
+	"io"
+	"net"
+	"testing"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/auth"
 )
 
 func acceptOne(t *testing.T, send string) (net.Conn, []byte) {
@@ -15,7 +16,7 @@ func acceptOne(t *testing.T, send string) (net.Conn, []byte) {
 		t.Fatal(err)
 	}
 	defer inner.Close()
-	ln := authpkg.NewProxyListener(inner)
+	ln := auth.NewProxyListener(inner)
 
 	go func() {
 		c, err := net.Dial("tcp", inner.Addr().String())

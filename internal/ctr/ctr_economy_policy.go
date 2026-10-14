@@ -1,7 +1,7 @@
 package ctr
 
 import (
-	fmt "fmt"
+	"fmt"
 )
 
 // Every item any catalog SKU grants. Read-only after initialization.

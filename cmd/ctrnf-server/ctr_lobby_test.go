@@ -1,17 +1,18 @@
 package main
 
 import (
-	bytes "bytes"
-	base64 "encoding/base64"
-	binary "encoding/binary"
-	json "encoding/json"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
-	httptest "net/http/httptest"
-	testing "testing"
-	time "time"
+	"bytes"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/json"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
 func TestCTRUmbrellaIssuedTicket(t *testing.T) {
@@ -26,7 +27,7 @@ func TestCTRUmbrellaIssuedTicket(t *testing.T) {
 	if w := call(5760); w.Code != 401 {
 		t.Fatalf("unissued ticket accepted: %d", w.Code)
 	}
-	issueTestTicket(ticket, platformpkg.PlayerID{PID: 17, Username: "fixture"})
+	issueTestTicket(ticket, platform.PlayerID{PID: 17, Username: "fixture"})
 	// The client sends its integers as JSON strings, so both forms must pass.
 	if w := call("5760"); w.Code != 200 {
 		t.Fatalf("string-encoded titleID rejected: %d %s", w.Code, w.Body)
@@ -51,20 +52,20 @@ func TestCTRUmbrellaIssuedTicket(t *testing.T) {
 
 // A friend stays joinable while their host reconnects.
 func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
-	host := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 5551, Player: &platformpkg.PlayerID{Username: "Mars", PID: 1800000119}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	host := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 5551, Player: &platform.PlayerID{Username: "Mars", PID: 1800000119}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	defer testRegistry.DropSessionsOf(host.N)
-	info := &demonwarepkg.Writer{}
+	info := &demonware.Writer{}
 	info.Blob(make([]byte, 67))
 	info.Uint32(8)
 	info.Uint32(8)
-	host.onMatchMakingContext(lobbypkg.MmCreateSession, demonwarepkg.NewReader(info.Bytes()), "ctr:Delta")
+	host.onMatchMakingContext(lobby.MmCreateSession, demonware.NewReader(info.Bytes()), "ctr:Delta")
 
 	testRegistry.DropSessionsOf(host.N) // the host loses its connection
 
-	friend := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 5552, Player: &platformpkg.PlayerID{Username: "Collecting", PID: 1800003406}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-	ask := &demonwarepkg.Writer{}
+	friend := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 5552, Player: &platform.PlayerID{Username: "Collecting", PID: 1800003406}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	ask := &demonware.Writer{}
 	ask.Uint64(1800000119)
-	reply := friend.onFriendSessions(14, demonwarepkg.NewReader(ask.Bytes()), "ctr:Delta")
+	reply := friend.onFriendSessions(14, demonware.NewReader(ask.Bytes()), "ctr:Delta")
 	if n := binary.LittleEndian.Uint32(reply[17:21]); n != 1 {
 		t.Fatalf("orphaned host session not offered to friend: %d results", n)
 	}
@@ -72,12 +73,12 @@ func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
 	testRegistry.Mu.Lock()
 	for _, s := range testRegistry.Sessions {
 		if s.OwnerPID == 1800000119 {
-			s.Orphaned = time.Now().Add(-2 * lobbypkg.OrphanGrace)
+			s.Orphaned = time.Now().Add(-2 * lobby.OrphanGrace)
 		}
 	}
 	testRegistry.Mu.Unlock()
 	testRegistry.ReapSessionsOnce()
-	reply = friend.onFriendSessions(14, demonwarepkg.NewReader(ask.Bytes()), "ctr:Delta")
+	reply = friend.onFriendSessions(14, demonware.NewReader(ask.Bytes()), "ctr:Delta")
 	if n := binary.LittleEndian.Uint32(reply[17:21]); n != 0 {
 		t.Fatalf("abandoned session still offered: %d results", n)
 	}
@@ -89,7 +90,7 @@ func TestCTRHTTPProxyReplyEncoding(t *testing.T) {
 	body := []byte(`{"enrollments":[]}`)
 	reply := testReplies.HttpProxyReply(1, 200, body)
 	i := 16 // transaction + error + task; structured replies have no result counts.
-	if len(reply) < i+6 || reply[i] != demonwarepkg.TagStruct {
+	if len(reply) < i+6 || reply[i] != demonware.TagStruct {
 		t.Fatalf("no struct buffer immediately after task header: %x", reply)
 	}
 	sb := reply[i+6:] // demonware.TagStruct + (demonware.TagUint32 + u32 length)
@@ -101,28 +102,28 @@ func TestCTRHTTPProxyReplyEncoding(t *testing.T) {
 
 // A connected friend's presence comes back; a departed player's does not.
 func TestCTRRichPresenceRoundTrip(t *testing.T) {
-	host := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 7771, Player: &platformpkg.PlayerID{Username: "Mars", PID: 1800000119}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	host := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 7771, Player: &platform.PlayerID{Username: "Mars", PID: 1800000119}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	testPresence.OnlineMu.Lock()
 	testPresence.Online[host.N] = host.Player
 	testPresence.OnlineMu.Unlock()
 	defer testPresence.DropOnline(host.N)
 
-	set := &demonwarepkg.Writer{}
+	set := &demonware.Writer{}
 	set.String("")
 	set.Uint64(1800000119)
 	set.String("nintendo")
 	set.Uint8(2)
 	set.Blob([]byte("racing"))
-	host.onRichPresence(presencepkg.RpSet, demonwarepkg.NewReader(set.Bytes()))
+	host.onRichPresence(presence.RpSet, demonware.NewReader(set.Bytes()))
 
 	ask := func(id uint64) []byte {
-		q := &demonwarepkg.Writer{}
+		q := &demonware.Writer{}
 		q.String("")
 		q.Uint32(1)
 		q.Uint64(id)
 		q.String("nintendo")
-		peer := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 7772, Player: &platformpkg.PlayerID{Username: "Collecting", PID: 1800003406}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-		return peer.onRichPresence(presencepkg.RpGetAndSubscribe, demonwarepkg.NewReader(q.Bytes()))
+		peer := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 7772, Player: &platform.PlayerID{Username: "Collecting", PID: 1800003406}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+		return peer.onRichPresence(presence.RpGetAndSubscribe, demonware.NewReader(q.Bytes()))
 	}
 	if n := binary.LittleEndian.Uint32(ask(1800000119)[17:21]); n != 1 {
 		t.Fatalf("online friend presence missing: %d results", n)
@@ -133,18 +134,18 @@ func TestCTRRichPresenceRoundTrip(t *testing.T) {
 }
 
 func TestCTRSessionCreateDelete(t *testing.T) {
-	l := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 987654}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	l := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 987654}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	defer testRegistry.DropSessionsOf(l.N)
-	info := &demonwarepkg.Writer{}
+	info := &demonware.Writer{}
 	info.Blob(make([]byte, 67))
 	info.Uint32(8)
 	info.Uint32(8)
 	info.Blob([]byte("CTR attributes"))
-	response := l.onMatchMakingContext(1, demonwarepkg.NewReader(info.Bytes()), "ctr:Delta")
+	response := l.onMatchMakingContext(1, demonware.NewReader(info.Bytes()), "ctr:Delta")
 	if len(response) < 26 || binary.LittleEndian.Uint32(response[17:21]) != 1 {
 		t.Fatalf("create must return one session ID: %x", response)
 	}
-	var session *lobbypkg.MmSession
+	var session *lobby.MmSession
 	testRegistry.Mu.Lock()
 	for _, s := range testRegistry.Sessions {
 		if s.Owner == l.N {
@@ -156,17 +157,17 @@ func TestCTRSessionCreateDelete(t *testing.T) {
 	if session == nil || session.Context != "ctr:Delta" {
 		t.Fatal("missing stored CTR session")
 	}
-	args := &demonwarepkg.Writer{}
+	args := &demonware.Writer{}
 	args.Blob(session.Id[:])
-	other := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 987655}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-	other.onMatchMakingContext(3, demonwarepkg.NewReader(args.Bytes()), "ctr:Delta")
+	other := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 987655}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	other.onMatchMakingContext(3, demonware.NewReader(args.Bytes()), "ctr:Delta")
 	testRegistry.Mu.Lock()
 	_, exists := testRegistry.Sessions[session.Id]
 	testRegistry.Mu.Unlock()
 	if !exists {
 		t.Fatal("another connection deleted the session")
 	}
-	l.onMatchMakingContext(3, demonwarepkg.NewReader(args.Bytes()), "ctr:Delta")
+	l.onMatchMakingContext(3, demonware.NewReader(args.Bytes()), "ctr:Delta")
 	testRegistry.Mu.Lock()
 	_, exists = testRegistry.Sessions[session.Id]
 	testRegistry.Mu.Unlock()

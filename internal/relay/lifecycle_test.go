@@ -1,10 +1,11 @@
 package relay
 
 import (
-	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 )
 
 func TestRelayShutdownJoinsReaperAndSocket(t *testing.T) {

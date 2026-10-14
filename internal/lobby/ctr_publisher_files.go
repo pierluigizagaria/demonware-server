@@ -1,7 +1,7 @@
 package lobby
 
 import (
-	time "time"
+	"time"
 )
 
 // Publisher storage consumes either CTR physical files or the inactive Diablo

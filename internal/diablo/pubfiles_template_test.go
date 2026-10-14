@@ -1,12 +1,13 @@
 package diablo
 
 import (
-	json "encoding/json"
-	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
-	os "os"
-	filepath "path/filepath"
-	strings "strings"
-	testing "testing"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 )
 
 func TestStripJSONComments(t *testing.T) {
@@ -131,4 +132,4 @@ func TestDatesPastTheGameLimitAreClamped(t *testing.T) {
 	}
 }
 
-var diabloTestFiles = &PublisherFiles{Diagnostics: &diagnosticspkg.Diagnostics{RedactLogs: true}}
+var diabloTestFiles = &PublisherFiles{Diagnostics: &diagnostics.Diagnostics{RedactLogs: true}}

@@ -1,8 +1,8 @@
 package main
 
 import (
-	binary "encoding/binary"
-	testing "testing"
+	"encoding/binary"
+	"testing"
 )
 
 // Follow the read order in CTR's bdRemoteTask::handleTaskReply and

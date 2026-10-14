@@ -1,18 +1,18 @@
 package auth
 
 import (
-	bytes "bytes"
-	context "context"
-	crypto "crypto"
-	rsa "crypto/rsa"
-	sha256 "crypto/sha256"
-	x509 "crypto/x509"
-	base64 "encoding/base64"
-	pem "encoding/pem"
-	fmt "fmt"
-	os "os"
-	exec "os/exec"
-	time "time"
+	"bytes"
+	"context"
+	"crypto"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
+	"fmt"
+	"os"
+	"os/exec"
+	"time"
 )
 
 // CTR's bdAuth verifies RSA-PSS/SHA-256 with a zero-length salt. Go's

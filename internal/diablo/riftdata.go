@@ -19,17 +19,18 @@
 package diablo
 
 import (
-	binary "encoding/binary"
-	errors "errors"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	rand "math/rand"
-	os "os"
-	filepath "path/filepath"
-	regexp "regexp"
-	sort "sort"
-	strconv "strconv"
-	strings "strings"
-	time "time"
+	"encoding/binary"
+	"errors"
+	"math/rand"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 // riftSettings is the "challenge_rifts" block of pubfiles.json.
@@ -89,7 +90,7 @@ func (provider *PublisherFiles) riftDataFiles() []string {
 func patchChallengeConfig(src []byte, number uint32) ([]byte, error) {
 	var hash uint64
 	for i := 0; i < len(src); {
-		key, ni, err := demonwarepkg.ReadVarint(src, i)
+		key, ni, err := demonware.ReadVarint(src, i)
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +98,7 @@ func patchChallengeConfig(src []byte, number uint32) ([]byte, error) {
 		if key&7 != 0 {
 			return nil, errors.New("unexpected wire type in challenge config")
 		}
-		v, ni, err := demonwarepkg.ReadVarint(src, i)
+		v, ni, err := demonware.ReadVarint(src, i)
 		if err != nil {
 			return nil, err
 		}

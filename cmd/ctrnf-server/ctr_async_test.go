@@ -1,25 +1,26 @@
 package main
 
 import (
-	base64 "encoding/base64"
-	json "encoding/json"
-	fmt "fmt"
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	atomic "sync/atomic"
-	testing "testing"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"sync/atomic"
+	"testing"
+
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
-func testCTRSearchFor(m *ctrpkg.CtrMatchmaker, t *testing.T, pid uint64, playlist int) *ctrpkg.CtrSearch {
+func testCTRSearchFor(m *ctr.CtrMatchmaker, t *testing.T, pid uint64, playlist int) *ctr.CtrSearch {
 	t.Helper()
-	info := ctrpkg.CtrPlayerInfo{}
+	info := ctr.CtrPlayerInfo{}
 	info.Listen.Address = base64.StdEncoding.EncodeToString(make([]byte, 67))
 	info.Listen.ID = base64.StdEncoding.EncodeToString(make([]byte, 8))
 	info.Listen.Key = base64.StdEncoding.EncodeToString(make([]byte, 16))
 	raw, _ := json.Marshal(info)
-	l := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: testSearchConns.Add(1), Player: &platformpkg.PlayerID{PID: pid}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: m, registry: testRegistry, ctr: testCTR, lobbyDoc: string(raw)})
+	l := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: testSearchConns.Add(1), Player: &platform.PlayerID{PID: pid}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: m, registry: testRegistry, ctr: testCTR, lobbyDoc: string(raw)})
 	search, err := m.ParseCTRSearch(l, fmt.Sprintf(`{"members":[%d],"lobby_slots":{"min":2,"max":8},"ruleset_payload":{"filter":{"playlist_id":%d,"matchmaking_version":200}}}`, pid, playlist), l.lobbyDoc)
 	if err != nil {
 		t.Fatal(err)
@@ -28,18 +29,18 @@ func testCTRSearchFor(m *ctrpkg.CtrMatchmaker, t *testing.T, pid uint64, playlis
 }
 
 func TestCTRPublicPairingAndDocuments(t *testing.T) {
-	m := ctrpkg.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctrpkg.CtrRoom{}}
+	m := ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
 	a, b, c := testCTRSearchFor(&m, t, 101, 0), testCTRSearchFor(&m, t, 102, 0), testCTRSearchFor(&m, t, 103, 1)
 	if len(m.Enqueue(a)) != 0 || len(m.Enqueue(c)) != 0 {
 		t.Fatal("matched incompatible searches")
 	}
 	out := m.Enqueue(b)
-	if len(out) != 1 || out[0].Event != ctrpkg.CtrCreateLobby || out[0].Conn != a.Conn {
+	if len(out) != 1 || out[0].Event != ctr.CtrCreateLobby || out[0].Conn != a.Conn {
 		t.Fatal("host must create lobby before guests join")
 	}
 	id := out[0].Ids[1]
 	ready, notifications := m.SyncDoc(a.Conn, id, 1, out[0].Host)
-	if !ready || len(notifications) != 1 || notifications[0].Event != ctrpkg.CtrJoinLobby || notifications[0].Conn != b.Conn {
+	if !ready || len(notifications) != 1 || notifications[0].Event != ctr.CtrJoinLobby || notifications[0].Conn != b.Conn {
 		t.Fatal("ready host did not release guest join")
 	}
 	out = append(out, notifications[0])
@@ -48,9 +49,9 @@ func TestCTRPublicPairingAndDocuments(t *testing.T) {
 		t.Fatal("lost incompatible search")
 	}
 	for _, n := range out {
-		w := &demonwarepkg.Writer{}
+		w := &demonware.Writer{}
 		n.Write(w)
-		r := demonwarepkg.NewReader(w.Bytes())
+		r := demonware.NewReader(w.Bytes())
 		wantIDs := 2
 		if n.Event == 2005 {
 			wantIDs = 3
@@ -114,7 +115,7 @@ func TestCTRPublicPairingAndDocuments(t *testing.T) {
 }
 
 func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
-	m := ctrpkg.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctrpkg.CtrRoom{}}
+	m := ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
 	a := testCTRSearchFor(&m, t, 201, 0)
 	m.Enqueue(a)
 	retry := testCTRSearchFor(&m, t, 201, 0)
@@ -127,17 +128,17 @@ func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
 	}
 }
 
-func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctrpkg.CtrSearch {
+func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctr.CtrSearch {
 	return testCTRSearchFor(testMatchmaker, t, pid, playlist)
 }
 
 var testSearchConns atomic.Uint64
 
 // A view of the same connection is a distinct Go object with the same ConnID.
-type peerView struct{ ctrpkg.CtrPeer }
+type peerView struct{ ctr.CtrPeer }
 
 func TestCTRPeerOwnershipUsesConnectionID(t *testing.T) {
-	m := &ctrpkg.CtrMatchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, Rooms: map[uint64]*ctrpkg.CtrRoom{}}
+	m := &ctr.CtrMatchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, Rooms: map[uint64]*ctr.CtrRoom{}}
 	a, b := testCTRSearchFor(m, t, 17, 0), testCTRSearchFor(m, t, 18, 0)
 	m.Enqueue(a)
 	notices := m.Enqueue(b)

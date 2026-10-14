@@ -1,9 +1,10 @@
 package ctr
 
 import (
-	json "encoding/json"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	time "time"
+	"encoding/json"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 // Switch 1.0.15 AchievementMetadata, pitstop_daily_refresh parameters:
@@ -24,7 +25,7 @@ type ctrAchievementState struct {
 }
 
 func (a ctrAchievementState) Encode() []byte {
-	e := demonwarepkg.AppendBytesField(nil, 1, []byte(a.Name))
+	e := demonware.AppendBytesField(nil, 1, []byte(a.Name))
 	for _, f := range []struct {
 		tag   byte
 		value uint64
@@ -32,7 +33,7 @@ func (a ctrAchievementState) Encode() []byte {
 		{2, a.Kind}, {3, a.Progress}, {4, a.Target}, {5, a.Status},
 		{6, a.Completed}, {7, a.Start}, {8, a.End}, {9, uint64(boolToCompletion(a.Completed))}, {11, a.ID},
 	} {
-		e = demonwarepkg.AppendVarintField(e, f.tag, f.value)
+		e = demonware.AppendVarintField(e, f.tag, f.value)
 	}
 	return e
 }
@@ -99,13 +100,13 @@ func (s *EconomyStore) ReportPitStopRefresh(pid uint64, events []AchievementEven
 	if err := s.SaveChange(pid, a, EconomyChange{Source: "pit stop refresh"}); err != nil {
 		return nil, err
 	}
-	return demonwarepkg.AppendBytesField(nil, 1, CurrentPitStopRefresh(a, now).Encode()), nil
+	return demonware.AppendBytesField(nil, 1, CurrentPitStopRefresh(a, now).Encode()), nil
 }
 
 // bdGetAchievementStatesRequest: kinds=2, limit=3, token=4,
 // statuses=5, names=6. Do not leak a progression state into daily challenges.
 func AchievementRequested(payload []byte, s ctrAchievementState) bool {
-	fields, err := demonwarepkg.ParseFields(demonwarepkg.TaskStructPayload(payload))
+	fields, err := demonware.ParseFields(demonware.TaskStructPayload(payload))
 	if err != nil {
 		return false
 	}

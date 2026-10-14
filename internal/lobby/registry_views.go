@@ -1,15 +1,15 @@
 package lobby
 
 import (
-	dashboardpkg "github.com/pierluigizagaria/demonware-server/internal/dashboard"
+	"github.com/pierluigizagaria/demonware-server/internal/dashboard"
 )
 
-func (registry *SessionRegistry) Snapshot() []dashboardpkg.SessionSnapshot {
+func (registry *SessionRegistry) Snapshot() []dashboard.SessionSnapshot {
 
 	registry.Mu.Lock()
-	snaps := make([]dashboardpkg.SessionSnapshot, 0, len(registry.Sessions))
+	snaps := make([]dashboard.SessionSnapshot, 0, len(registry.Sessions))
 	for _, s := range registry.Sessions {
-		snaps = append(snaps, dashboardpkg.SessionSnapshot{Id: s.Id, Owner: s.Owner, GameType: s.gameType, MaxPlayers: s.MaxPlayers, NumPlayers: s.NumPlayers})
+		snaps = append(snaps, dashboard.SessionSnapshot{Id: s.Id, Owner: s.Owner, GameType: s.gameType, MaxPlayers: s.MaxPlayers, NumPlayers: s.NumPlayers})
 	}
 	registry.Mu.Unlock()
 

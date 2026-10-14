@@ -25,16 +25,17 @@
 package nat
 
 import (
-	binary "encoding/binary"
-	hex "encoding/hex"
-	fmt "fmt"
-	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
-	net "net"
-	os "os"
-	filepath "path/filepath"
-	strconv "strconv"
-	sync "sync"
-	atomic "sync/atomic"
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"sync/atomic"
+
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 )
 
 const natSeenMax = 4096
@@ -44,7 +45,7 @@ type NatServer struct {
 	stopped bool
 	conn    net.PacketConn
 	workers sync.WaitGroup
-	*diagnosticspkg.Diagnostics
+	*diagnostics.Diagnostics
 	BindAddr, NextendoHost string
 	ConnNum                *atomic.Uint64
 	natSeenMu              sync.Mutex

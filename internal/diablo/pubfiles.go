@@ -17,15 +17,16 @@ package diablo
 
 import (
 	_ "embed"
-	json "encoding/json"
-	fmt "fmt"
-	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
-	http "net/http"
-	os "os"
-	filepath "path/filepath"
-	sort "sort"
-	strings "strings"
-	time "time"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 )
 
 // pubConfig drives the served content. One file to edit to change the season
@@ -294,7 +295,7 @@ func (provider *PublisherFiles) pubfilesHandler(w http.ResponseWriter, r *http.R
 }
 
 type PublisherFiles struct {
-	*diagnosticspkg.Diagnostics
+	*diagnostics.Diagnostics
 	PubDir, PubConfigPath, RiftDir string
 }
 

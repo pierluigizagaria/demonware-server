@@ -12,12 +12,12 @@
 package auth
 
 import (
-	bufio "bufio"
-	net "net"
-	strconv "strconv"
-	strings "strings"
+	"bufio"
+	"net"
+	"strconv"
+	"strings"
 	"sync"
-	time "time"
+	"time"
 )
 
 const proxyHeaderTimeout = 10 * time.Second

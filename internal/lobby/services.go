@@ -19,8 +19,9 @@
 package lobby
 
 import (
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	atomic "sync/atomic"
+	"sync/atomic"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 const (
@@ -57,13 +58,13 @@ type ReplyCounter struct{ Transactions atomic.Uint64 }
 
 // sendPush sends a pushed message (inner type 0x02). bdLobbyService::handlePushMessage reads a
 // tagged u32: the bdEventType, resolved in the table of registered handlers.
-func (l *LobbySession) sendPush(event uint32, build func(w *demonwarepkg.Writer)) error {
-	w := &demonwarepkg.Writer{}
+func (l *LobbySession) sendPush(event uint32, build func(w *demonware.Writer)) error {
+	w := &demonware.Writer{}
 	w.Uint32(event)
 	if build != nil {
 		build(w)
 	}
-	return l.sendEncrypted(demonwarepkg.InnerPush, w.Bytes())
+	return l.sendEncrypted(demonware.InnerPush, w.Bytes())
 }
 
 // onTask handles a decrypted request. payload = bytes after the inner type.
@@ -74,7 +75,7 @@ func (l *LobbySession) ProcessTask(payload []byte) {
 		return
 	}
 	if len(payload) == 18 && payload[0] == 18 && payload[1] == 1 && payload[2] == 0 && payload[3] == 1 {
-		_ = l.sendEncrypted(demonwarepkg.InnerTaskReply, l.TaskReply(1, ErrUnhandled, nil))
+		_ = l.sendEncrypted(demonware.InnerTaskReply, l.TaskReply(1, ErrUnhandled, nil))
 		return
 	}
 	if len(payload) < 3 {
@@ -82,7 +83,7 @@ func (l *LobbySession) ProcessTask(payload []byte) {
 		return
 	}
 	service := payload[0]
-	r := demonwarepkg.NewReader(payload[1:])
+	r := demonware.NewReader(payload[1:])
 	task, err := r.Uint8()
 	if err != nil {
 		// Never leave a task unanswered: the game waits for it until the timeout, which
@@ -91,12 +92,12 @@ func (l *LobbySession) ProcessTask(payload []byte) {
 			task = payload[2]
 		}
 		if service == 80 || service == 104 {
-			_ = l.sendEncrypted(demonwarepkg.InnerTaskReply, l.TaskReply(task, ErrUnhandled, nil))
+			_ = l.sendEncrypted(demonware.InnerTaskReply, l.TaskReply(task, ErrUnhandled, nil))
 			return
 		}
 		l.logf("task: service %d task id unreadable (%v), empty success task=%d: %X",
 			service, err, task, payload)
-		if err := l.sendEncrypted(demonwarepkg.InnerTaskReply, l.TaskReply(task, 0, nil)); err != nil {
+		if err := l.sendEncrypted(demonware.InnerTaskReply, l.TaskReply(task, 0, nil)); err != nil {
 			l.logf("send reply: %v", err)
 		}
 		return
@@ -115,7 +116,7 @@ func (l *LobbySession) DeliverResult(result TaskResult) {
 			result.AfterReply(sendErr)
 		}()
 	}
-	sendErr = l.sendEncrypted(demonwarepkg.InnerTaskReply, result.Reply)
+	sendErr = l.sendEncrypted(demonware.InnerTaskReply, result.Reply)
 	l.ReplyErr = sendErr
 	if sendErr != nil {
 		l.logf("send reply: %v", sendErr)
@@ -129,16 +130,16 @@ type TaskResult struct {
 	AfterReply func(sendErr error)
 }
 
-func (replies *ReplyCounter) TaskReply(task byte, code uint32, results func(w *demonwarepkg.Writer) uint32) []byte {
-	return demonwarepkg.TaskReply(replies.Transactions.Add(1), task, code, results)
+func (replies *ReplyCounter) TaskReply(task byte, code uint32, results func(w *demonware.Writer) uint32) []byte {
+	return demonware.TaskReply(replies.Transactions.Add(1), task, code, results)
 }
 
 func (replies *ReplyCounter) HttpProxyReply(task byte, status uint32, body []byte) []byte {
-	return demonwarepkg.HTTPProxyReply(replies.Transactions.Add(1), task, status, body)
+	return demonware.HTTPProxyReply(replies.Transactions.Add(1), task, status, body)
 }
 
 func (replies *ReplyCounter) StructTaskReply(task byte, body []byte) []byte {
-	return demonwarepkg.StructReply(replies.Transactions.Add(1), task, body)
+	return demonware.StructReply(replies.Transactions.Add(1), task, body)
 }
 
 func (replies *ReplyCounter) NextTransaction() uint64 { return replies.Transactions.Add(1) }

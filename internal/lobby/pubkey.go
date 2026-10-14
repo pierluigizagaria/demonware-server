@@ -1,7 +1,7 @@
 package lobby
 
 import (
-	hex "encoding/hex"
+	"encoding/hex"
 )
 
 // bdPublicKeyDER is the RSA-2048 public key (SubjectPublicKeyInfo DER, 294 bytes)

@@ -17,12 +17,12 @@
 package diablo
 
 import (
-	json "encoding/json"
-	fmt "fmt"
-	sort "sort"
-	strconv "strconv"
-	strings "strings"
-	time "time"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // seasonRotation is the "season_rotation" block of pubfiles.json.

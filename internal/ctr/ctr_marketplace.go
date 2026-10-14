@@ -25,11 +25,12 @@
 package ctr
 
 import (
-	bytes "bytes"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	os "os"
+	"bytes"
+	"os"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 const (
@@ -58,27 +59,27 @@ func GetPlayerBalancesResponse(w map[uint64]int64, max int) []byte {
 	}
 	out := []byte{}
 	for _, id := range ids[:max] {
-		e := demonwarepkg.AppendVarintField(nil, 1, id)
-		e = demonwarepkg.AppendVarintField(e, 2, demonwarepkg.ZigZag(w[id]))
-		e = demonwarepkg.AppendVarintField(e, 3, 0)
-		out = demonwarepkg.AppendBytesField(out, 1, e)
+		e := demonware.AppendVarintField(nil, 1, id)
+		e = demonware.AppendVarintField(e, 2, demonware.ZigZag(w[id]))
+		e = demonware.AppendVarintField(e, 3, 0)
+		out = demonware.AppendBytesField(out, 1, e)
 	}
 	return out
 }
 
 // onMarketplace handles Pit Stop requests; nil means an unsupported task.
-func (h *EconomyHandler) OnMarketplace(peer lobbypkg.TaskSession, task byte, payload []byte) (result lobbypkg.TaskResult) {
+func (h *EconomyHandler) OnMarketplace(peer lobby.TaskSession, task byte, payload []byte) (result lobby.TaskResult) {
 	switch task {
 	case TaskGetBalancesV3:
 		ctx, max := ParseBalancesRequest(payload)
-		if ctx != ps4pkg.MarketplaceContext || !validPS4BalancesRequest(payload, ctx, max) {
-			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+		if ctx != ps4.MarketplaceContext || !validPS4BalancesRequest(payload, ctx, max) {
+			result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 			return result
 		}
 		a, err := h.Economy.Snapshot(peer.PID())
 		if err != nil {
 			peer.Logf("[ctr] economy read failed: %v", err)
-			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+			result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 			return result
 		}
 		w := a.Balances
@@ -89,39 +90,39 @@ func (h *EconomyHandler) OnMarketplace(peer lobbypkg.TaskSession, task byte, pay
 
 	case taskSwitchReconciliation:
 		// Switch only (an eShop receipt): the PS4 build never sends it.
-		result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+		result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 		return result
 
 	case TaskGetInventoryPaginated:
 		if len(payload) < 3 {
-			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+			result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 			return result
 		}
-		r := demonwarepkg.NewReader(payload[3:])
+		r := demonware.NewReader(payload[3:])
 		ctx, err := r.String()
-		if err != nil || ctx != ps4pkg.MarketplaceContext {
-			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+		if err != nil || ctx != ps4.MarketplaceContext {
+			result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 			return result
 		}
 		page, err := r.Uint32()
 		if err != nil {
-			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+			result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 			return result
 		}
 		size, err := r.Uint32()
 		if err != nil || size == 0 || size > 4096 {
-			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+			result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 			return result
 		}
 		a, err := h.Economy.Inventory(peer.PID())
 		if err != nil {
 			peer.Logf("[ctr] economy inventory failed: %v", err)
-			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+			result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 			return result
 		}
 		items := InventoryPage(a, page, size)
 		peer.Logf("[ctr] pitstop inventory page=%d size=%d -> %d items", page, size, len(items))
-		result.Reply = h.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
+		result.Reply = h.TaskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, item := range items {
 				WriteInventoryItem(w, peer.PID(), item)
 			}
@@ -131,13 +132,13 @@ func (h *EconomyHandler) OnMarketplace(peer lobbypkg.TaskSession, task byte, pay
 	case TaskPurchaseSkus:
 		skus, ok := parsePurchaseSkus(payload)
 		if !ok {
-			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+			result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 			return result
 		}
 		debit, err := h.Economy.Purchase(peer.PID(), skus)
 		if err != nil {
 			peer.Logf("[ctr] pitstop purchase rejected: %v", err)
-			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+			result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
 			return result
 		}
 		peer.Logf("[ctr] pitstop purchase skus=%v debit=%d currency=10", skus, debit)
@@ -157,16 +158,16 @@ func validPS4BalancesRequest(payload []byte, ctx string, max int) bool {
 	if max < 1 || max > 16 {
 		return false
 	}
-	w := demonwarepkg.NewWriter([]byte{SvcMarketplace, demonwarepkg.TagUint8, TaskGetBalancesV3})
-	sb := demonwarepkg.AppendBytesField(nil, 1, []byte(ctx))
-	w.Struct(demonwarepkg.AppendVarintField(sb, 2, uint64(max)))
+	w := demonware.NewWriter([]byte{SvcMarketplace, demonware.TagUint8, TaskGetBalancesV3})
+	sb := demonware.AppendBytesField(nil, 1, []byte(ctx))
+	w.Struct(demonware.AppendVarintField(sb, 2, uint64(max)))
 	return bytes.Equal(payload, append(w.Bytes(), 0))
 }
 
 // parseBalancesRequest reads the bdGetPlayerBalancesRequest struct buffer that follows the
 // service and task bytes: field 1 context string, field 2 maxNumResults.
 func ParseBalancesRequest(payload []byte) (string, int) {
-	sb := demonwarepkg.TaskStructPayload(payload)
+	sb := demonware.TaskStructPayload(payload)
 	ctx, max := "", 0
 	for i := 0; i < len(sb); {
 		field := sb[i] >> 3
@@ -174,7 +175,7 @@ func ParseBalancesRequest(payload []byte) (string, int) {
 		i++
 		switch wire {
 		case 0:
-			v, next, err := demonwarepkg.ReadVarint(sb, i)
+			v, next, err := demonware.ReadVarint(sb, i)
 			if err != nil {
 				return ctx, max
 			}
@@ -183,7 +184,7 @@ func ParseBalancesRequest(payload []byte) (string, int) {
 				max = int(v)
 			}
 		case 2:
-			ln, next, err := demonwarepkg.ReadVarint(sb, i)
+			ln, next, err := demonware.ReadVarint(sb, i)
 			if err != nil || ln > uint64(len(sb)-next) {
 				return ctx, max
 			}
@@ -203,17 +204,17 @@ func ParseBalancesRequest(payload []byte) (string, int) {
 // each value comes from were read from bdMarketplaceInventory::serialize; field 3 (+0x48)
 // is the item id CMarketplaceInventoryItem::populateItem matches against the game's own
 // catalog, so it carries the catalog ITEM id granted by the SKU.
-func WriteInventoryItem(w *demonwarepkg.Writer, owner uint64, item uint32) {
-	w.Uint64(owner)                         // bdUserAccountID owner
-	w.String(ps4pkg.MarketplaceAccountType) // bdUserAccountID account type
-	w.Uint32(item)                          // catalog item ID, not SKU
-	w.Uint32(1)                             // +0x4c quantity
-	w.Uint32(0)                             // +0x50
-	w.Blob(nil)                             // +0x54 item data
-	w.Uint32(0)                             // +0x98
-	w.Int64(0)                              // +0xa0 expiry, 0 = never
-	w.Uint16(0)                             // +0xa8
-	w.Uint32(0)                             // +0xac
+func WriteInventoryItem(w *demonware.Writer, owner uint64, item uint32) {
+	w.Uint64(owner)                      // bdUserAccountID owner
+	w.String(ps4.MarketplaceAccountType) // bdUserAccountID account type
+	w.Uint32(item)                       // catalog item ID, not SKU
+	w.Uint32(1)                          // +0x4c quantity
+	w.Uint32(0)                          // +0x50
+	w.Blob(nil)                          // +0x54 item data
+	w.Uint32(0)                          // +0x98
+	w.Int64(0)                           // +0xa0 expiry, 0 = never
+	w.Uint16(0)                          // +0xa8
+	w.Uint32(0)                          // +0xac
 }
 
 // purchaseSkus encodes arrays as count followed by typed elements.
@@ -222,9 +223,9 @@ func parsePurchaseSkus(payload []byte) ([]uint32, bool) {
 	if len(payload) < 3 {
 		return nil, false
 	}
-	r := demonwarepkg.NewReader(payload[3:])
+	r := demonware.NewReader(payload[3:])
 	ctx, err := r.String()
-	if err != nil || ctx != ps4pkg.MarketplaceContext {
+	if err != nil || ctx != ps4.MarketplaceContext {
 		return nil, false
 	}
 	n, err := r.Uint32()
@@ -269,7 +270,7 @@ func parsePurchaseSkus(payload []byte) ([]uint32, bool) {
 // Only this caller's exact defaults are supported; never ignore gifting,
 // coupon or other optional data.
 func defaultPS4PurchaseOptions(tail []byte, count uint32) bool {
-	w := &demonwarepkg.Writer{}
+	w := &demonware.Writer{}
 	w.Bool(false)
 	w.Uint32(count)
 	for i := uint32(0); i < count; i++ {

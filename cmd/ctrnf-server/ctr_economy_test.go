@@ -1,30 +1,31 @@
 package main
 
 import (
-	json "encoding/json"
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	os "os"
-	filepath "path/filepath"
-	sync "sync"
-	testing "testing"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 func TestEconomyPurchaseRestartAndRetry(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
-	sku := ctrpkg.EconomyCatalogSnapshot()[200085]
+	s := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	sku := ctr.EconomyCatalogSnapshot()[200085]
 	debit, err := s.Purchase(42, []uint32{200085})
 	if err != nil || debit != sku.Price {
 		t.Fatalf("purchase %d %v", debit, err)
 	}
-	s = &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: s.Dir}
+	s = &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: s.Dir}
 	a, err := s.Snapshot(42)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Balances[10] != 10000-sku.Price || !ctrpkg.OwnsSKU(a, sku) {
+	if a.Balances[10] != 10000-sku.Price || !ctr.OwnsSKU(a, sku) {
 		t.Fatalf("restart lost transaction: %+v", a)
 	}
 	debit, err = s.Purchase(42, []uint32{200085})
@@ -34,14 +35,14 @@ func TestEconomyPurchaseRestartAndRetry(t *testing.T) {
 }
 
 func TestEconomyLegacyMigrationPreservesBalanceAndOwnership(t *testing.T) {
-	s := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	s := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
 	os.WriteFile(filepath.Join(s.Dir, "42.json"), []byte(`{"10":9876}`), 0600)
 	os.WriteFile(filepath.Join(s.Dir, "42.items.json"), []byte(`[200085]`), 0600)
 	a, err := s.Snapshot(42)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Balances[10] != 9876 || !ctrpkg.OwnsSKU(a, ctrpkg.EconomyCatalogSnapshot()[200085]) {
+	if a.Balances[10] != 9876 || !ctr.OwnsSKU(a, ctr.EconomyCatalogSnapshot()[200085]) {
 		t.Fatal("legacy data lost")
 	}
 	if a.Items[200085] {
@@ -51,7 +52,7 @@ func TestEconomyLegacyMigrationPreservesBalanceAndOwnership(t *testing.T) {
 
 func TestEconomyNoPartialPurchase(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	s := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
 	if _, err := s.Purchase(42, []uint32{200085, 4294967295}); err == nil {
 		t.Fatal("unknown SKU accepted")
 	}
@@ -63,7 +64,7 @@ func TestEconomyNoPartialPurchase(t *testing.T) {
 
 func TestEconomyConcurrentRetry(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	s := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
 	var wg sync.WaitGroup
 	for i := 0; i < 12; i++ {
 		wg.Add(1)
@@ -76,13 +77,13 @@ func TestEconomyConcurrentRetry(t *testing.T) {
 	}
 	wg.Wait()
 	a, _ := s.Snapshot(42)
-	if a.Balances[10] != 10000-ctrpkg.EconomyCatalogSnapshot()[200085].Price {
+	if a.Balances[10] != 10000-ctr.EconomyCatalogSnapshot()[200085].Price {
 		t.Fatal("concurrent debit repeated")
 	}
 }
 
 func TestEconomyCorruptWalletFailsClosed(t *testing.T) {
-	s := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	s := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
 	os.WriteFile(filepath.Join(s.Dir, "42.json"), []byte(`broken`), 0600)
 	if _, err := s.Purchase(42, []uint32{200085}); err == nil {
 		t.Fatal("corrupt wallet reset")
@@ -91,7 +92,7 @@ func TestEconomyCorruptWalletFailsClosed(t *testing.T) {
 
 func TestEconomyWriteFailureDoesNotGrant(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	s := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
 	a, _ := s.Snapshot(42)
 	// A directory at the final path forces rename to fail on Windows and Linux.
 	os.Remove(s.AccountPath(42))
@@ -102,23 +103,23 @@ func TestEconomyWriteFailureDoesNotGrant(t *testing.T) {
 }
 
 func TestEconomyBundleOnlyChargesUnownedComponents(t *testing.T) {
-	a := &ctrpkg.EconomyAccount{Items: map[uint32]bool{}}
-	for _, sku := range ctrpkg.EconomyCatalogSnapshot() {
+	a := &ctr.EconomyAccount{Items: map[uint32]bool{}}
+	for _, sku := range ctr.EconomyCatalogSnapshot() {
 		if len(sku.Parts) < 2 {
 			continue
 		}
-		first := ctrpkg.EconomyCatalogSnapshot()[sku.Parts[0]]
+		first := ctr.EconomyCatalogSnapshot()[sku.Parts[0]]
 		for _, i := range first.Items {
 			a.Items[i] = true
 		}
 		var expected int64
 		for _, id := range sku.Parts {
-			part := ctrpkg.EconomyCatalogSnapshot()[id]
-			if !ctrpkg.OwnsSKU(a, part) {
+			part := ctr.EconomyCatalogSnapshot()[id]
+			if !ctr.OwnsSKU(a, part) {
 				expected += part.Price
 			}
 		}
-		price, err := ctrpkg.SkuPrice(a, sku)
+		price, err := ctr.SkuPrice(a, sku)
 		if err != nil || price != expected {
 			t.Fatalf("bundle %d %v", price, err)
 		}
@@ -128,22 +129,22 @@ func TestEconomyBundleOnlyChargesUnownedComponents(t *testing.T) {
 }
 
 func TestInventoryOwnerAndCatalogItem(t *testing.T) {
-	item := ctrpkg.EconomyCatalogSnapshot()[200085].Items[0]
-	w := &demonwarepkg.Writer{}
-	ctrpkg.WriteInventoryItem(w, 42, item)
-	r := demonwarepkg.NewReader(w.Bytes())
+	item := ctr.EconomyCatalogSnapshot()[200085].Items[0]
+	w := &demonware.Writer{}
+	ctr.WriteInventoryItem(w, 42, item)
+	r := demonware.NewReader(w.Bytes())
 	owner, _ := r.Uint64()
 	kind, _ := r.String()
 	id, _ := r.Uint32()
-	if owner != 42 || kind != ps4pkg.MarketplaceAccountType || id != item {
+	if owner != 42 || kind != ps4.MarketplaceAccountType || id != item {
 		t.Fatalf("bad inventory owner/item %d %s %d", owner, kind, id)
 	}
 }
 
 func TestInventoryPagesAreOneBased(t *testing.T) {
-	a := &ctrpkg.EconomyAccount{Items: map[uint32]bool{100: true, 101: true, 102: true}}
-	first := ctrpkg.InventoryPage(a, 1, 2)
-	second := ctrpkg.InventoryPage(a, 2, 2)
+	a := &ctr.EconomyAccount{Items: map[uint32]bool{100: true, 101: true, 102: true}}
+	first := ctr.InventoryPage(a, 1, 2)
+	second := ctr.InventoryPage(a, 2, 2)
 	if len(first) != 2 || first[0] != 100 || len(second) != 1 || second[0] != 102 {
 		t.Fatalf("bad pages %v %v", first, second)
 	}
@@ -151,7 +152,7 @@ func TestInventoryPagesAreOneBased(t *testing.T) {
 
 func TestEconomyInsufficientFunds(t *testing.T) {
 	setStartBalance(t, 0)
-	s := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	s := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
 	if _, err := s.Purchase(42, []uint32{200085}); err == nil {
 		t.Fatal("overspend accepted")
 	}

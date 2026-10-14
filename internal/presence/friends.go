@@ -14,15 +14,16 @@
 package presence
 
 import (
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	strings "strings"
-	sync "sync"
+	"strings"
+	"sync"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
 type PresenceStore struct {
 	OnlineMu    sync.Mutex
-	Online      map[uint64]*platformpkg.PlayerID
+	Online      map[uint64]*platform.PlayerID
 	userDataMu  sync.Mutex
 	UserData    map[string][]byte
 	RichMu      sync.Mutex
@@ -31,7 +32,7 @@ type PresenceStore struct {
 }
 
 func NewPresenceStore(names playerNameStore) *PresenceStore {
-	return &PresenceStore{Online: map[uint64]*platformpkg.PlayerID{}, UserData: map[string][]byte{}, Rich: map[uint64]RichPresence{}, PlayerNames: names}
+	return &PresenceStore{Online: map[uint64]*platform.PlayerID{}, UserData: map[string][]byte{}, Rich: map[uint64]RichPresence{}, PlayerNames: names}
 }
 
 // dropPresence forgets a player's rich presence (ctr_presence.go keeps the store).
@@ -60,7 +61,7 @@ func (state *PresenceStore) DropOnline(conn uint64) {
 }
 
 // onlinePlayerFor returns the connected player whose account ID is id, or nil.
-func (state *PresenceStore) onlinePlayerFor(id uint64) *platformpkg.PlayerID {
+func (state *PresenceStore) onlinePlayerFor(id uint64) *platform.PlayerID {
 	state.OnlineMu.Lock()
 	defer state.OnlineMu.Unlock()
 	for _, p := range state.Online {
@@ -95,7 +96,7 @@ func (state *PresenceStore) NicknameOnline(id uint64) string {
 }
 
 // onGetUserNames: 12/9.
-func (h *PresenceHandler) OnGetUserNames(peer presencePeer, task byte, r *demonwarepkg.Reader) []byte {
+func (h *PresenceHandler) OnGetUserNames(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	ids := r.Uint64s()
 	type hit struct {
 		id   uint64
@@ -108,7 +109,7 @@ func (h *PresenceHandler) OnGetUserNames(peer presencePeer, task byte, r *demonw
 		}
 	}
 	peer.Logf("[presence] friends getUserNames %d request(s) -> %d online %v", len(ids), len(hits), hits)
-	return h.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
+	return h.TaskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, h := range hits {
 			w.Uint64(h.id)
 			w.String(h.name)
@@ -118,7 +119,7 @@ func (h *PresenceHandler) OnGetUserNames(peer presencePeer, task byte, r *demonw
 }
 
 // onUserData: service 29. 1 = write own data, 4 = read a list's.
-func (h *PresenceHandler) OnUserData(peer presencePeer, task byte, r *demonwarepkg.Reader) []byte {
+func (h *PresenceHandler) OnUserData(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	ctx, _ := r.String()
 	switch task {
 	case 1:
@@ -133,7 +134,7 @@ func (h *PresenceHandler) OnUserData(peer presencePeer, task byte, r *demonwarep
 		peer.Logf("[presence] userdata SET %s ctx=%q %d bytes", peer.Identity().Username, ctx, len(data))
 		return h.TaskReply(task, 0, nil)
 	case 4:
-		if len(r.Remaining()) > 0 && r.Remaining()[0] == demonwarepkg.TagBool {
+		if len(r.Remaining()) > 0 && r.Remaining()[0] == demonware.TagBool {
 			_, _ = r.Bool()
 		}
 		ids := r.Uint64s()
@@ -155,7 +156,7 @@ func (h *PresenceHandler) OnUserData(peer presencePeer, task byte, r *demonwarep
 			}
 		}
 		peer.Logf("[presence] userdata GET ctx=%q %d request(s) -> %d", ctx, len(ids), len(hits))
-		return h.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
+		return h.TaskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, h := range hits {
 				w.Uint64(h.id)
 				w.Blob(h.data)
@@ -180,7 +181,7 @@ func (state *PresenceStore) PidOnline(id uint64) uint64 {
 // last issued a ticket under still resolves (player_names in ctrnf.db), so
 // a friend is found even before they connect to the lobby. Resolving an
 // identity does not make it joinable: only live sessions are advertised.
-func (h *PresenceHandler) OnGetUserIDs(peer presencePeer, task byte, r *demonwarepkg.Reader) []byte {
+func (h *PresenceHandler) OnGetUserIDs(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	count, err := r.Uint32()
 	if err != nil || count == 0 || count > 500 {
 		return h.TaskReply(task, presenceUnhandled, nil)
@@ -193,7 +194,7 @@ func (h *PresenceHandler) OnGetUserIDs(peer presencePeer, task byte, r *demonwar
 		}
 		names = append(names, name)
 	}
-	known := map[string]*platformpkg.PlayerID{}
+	known := map[string]*platform.PlayerID{}
 	if h.Presence.PlayerNames != nil {
 		recorded, err := h.Presence.PlayerNames.NamedPlayers(names)
 		if err != nil {
@@ -207,14 +208,14 @@ func (h *PresenceHandler) OnGetUserIDs(peer presencePeer, task byte, r *demonwar
 		known[strings.ToLower(p.Username)] = p
 	}
 	h.Presence.OnlineMu.Unlock()
-	var found []*platformpkg.PlayerID
+	var found []*platform.PlayerID
 	for _, name := range names {
 		if p := known[strings.ToLower(name)]; p != nil && p.PID != 0 {
 			found = append(found, p)
 		}
 	}
 	peer.Logf("[presence] friends getUserIDs %d request(s) -> %d resolved", len(names), len(found))
-	return h.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
+	return h.TaskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, p := range found {
 			w.Uint64(p.PID)
 			w.String(p.Username)

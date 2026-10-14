@@ -27,13 +27,14 @@
 package relay
 
 import (
-	binary "encoding/binary"
-	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
-	net "net"
-	strconv "strconv"
-	strings "strings"
-	sync "sync"
-	time "time"
+	"encoding/binary"
+	"net"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 )
 
 // relayFor limits WHICH joiners get a relay address written into their copy of a host's
@@ -80,7 +81,7 @@ type RelayTable struct {
 	stop          chan struct{}
 	workers       sync.WaitGroup
 	reaperStarted bool
-	*diagnosticspkg.Diagnostics
+	*diagnostics.Diagnostics
 	BindAddr, Pids string
 	mu             sync.Mutex
 	Pairs          map[string]*RelayPair // "hostPID:joinerPID" -> pair
@@ -91,7 +92,7 @@ type RelayTable struct {
 	Ip             net.IP
 }
 
-func NewRelayTable(diag *diagnosticspkg.Diagnostics, bindAddr, pids string) *RelayTable {
+func NewRelayTable(diag *diagnostics.Diagnostics, bindAddr, pids string) *RelayTable {
 	return &RelayTable{Diagnostics: diag, BindAddr: bindAddr, Pids: pids, Pairs: map[string]*RelayPair{}, ByPort: map[int]*RelayPair{}}
 }
 

@@ -1,18 +1,19 @@
 package main
 
 import (
-	bytes "bytes"
-	binary "encoding/binary"
-	hex "encoding/hex"
-	json "encoding/json"
-	fmt "fmt"
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	diablopkg "github.com/pierluigizagaria/demonware-server/internal/diablo"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	sort "sort"
-	testing "testing"
-	time "time"
+	"bytes"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"testing"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/diablo"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
 )
 
 func architectureCall(t *testing.T, l *lobbyConn, w *architectureWire, payload []byte) []architectureFrame {
@@ -30,7 +31,7 @@ func architectureCall(t *testing.T, l *lobbyConn, w *architectureWire, payload [
 
 func architectureReply(t *testing.T, frames []architectureFrame, task byte, code uint32) []byte {
 	t.Helper()
-	if len(frames) == 0 || frames[0].Inner != demonwarepkg.InnerTaskReply {
+	if len(frames) == 0 || frames[0].Inner != demonware.InnerTaskReply {
 		t.Fatal("reply missing or push sent first")
 	}
 	p, _ := hex.DecodeString(frames[0].Payload)
@@ -41,21 +42,21 @@ func architectureReply(t *testing.T, frames []architectureFrame, task byte, code
 	return p
 }
 
-func architectureEventRequest(e ctrpkg.AchievementEvent) []byte {
-	event := demonwarepkg.AppendBytesField(nil, 1, []byte(e.Name))
-	event = demonwarepkg.AppendVarintField(event, 2, e.Timestamp)
+func architectureEventRequest(e ctr.AchievementEvent) []byte {
+	event := demonware.AppendBytesField(nil, 1, []byte(e.Name))
+	event = demonware.AppendVarintField(event, 2, e.Timestamp)
 	var keys []string
 	for k := range e.Values {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		kv := demonwarepkg.AppendBytesField(nil, 1, []byte(k))
-		kv = demonwarepkg.AppendVarintField(kv, 2, e.Values[k])
-		event = demonwarepkg.AppendBytesField(event, 3, kv)
+		kv := demonware.AppendBytesField(nil, 1, []byte(k))
+		kv = demonware.AppendVarintField(kv, 2, e.Values[k])
+		event = demonware.AppendBytesField(event, 3, kv)
 	}
-	w := demonwarepkg.NewWriter([]byte{125, 3, 1})
-	w.Struct(demonwarepkg.AppendBytesField(demonwarepkg.AppendBytesField(nil, 1, []byte("octane_psn")), 2, event))
+	w := demonware.NewWriter([]byte{125, 3, 1})
+	w.Struct(demonware.AppendBytesField(demonware.AppendBytesField(nil, 1, []byte("octane_psn")), 2, event))
 	return w.Bytes()
 }
 
@@ -73,19 +74,19 @@ func TestArchitectureRewardReplyFailureStillCommitsAndPushes(t *testing.T) {
 			w.fail = fail
 			frames := architectureCall(t, l, w, payload)
 			reply := architectureReply(t, frames, 1, 0)
-			if len(structBodyOf(t, reply)) != 0 || len(frames) != 2 || frames[1].Inner != demonwarepkg.InnerPush {
+			if len(structBodyOf(t, reply)) != 0 || len(frames) != 2 || frames[1].Inner != demonware.InnerPush {
 				t.Fatal("achievement reply/push changed")
 			}
 			push, _ := hex.DecodeString(frames[1].Payload)
-			want := demonwarepkg.NewWriter(nil)
+			want := demonware.NewWriter(nil)
 			want.Uint32(76)
-			want.Struct(ctrpkg.BalanceUpdatePayload(l.Pid(), 10027))
+			want.Struct(ctr.BalanceUpdatePayload(l.Pid(), 10027))
 			if !bytes.Equal(push, want.Bytes()) {
 				t.Fatal("reward balance push changed")
 			}
 			var receipt string
 			var recorded int64
-			if err := db.Db.QueryRow("SELECT receipt, recorded_at FROM race_receipts").Scan(&receipt, &recorded); err != nil || receipt != ctrpkg.RaceReceipt(event) || recorded != now.Unix() {
+			if err := db.Db.QueryRow("SELECT receipt, recorded_at FROM race_receipts").Scan(&receipt, &recorded); err != nil || receipt != ctr.RaceReceipt(event) || recorded != now.Unix() {
 				t.Fatal("reward timestamp/receipt not persisted exactly")
 			}
 			a, err := db.Load(l.Pid(), false)
@@ -110,7 +111,7 @@ func TestArchitectureSearchReplyFailureReleasesReservation(t *testing.T) {
 			l, w, _ := architectureBaseline(t)
 			s := testCTRSearch(t, l.Pid(), 0)
 			l.lobbyDoc = s.Conn.(*lobbyConn).lobbyDoc
-			request := demonwarepkg.NewWriter([]byte{145, 3, 18})
+			request := demonware.NewWriter([]byte{145, 3, 18})
 			raw, _ := json.Marshal(s.Doc)
 			request.String(string(raw))
 			w.fail = fail
@@ -119,7 +120,7 @@ func TestArchitectureSearchReplyFailureReleasesReservation(t *testing.T) {
 			if len(frames) != 1 || len(testMatchmaker.Pending) != 0 {
 				t.Fatal("reservation callback did not run exactly once")
 			}
-			r := demonwarepkg.NewReader(p[26:])
+			r := demonware.NewReader(p[26:])
 			idJSON, err := r.String()
 			var id struct {
 				ID uint64 `json:"mm_id"`
@@ -136,7 +137,7 @@ func TestArchitectureSearchReplyFailureReleasesReservation(t *testing.T) {
 			if len(testMatchmaker.Waiting) != 1 || testMatchmaker.Waiting[0].Id != id.ID {
 				t.Fatal("successful search not activated")
 			}
-			cancel := demonwarepkg.NewWriter([]byte{145, 3, 8})
+			cancel := demonware.NewWriter([]byte{145, 3, 8})
 			cancel.Uint64(id.ID)
 			p = architectureReply(t, architectureCall(t, l, w, cancel.Bytes()), 8, 0)
 			if !bytes.Equal(p[26:], []byte{1, 1}) || len(testMatchmaker.Waiting) != 0 {
@@ -151,19 +152,19 @@ func TestArchitectureContextRegistryLifecycle(t *testing.T) {
 		t.Run(fmt.Sprint(service), func(t *testing.T) {
 			l, w, _ := architectureBaseline(t)
 			if service == 21 {
-				l.Table = diablopkg.NewDiabloServiceTable(l.ReplyCounter, l.registry, l.Presence, l.relay, l.files)
+				l.Table = diablo.NewDiabloServiceTable(l.ReplyCounter, l.registry, l.Presence, l.relay, l.files)
 			}
 			now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 			l.Clock = func() time.Time { return now }
 			l.Entropy = bytes.NewReader(bytes.Repeat([]byte{0x31}, 128))
-			request := func(task byte) *demonwarepkg.Writer {
-				q := demonwarepkg.NewWriter([]byte{service, 3, task})
+			request := func(task byte) *demonware.Writer {
+				q := demonware.NewWriter([]byte{service, 3, task})
 				if service == 138 {
 					q.String("fixture")
 				}
 				return q
 			}
-			info := func(q *demonwarepkg.Writer) {
+			info := func(q *demonware.Writer) {
 				q.Blob(make([]byte, 67))
 				q.Uint32(1)
 				q.Uint32(8)
@@ -174,7 +175,7 @@ func TestArchitectureContextRegistryLifecycle(t *testing.T) {
 				}
 			}
 			p := architectureReply(t, architectureCall(t, l, w, request(19).Bytes()), 19, 0)
-			r := demonwarepkg.NewReader(p[26:])
+			r := demonware.NewReader(p[26:])
 			sid, err := r.Blob()
 			if err != nil || !bytes.Equal(sid, bytes.Repeat([]byte{0x31}, 8)) {
 				t.Fatal("reservation entropy not scoped")
@@ -237,7 +238,7 @@ func TestArchitectureContextRegistryLifecycle(t *testing.T) {
 
 func TestArchitectureStatsWritesAndReadsThroughRouter(t *testing.T) {
 	l, w, db := architectureBaseline(t)
-	q := demonwarepkg.NewWriter([]byte{4, 3, 1})
+	q := demonware.NewWriter([]byte{4, 3, 1})
 	q.Uint32(1001)
 	q.Uint64(l.Pid())
 	q.Uint8(4)
@@ -248,7 +249,7 @@ func TestArchitectureStatsWritesAndReadsThroughRouter(t *testing.T) {
 		t.Fatal("stats write not committed")
 	}
 	for _, task := range []byte{4, 13} {
-		q = demonwarepkg.NewWriter([]byte{4, 3, task})
+		q = demonware.NewWriter([]byte{4, 3, task})
 		q.Uint32(1001)
 		if task == 4 {
 			q.Uint64(1)
@@ -260,7 +261,7 @@ func TestArchitectureStatsWritesAndReadsThroughRouter(t *testing.T) {
 		q.Uint32(0)
 		q.Raw([]byte{0})
 		p := architectureReply(t, architectureCall(t, l, w, q.Bytes()), task, 0)
-		r := demonwarepkg.NewReader(p[26:])
+		r := demonware.NewReader(p[26:])
 		pid, _ := r.Uint64()
 		score, _ := r.Int64()
 		rank, _ := r.Uint64()
@@ -288,10 +289,10 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	t.Cleanup(func() { testMatchmaker.Clock = oldClock })
 	search := func(l *lobbyConn, w *architectureWire) {
 		s := testCTRSearch(t, l.Pid(), 0)
-		q := demonwarepkg.NewWriter([]byte{145, 3, 2})
+		q := demonware.NewWriter([]byte{145, 3, 2})
 		q.String(s.Conn.(*lobbyConn).lobbyDoc)
 		architectureReply(t, architectureCall(t, l, w, q.Bytes()), 2, 0)
-		q = demonwarepkg.NewWriter([]byte{145, 3, 18})
+		q = demonware.NewWriter([]byte{145, 3, 18})
 		raw, _ := json.Marshal(s.Doc)
 		q.String(string(raw))
 		architectureReply(t, architectureCall(t, l, w, q.Bytes()), 18, 0)
@@ -302,11 +303,11 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	beforeA := a.S2cSeq
 	search(b, bw)
 	frames := architectureFrames(t, a, aw, beforeA)
-	if len(frames) != 1 || frames[0].Inner != demonwarepkg.InnerPush {
+	if len(frames) != 1 || frames[0].Inner != demonware.InnerPush {
 		t.Fatal("host create push missing")
 	}
 	p, _ := hex.DecodeString(frames[0].Payload)
-	r := demonwarepkg.NewReader(p)
+	r := demonware.NewReader(p)
 	event, _ := r.Uint32()
 	searchID, _ := r.Uint64()
 	roomID, _ := r.Uint64()
@@ -323,7 +324,7 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	bw.writes = nil
 	bw.Reset()
 	beforeB := b.S2cSeq
-	q := demonwarepkg.NewWriter([]byte{145, 3, 15})
+	q := demonware.NewWriter([]byte{145, 3, 15})
 	q.Uint64(roomID)
 	q.Uint64(version)
 	q.String(host)
@@ -333,25 +334,25 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 		t.Fatal("sync reply changed")
 	}
 	frames = architectureFrames(t, b, bw, beforeB)
-	if len(frames) != 1 || frames[0].Inner != demonwarepkg.InnerPush {
+	if len(frames) != 1 || frames[0].Inner != demonware.InnerPush {
 		t.Fatal("guest join push missing")
 	}
 	p, _ = hex.DecodeString(frames[0].Payload)
-	r = demonwarepkg.NewReader(p)
+	r = demonware.NewReader(p)
 	event, _ = r.Uint32()
 	if event != 2001 {
 		t.Fatal("guest push event changed")
 	}
-	q = demonwarepkg.NewWriter([]byte{145, 3, 13})
+	q = demonware.NewWriter([]byte{145, 3, 13})
 	q.Uint64(roomID)
 	p = architectureReply(t, architectureCall(t, a, aw, q.Bytes()), 13, 0)
-	r = demonwarepkg.NewReader(p[26:])
+	r = demonware.NewReader(p[26:])
 	gotHost, _ := r.String()
 	gotBackend, err := r.String()
 	if err != nil || gotHost != host || gotBackend != backend || len(r.Remaining()) != 0 {
 		t.Fatal("documents differ from the acknowledged room")
 	}
-	q = demonwarepkg.NewWriter([]byte{145, 3, 10})
+	q = demonware.NewWriter([]byte{145, 3, 10})
 	q.Uint64(roomID)
 	aw.fail = 1
 	architectureReply(t, architectureCall(t, a, aw, q.Bytes()), 10, 0)
@@ -365,7 +366,7 @@ func TestArchitectureSharedLookupAndUserData(t *testing.T) {
 	if err := db.RememberName(18, "known", time.Unix(1000, 0)); err != nil {
 		t.Fatal(err)
 	}
-	q := demonwarepkg.NewWriter([]byte{12, 3, 10})
+	q := demonware.NewWriter([]byte{12, 3, 10})
 	q.Uint32(2)
 	q.String(l.Player.Username)
 	q.String("known")
@@ -373,25 +374,25 @@ func TestArchitectureSharedLookupAndUserData(t *testing.T) {
 	if binary.LittleEndian.Uint32(p[17:21]) != 2 {
 		t.Fatal("online/persisted lookup changed")
 	}
-	q = demonwarepkg.NewWriter([]byte{12, 3, 9})
+	q = demonware.NewWriter([]byte{12, 3, 9})
 	q.Uint64(l.Pid())
 	p = architectureReply(t, architectureCall(t, l, w, q.Bytes()), 9, 0)
-	r := demonwarepkg.NewReader(p[26:])
+	r := demonware.NewReader(p[26:])
 	pid, _ := r.Uint64()
 	name, err := r.String()
 	if err != nil || pid != l.Pid() || name != l.Player.Username {
 		t.Fatal("online name lookup changed")
 	}
-	q = demonwarepkg.NewWriter([]byte{29, 3, 1})
+	q = demonware.NewWriter([]byte{29, 3, 1})
 	q.String("fixture")
 	q.Blob([]byte{1, 2, 3})
 	architectureReply(t, architectureCall(t, l, w, q.Bytes()), 1, 0)
-	q = demonwarepkg.NewWriter([]byte{29, 3, 4})
+	q = demonware.NewWriter([]byte{29, 3, 4})
 	q.String("fixture")
 	q.Bool(true)
 	q.Uint64(l.Pid())
 	p = architectureReply(t, architectureCall(t, l, w, q.Bytes()), 4, 0)
-	r = demonwarepkg.NewReader(p[26:])
+	r = demonware.NewReader(p[26:])
 	pid, _ = r.Uint64()
 	data, err := r.Blob()
 	if err != nil || pid != l.Pid() || !bytes.Equal(data, []byte{1, 2, 3}) {
@@ -405,7 +406,7 @@ func TestArchitectureSharedLookupAndUserData(t *testing.T) {
 			t.Fatal("presence result changed")
 		}
 	}
-	q = demonwarepkg.NewWriter([]byte{10, 3, 21})
+	q = demonware.NewWriter([]byte{10, 3, 21})
 	q.String("fixture")
 	q.String("missing-fixture")
 	p = architectureReply(t, architectureCall(t, l, w, q.Bytes()), 21, 0)
@@ -421,7 +422,7 @@ func TestArchitectureResultCallbackRunsOnceAfterSendAttempt(t *testing.T) {
 			w := &architectureWire{fail: fail}
 			l.C = w
 			calls := 0
-			l.DeliverResult(lobbypkg.TaskResult{Reply: l.TaskReply(1, 0, nil), AfterReply: func(err error) {
+			l.DeliverResult(lobby.TaskResult{Reply: l.TaskReply(1, 0, nil), AfterReply: func(err error) {
 				calls++
 				if len(w.writes) != 1 || (err != nil) != (fail == 1) {
 					t.Fatal("callback ran before send or received another send outcome")

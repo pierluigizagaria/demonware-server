@@ -5,24 +5,25 @@
 package main
 
 import (
-	bytes "bytes"
-	binary "encoding/binary"
-	hex "encoding/hex"
-	json "encoding/json"
-	errors "errors"
-	fmt "fmt"
-	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
-	storepkg "github.com/pierluigizagaria/demonware-server/internal/store"
-	os "os"
-	filepath "path/filepath"
-	reflect "reflect"
-	testing "testing"
-	time "time"
+	"bytes"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/config"
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
+	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
 
 type architectureFrame struct {
@@ -53,7 +54,7 @@ func architectureFrames(t *testing.T, l *lobbyConn, w *architectureWire, before 
 		if len(raw) < 4 || int(binary.LittleEndian.Uint32(raw))+4 != len(raw) {
 			t.Fatal("invalid outer frame size")
 		}
-		frame, err := demonwarepkg.ParseEncryptedFrame(raw)
+		frame, err := demonware.ParseEncryptedFrame(raw)
 		if err != nil || !frame.Verify(l.Keys.S2CMAC) {
 			t.Fatal("invalid server frame or MAC")
 		}
@@ -91,18 +92,18 @@ type architectureSnapshot struct {
 
 // Deliberately serial: the baseline uses process globals. Cleanup restores all
 // replaced registries; the instance refactor must retain these observations.
-func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *storepkg.CtrSQLite) {
+func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *store.CtrSQLite) {
 	t.Helper()
 	oldSessions, oldOnline, oldUserData, oldRich := testRegistry.Sessions, testPresence.Online, testPresence.UserData, testPresence.Rich
 	oldEconomy, oldStats, oldNames, oldNews := testCTR.Economy, testCTR.Stats, testPresence.PlayerNames, testCTR.News
 	oldWaiting, oldPending, oldRooms := testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms
 	oldTx, oldIDs := testReplies.Transactions.Load(), testMatchmaker.Ids.Load()
-	testRegistry.Sessions, testPresence.Online, testPresence.UserData, testPresence.Rich = map[[8]byte]*lobbypkg.MmSession{}, map[uint64]*platformpkg.PlayerID{}, map[string][]byte{}, map[uint64]presencepkg.RichPresence{}
-	testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms = nil, nil, map[uint64]*ctrpkg.CtrRoom{}
+	testRegistry.Sessions, testPresence.Online, testPresence.UserData, testPresence.Rich = map[[8]byte]*lobby.MmSession{}, map[uint64]*platform.PlayerID{}, map[string][]byte{}, map[uint64]presence.RichPresence{}
+	testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms = nil, nil, map[uint64]*ctr.CtrRoom{}
 	testReplies.Transactions.Store(0)
 	testMatchmaker.Ids.Store(0)
 	e, db := newTestEconomy(t, false)
-	testCTR.Economy, testCTR.Stats, testPresence.PlayerNames, testCTR.News = e, db, db, configpkg.CtrNewsConfig{}
+	testCTR.Economy, testCTR.Stats, testPresence.PlayerNames, testCTR.News = e, db, db, config.CtrNewsConfig{}
 	setStartBalance(t, 10000)
 	l, _ := sharedPS4Lobby()
 	w := &architectureWire{}
@@ -119,7 +120,7 @@ func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *storepk
 	return l, w, db
 }
 
-func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *storepkg.CtrSQLite, request []byte, before, after time.Time) architectureSnapshot {
+func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *store.CtrSQLite, request []byte, before, after time.Time) architectureSnapshot {
 	t.Helper()
 	frames := architectureFrames(t, l, w, 0)
 	// The baseline has no clock seam. Only getServerTime's single result may
@@ -128,7 +129,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *stor
 	if len(request) >= 3 && bytes.Equal(request[:3], []byte{12, 3, 6}) {
 		for i := range frames {
 			p, _ := hex.DecodeString(frames[i].Payload)
-			if len(p) != 31 || p[26] != demonwarepkg.TagUint32 {
+			if len(p) != 31 || p[26] != demonware.TagUint32 {
 				t.Fatal("server time shape changed")
 			}
 			now := int64(binary.LittleEndian.Uint32(p[27:31]))
@@ -183,15 +184,15 @@ func TestArchitectureDispatcherBaseline(t *testing.T) {
 	cases["news-fetch"] = newsFetch("fixture", "en", [2]uint32{1, 1})
 	cases["news-viewed"] = newsViewed("fixture", "en", 1)
 	for _, task := range []byte{1, 2, 3, 12, 14, 19, 20, 255} {
-		w := demonwarepkg.NewWriter([]byte{138, 3, task})
+		w := demonware.NewWriter([]byte{138, 3, task})
 		w.String("fixture")
 		cases[fmt.Sprintf("context-%03d", task)] = w.Bytes()
 	}
 	for _, service := range []byte{29, 68} {
-		w := demonwarepkg.NewWriter([]byte{service, 3, 1})
+		w := demonware.NewWriter([]byte{service, 3, 1})
 		w.String("fixture")
 		if service == 68 {
-			w = demonwarepkg.NewWriter([]byte{68, 3, 3})
+			w = demonware.NewWriter([]byte{68, 3, 3})
 			w.String("fixture")
 			w.Uint64(0)
 			w.String("psn")

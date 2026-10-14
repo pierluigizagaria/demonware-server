@@ -3,8 +3,8 @@
 package presence
 
 import (
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 // connPID returns the Nextendo PID of a lobby connection's player (0 if unknown).
@@ -17,11 +17,11 @@ func (state *PresenceStore) ConnPID(conn uint64) uint64 {
 	return 0
 }
 
-func (state *PresenceStore) Snapshot(game string) map[uint64]platformpkg.PlayerID {
+func (state *PresenceStore) Snapshot(game string) map[uint64]platform.PlayerID {
 	state.OnlineMu.Lock()
-	who := make(map[uint64]platformpkg.PlayerID, len(state.Online))
+	who := make(map[uint64]platform.PlayerID, len(state.Online))
 	for n, p := range state.Online {
-		if (game == "ctr" && !ps4pkg.IsCTRTitle(p.Title)) || (game == "d3" && ps4pkg.IsCTRTitle(p.Title)) {
+		if (game == "ctr" && !ps4.IsCTRTitle(p.Title)) || (game == "d3" && ps4.IsCTRTitle(p.Title)) {
 			continue
 		}
 		who[n] = *p
@@ -31,13 +31,13 @@ func (state *PresenceStore) Snapshot(game string) map[uint64]platformpkg.PlayerI
 	return who
 }
 
-func (state *PresenceStore) RegisterOnline(conn uint64, id *platformpkg.PlayerID) {
+func (state *PresenceStore) RegisterOnline(conn uint64, id *platform.PlayerID) {
 	state.OnlineMu.Lock()
 	state.Online[conn] = id
 	state.OnlineMu.Unlock()
 }
 
-func (state *PresenceStore) ConnectionPlayer(conn uint64) *platformpkg.PlayerID {
+func (state *PresenceStore) ConnectionPlayer(conn uint64) *platform.PlayerID {
 	state.OnlineMu.Lock()
 	defer state.OnlineMu.Unlock()
 	if p := state.Online[conn]; p != nil {

@@ -4,17 +4,18 @@
 package ctr
 
 import (
-	json "encoding/json"
-	fmt "fmt"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	math "math"
-	os "os"
-	filepath "path/filepath"
-	sort "sort"
-	sync "sync"
-	time "time"
+	"encoding/json"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 type CtrStat struct {
@@ -46,11 +47,11 @@ func RingBoard(board uint32) bool { return board >= 89 && board <= 133 && board 
 
 func octaneBoard(board uint32) bool { return timeBoard(board) || RingBoard(board) }
 
-func statsEnd(r *demonwarepkg.Reader) bool {
+func statsEnd(r *demonware.Reader) bool {
 	return len(r.Remaining()) == 0 || (len(r.Remaining()) == 1 && r.Remaining()[0] == 0)
 }
 
-func ParseStatWrites(r *demonwarepkg.Reader, pid uint64, name string) ([]CtrStatWrite, error) {
+func ParseStatWrites(r *demonware.Reader, pid uint64, name string) ([]CtrStatWrite, error) {
 	out := []CtrStatWrite{}
 	for !statsEnd(r) {
 		if len(out) >= 128 {
@@ -186,8 +187,8 @@ func (s *CtrStatsStore) Read(board uint32) ([]CtrStat, error) {
 	return rows, nil
 }
 
-func StatsReply(replies *lobbypkg.ReplyCounter, task byte, rows []CtrStat, total uint32) []byte {
-	w := &demonwarepkg.Writer{}
+func StatsReply(replies *lobby.ReplyCounter, task byte, rows []CtrStat, total uint32) []byte {
+	w := &demonware.Writer{}
 	for _, r := range rows {
 		w.Uint64(r.PID)
 		w.Int64(r.Score)
@@ -202,20 +203,20 @@ func StatsReply(replies *lobbypkg.ReplyCounter, task byte, rows []CtrStat, total
 			w.Uint32(r.Driver)
 		}
 	}
-	return demonwarepkg.ListReply(replies.NextTransaction(), task, 0, uint32(len(rows)), total, w.Bytes())
+	return demonware.ListReply(replies.NextTransaction(), task, 0, uint32(len(rows)), total, w.Bytes())
 }
 
-func (h *StatsHandler) OnCTRStats(peer lobbypkg.TaskSession, task byte, r *demonwarepkg.Reader) []byte {
+func (h *StatsHandler) OnCTRStats(peer lobby.TaskSession, task byte, r *demonware.Reader) []byte {
 	pid := peer.PID()
 	p := h.Presence.ConnectionPlayer(peer.ConnID())
 	name := ""
-	allowed := p != nil && ps4pkg.IsCTRTitle(p.Title) && pid != 0
+	allowed := p != nil && ps4.IsCTRTitle(p.Title) && pid != 0
 	if allowed {
 		name = p.Username
 	}
 	fail := func(err error) []byte {
 		peer.Logf("[ctr] stats task=%d failed: %v", task, err)
-		return h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
+		return h.TaskReply(task, lobby.ErrUnhandled, nil)
 	}
 	if !allowed {
 		return fail(fmt.Errorf("CTR identity required"))

@@ -1,22 +1,23 @@
 package main
 
 import (
-	bytes "bytes"
-	base64 "encoding/base64"
-	binary "encoding/binary"
-	json "encoding/json"
-	errors "errors"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	io "io"
-	log "log"
-	net "net"
-	httptest "net/http/httptest"
-	strings "strings"
-	testing "testing"
-	time "time"
+	"bytes"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"net"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 type platformWire struct{ bytes.Buffer }
@@ -37,8 +38,8 @@ func (*platformWire) SetWriteDeadline(time.Time) error { return nil }
 
 func sharedPS4Lobby() (*lobbyConn, *platformWire) {
 	wire := &platformWire{}
-	k := demonwarepkg.DeriveKeys([]byte("synthetic transcript"), make([]byte, 24))
-	return newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 909090, C: wire, Keys: &k, Player: &platformpkg.PlayerID{PID: 17, Username: "fixture", Title: 5760, Kind: "shadnet", Sub: "shadnet:17"}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR}), wire
+	k := demonware.DeriveKeys([]byte("synthetic transcript"), make([]byte, 24))
+	return newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 909090, C: wire, Keys: &k, Player: &platform.PlayerID{PID: 17, Username: "fixture", Title: 5760, Kind: "shadnet", Sub: "shadnet:17"}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR}), wire
 }
 
 func sharedTask(t *testing.T, l *lobbyConn, w *platformWire, p []byte) []byte {
@@ -46,7 +47,7 @@ func sharedTask(t *testing.T, l *lobbyConn, w *platformWire, p []byte) []byte {
 	w.Reset()
 	l.onTask(p)
 	frames := marketplaceFrames(t, l, w)
-	if len(frames) == 0 || frames[0][0] != demonwarepkg.InnerTaskReply {
+	if len(frames) == 0 || frames[0][0] != demonware.InnerTaskReply {
 		t.Fatal("shared dispatcher did not reply")
 	}
 	return frames[0][1:]
@@ -54,7 +55,7 @@ func sharedTask(t *testing.T, l *lobbyConn, w *platformWire, p []byte) []byte {
 
 func TestSharedPS4DispatcherStartup(t *testing.T) {
 	l, w := sharedPS4Lobby()
-	report := demonwarepkg.NewWriter([]byte{38, demonwarepkg.TagUint8, 6})
+	report := demonware.NewWriter([]byte{38, demonware.TagUint8, 6})
 	report.Uint32(0)
 	report.Uint32(0)
 	report.Uint64(0)
@@ -69,10 +70,10 @@ func TestSharedPS4DispatcherStartup(t *testing.T) {
 		want    uint32
 	}{
 		{"identity report", report.Bytes(), 0},
-		{"malformed identity report", []byte{38, demonwarepkg.TagUint8, 6, 0}, 1},
-		{"existing AB handler", []byte{194, demonwarepkg.TagUint8, 1, 0}, 0},
+		{"malformed identity report", []byte{38, demonware.TagUint8, 6, 0}, 1},
+		{"existing AB handler", []byte{194, demonware.TagUint8, 1, 0}, 0},
 		{"raw bandwidth completion", []byte{18, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1},
-		{"existing matchmaking token", []byte{145, demonwarepkg.TagUint8, 3, 0}, 0},
+		{"existing matchmaking token", []byte{145, demonware.TagUint8, 3, 0}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reply := sharedTask(t, l, w, tc.payload)
@@ -86,12 +87,12 @@ func TestSharedPS4DispatcherStartup(t *testing.T) {
 func TestSharedPS4AuthUsesInjectedVerifier(t *testing.T) {
 	calls := 0
 	deny := false
-	p := ps4pkg.PsnPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platformpkg.Identity, error) {
+	p := ps4.PsnPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
 		calls++
 		if deny {
-			return platformpkg.Identity{}, errors.New("refused")
+			return platform.Identity{}, errors.New("refused")
 		}
-		return platformpkg.Identity{AccountID: 17, Subject: "17", OnlineID: "fixture"}, nil
+		return platform.Identity{AccountID: 17, Subject: "17", OnlineID: "fixture"}, nil
 	})}
 	handler := testAuthHandler(p, testCTRSigner(t), "")
 	call := func() *httptest.ResponseRecorder {
@@ -168,20 +169,20 @@ func clientFrame(t *testing.T, l *lobbyConn, seq uint32, task []byte) []byte {
 		pt = append(pt, 0)
 	}
 	iv := make([]byte, 16)
-	ct, err := demonwarepkg.EncryptCBC(l.Keys.C2SAES, iv, pt)
+	ct, err := demonware.EncryptCBC(l.Keys.C2SAES, iv, pt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := append([]byte{demonwarepkg.MsgEncrypted}, binary.LittleEndian.AppendUint32(nil, seq)...)
+	body := append([]byte{demonware.MsgEncrypted}, binary.LittleEndian.AppendUint32(nil, seq)...)
 	body = append(append(body, iv...), ct...)
 	out := binary.LittleEndian.AppendUint32(nil, uint32(1+len(body)+8))
-	out = append(append(out, demonwarepkg.FrameFlag), body...)
-	return append(out, demonwarepkg.HMACSHA1(l.Keys.C2SMAC, out)[:8]...)
+	out = append(append(out, demonware.FrameFlag), body...)
+	return append(out, demonware.HMACSHA1(l.Keys.C2SMAC, out)[:8]...)
 }
 
 func TestEncryptedFramesFollowClientSequence(t *testing.T) {
 	l, w := sharedPS4Lobby()
-	task := (demonwarepkg.NewWriter([]byte{6, demonwarepkg.TagUint8, 1})).Bytes() // any request; the reply only needs to exist
+	task := (demonware.NewWriter([]byte{6, demonware.TagUint8, 1})).Bytes() // any request; the reply only needs to exist
 	replied := func(raw []byte) bool {
 		w.Reset()
 		l.fixtureTable()
@@ -228,13 +229,13 @@ func TestEncryptedFrameRejectionPreservesSequencePolicy(t *testing.T) {
 	malformed := clientFrame(t, l, 2, task)
 	pt := make([]byte, 16)
 	binary.LittleEndian.PutUint32(pt, ^uint32(0))
-	ct, err := demonwarepkg.EncryptCBC(l.Keys.C2SAES, malformed[10:26], pt)
+	ct, err := demonware.EncryptCBC(l.Keys.C2SAES, malformed[10:26], pt)
 	if err != nil {
 		t.Fatal(err)
 	}
 	copy(malformed[26:], ct)
 	n := len(malformed) - 8
-	copy(malformed[n:], demonwarepkg.HMACSHA1(l.Keys.C2SMAC, malformed[:n])[:8])
+	copy(malformed[n:], demonware.HMACSHA1(l.Keys.C2SMAC, malformed[:n])[:8])
 	l.fixtureTable()
 	l.OnEncrypted(malformed)
 	if w.Len() != 0 || l.C2sSeq != 2 {

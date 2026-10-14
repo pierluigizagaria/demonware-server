@@ -1,17 +1,18 @@
 package main
 
 import (
-	bytes "bytes"
-	hex "encoding/hex"
-	ctrpkg "github.com/pierluigizagaria/demonware-server/internal/ctr"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	testing "testing"
-	time "time"
+	"bytes"
+	"encoding/hex"
+	"testing"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 func TestInventoryCompleteClientWireLayout(t *testing.T) {
-	w := &demonwarepkg.Writer{}
-	ctrpkg.WriteInventoryItem(w, 42, 688)
+	w := &demonware.Writer{}
+	ctr.WriteInventoryItem(w, 42, 688)
 	// Independent bdMarketplaceInventory::deserialize wire fixture. In particular,
 	// signed int64 uses 09; 14 is the MAX_INT64 sentinel with no trailing bytes.
 	want, err := hex.DecodeString("0a2a000000000000001070736e0008b00200000801000000080000000013080000000008000000000900000000000000000600000800000000")
@@ -24,44 +25,44 @@ func TestInventoryCompleteClientWireLayout(t *testing.T) {
 }
 
 func TestPitStopRefreshRetryRestartLimitAndReset(t *testing.T) {
-	s := &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
+	s := &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: t.TempDir()}
 	now := time.Date(2026, 9, 23, 3, 0, 0, 0, time.UTC)
-	e := ctrpkg.AchievementEvent{Name: "pitstop_daily_refresh", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
-	b, err := s.ReportPitStopRefresh(42, []ctrpkg.AchievementEvent{e, e}, now)
+	e := ctr.AchievementEvent{Name: "pitstop_daily_refresh", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
+	b, err := s.ReportPitStopRefresh(42, []ctr.AchievementEvent{e, e}, now)
 	if err != nil || len(b) == 0 {
 		t.Fatalf("%x %v", b, err)
 	}
-	s = &ctrpkg.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: s.Dir}
-	s.ReportPitStopRefresh(42, []ctrpkg.AchievementEvent{e}, now)
+	s = &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: s.Dir}
+	s.ReportPitStopRefresh(42, []ctr.AchievementEvent{e}, now)
 	a, _ := s.Snapshot(42)
-	if got := ctrpkg.CurrentPitStopRefresh(a, now); got.Progress != 1 || got.Status != 2 {
+	if got := ctr.CurrentPitStopRefresh(a, now); got.Progress != 1 || got.Status != 2 {
 		t.Fatalf("retry %+v", got)
 	}
 	e.Timestamp++
-	s.ReportPitStopRefresh(42, []ctrpkg.AchievementEvent{e}, now.Add(time.Second))
+	s.ReportPitStopRefresh(42, []ctr.AchievementEvent{e}, now.Add(time.Second))
 	e.Timestamp++
-	s.ReportPitStopRefresh(42, []ctrpkg.AchievementEvent{e}, now.Add(2*time.Second))
+	s.ReportPitStopRefresh(42, []ctr.AchievementEvent{e}, now.Add(2*time.Second))
 	a, _ = s.Snapshot(42)
-	if got := ctrpkg.CurrentPitStopRefresh(a, now); got.Progress != 2 || got.Status != 3 {
+	if got := ctr.CurrentPitStopRefresh(a, now); got.Progress != 2 || got.Status != 3 {
 		t.Fatalf("limit %+v", got)
 	}
 	reset := time.Date(2026, 9, 23, 15, 0, 0, 0, time.UTC)
-	if got := ctrpkg.CurrentPitStopRefresh(a, reset); got.Progress != 0 {
+	if got := ctr.CurrentPitStopRefresh(a, reset); got.Progress != 0 {
 		t.Fatalf("reset %+v", got)
 	}
-	b, err = s.ReportPitStopRefresh(42, []ctrpkg.AchievementEvent{e}, reset)
+	b, err = s.ReportPitStopRefresh(42, []ctr.AchievementEvent{e}, reset)
 	if err != nil || len(b) != 0 {
 		t.Fatalf("stale refresh accepted: %x %v", b, err)
 	}
 }
 
 func TestRefreshNotificationCanBeDecodedAndNamesRealCounter(t *testing.T) {
-	s := ctrpkg.CurrentPitStopRefresh(&ctrpkg.EconomyAccount{}, time.Now())
-	f, err := demonwarepkg.ParseFields(s.Encode())
+	s := ctr.CurrentPitStopRefresh(&ctr.EconomyAccount{}, time.Now())
+	f, err := demonware.ParseFields(s.Encode())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := map[uint64]demonwarepkg.Field{}
+	got := map[uint64]demonware.Field{}
 	for _, v := range f {
 		got[v.Number] = v
 	}
@@ -76,14 +77,14 @@ func TestRefreshNotificationCanBeDecodedAndNamesRealCounter(t *testing.T) {
 	if got[5].Value < 1 || got[5].Value > 5 {
 		t.Fatal("client rejects invalid achievement status")
 	}
-	w := demonwarepkg.NewWriter([]byte{125, 3, 3})
-	w.Struct(demonwarepkg.AppendVarintField(nil, 2, 3))
-	if ctrpkg.AchievementRequested(w.Bytes(), s) {
+	w := demonware.NewWriter([]byte{125, 3, 3})
+	w.Struct(demonware.AppendVarintField(nil, 2, 3))
+	if ctr.AchievementRequested(w.Bytes(), s) {
 		t.Fatal("refresh included in daily challenge query")
 	}
-	w = demonwarepkg.NewWriter([]byte{125, 3, 3})
-	w.Struct(demonwarepkg.AppendVarintField(nil, 2, 1))
-	if !ctrpkg.AchievementRequested(w.Bytes(), s) {
+	w = demonware.NewWriter([]byte{125, 3, 3})
+	w.Struct(demonware.AppendVarintField(nil, 2, 1))
+	if !ctr.AchievementRequested(w.Bytes(), s) {
 		t.Fatal("refresh missing from progression query")
 	}
 }

@@ -1,8 +1,9 @@
 package presence
 
 import (
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	time "time"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
 // playerNameStore remembers the names players were issued a ticket under,
@@ -10,10 +11,10 @@ import (
 // SQLite.
 type playerNameStore interface {
 	RememberName(pid uint64, name string, at time.Time) error
-	NamedPlayers(names []string) (map[string]*platformpkg.PlayerID, error)
+	NamedPlayers(names []string) (map[string]*platform.PlayerID, error)
 }
 
-func (state *PresenceStore) RememberPlayerName(id platformpkg.PlayerID, at time.Time) error {
+func (state *PresenceStore) RememberPlayerName(id platform.PlayerID, at time.Time) error {
 	if state.PlayerNames == nil || id.PID == 0 || id.Username == "" {
 		return nil
 	}

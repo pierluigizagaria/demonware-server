@@ -1,11 +1,12 @@
 package auth
 
 import (
-	bytes "bytes"
-	binary "encoding/binary"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	sync "sync"
-	time "time"
+	"bytes"
+	"encoding/binary"
+	"sync"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
 // Tickets admit only a fresh connection, and the auth handler, lobby and
@@ -14,7 +15,7 @@ import (
 // clients authenticate again.
 type issuedTicket struct {
 	ticket []byte
-	id     platformpkg.PlayerID
+	id     platform.PlayerID
 }
 
 type TicketStore struct {
@@ -39,7 +40,7 @@ func ticketIssuedAt(ticket []byte) time.Time {
 
 // rememberTicket records a ticket issued to id and forgets those that can no
 // longer be read, so the store holds at most one window of issuance.
-func (s *TicketStore) RememberTicket(ticket []byte, id platformpkg.PlayerID, now time.Time, window time.Duration) {
+func (s *TicketStore) RememberTicket(ticket []byte, id platform.PlayerID, now time.Time, window time.Duration) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	for tag, t := range s.Entries {
@@ -52,7 +53,7 @@ func (s *TicketStore) RememberTicket(ticket []byte, id platformpkg.PlayerID, now
 
 // issuedTicketPlayer admits a ticket only if this server issued exactly these
 // bytes within window and its identity matches the ticket's account.
-func (s *TicketStore) IssuedTicketPlayer(ticket []byte, now time.Time, window time.Duration) (*platformpkg.PlayerID, bool) {
+func (s *TicketStore) IssuedTicketPlayer(ticket []byte, now time.Time, window time.Duration) (*platform.PlayerID, bool) {
 	if len(ticket) != 128 || binary.LittleEndian.Uint32(ticket) != TicketMagic {
 		return nil, false
 	}
@@ -64,7 +65,7 @@ func (s *TicketStore) IssuedTicketPlayer(ticket []byte, now time.Time, window ti
 }
 
 // issuedIdentity returns the identity a ticket was issued to; it is not admission.
-func (s *TicketStore) IssuedIdentity(ticket []byte) (*platformpkg.PlayerID, bool) {
+func (s *TicketStore) IssuedIdentity(ticket []byte) (*platform.PlayerID, bool) {
 	if len(ticket) != 128 {
 		return nil, false
 	}

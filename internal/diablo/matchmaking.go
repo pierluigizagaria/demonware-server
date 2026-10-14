@@ -21,12 +21,12 @@
 package diablo
 
 import (
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
 )
 
 // readInfo reads a bdMatchMakingInfo sent by the client.
-func ReadInfo(r *demonwarepkg.Reader) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
+func ReadInfo(r *demonware.Reader) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
 	if host, err = r.Blob(); err != nil {
 		return
 	}
@@ -41,6 +41,6 @@ func ReadInfo(r *demonwarepkg.Reader) (host []byte, gameType, maxPlayers uint32,
 }
 
 // onMatchMaking handles service 21. Returns nil if the task isn't handled.
-func (handler *DiabloMatchHandler) OnMatchMaking(peer lobbypkg.TaskSession, task byte, r *demonwarepkg.Reader) []byte {
+func (handler *DiabloMatchHandler) OnMatchMaking(peer lobby.TaskSession, task byte, r *demonware.Reader) []byte {
 	return handler.OnMatchMakingContext(peer, task, r, "d3")
 }

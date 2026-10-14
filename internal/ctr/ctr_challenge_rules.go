@@ -1,15 +1,16 @@
 package ctr
 
 import (
-	sha256 "crypto/sha256"
+	"crypto/sha256"
 	_ "embed"
-	json "encoding/json"
-	fmt "fmt"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	maps "maps"
-	slices "slices"
-	strings "strings"
-	time "time"
+	"encoding/json"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 // Original Switch 1.0.15 AchievementMetadata. Dates are offsets into the
@@ -227,7 +228,7 @@ func (s *EconomyStore) AwardChallenges(pid uint64, events []AchievementEvent, no
 		if c.Progress != before {
 			a.Challenges[key] = c
 			updated, _, _ := r.Current(a, now)
-			updates = demonwarepkg.AppendBytesField(updates, 1, updated.Encode())
+			updates = demonware.AppendBytesField(updates, 1, updated.Encode())
 		} else if recordChanged {
 			a.Challenges[key] = c
 		}

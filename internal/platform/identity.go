@@ -1,7 +1,9 @@
 // Package platform defines authenticated identity at the publisher boundary.
 package platform
 
-import "time"
+import (
+	"time"
+)
 
 // Identity is produced only after a platform credential has been verified.
 type Identity struct {

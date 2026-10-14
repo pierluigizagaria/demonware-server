@@ -1,10 +1,10 @@
 package ctr
 
 import (
-	os "os"
-	filepath "path/filepath"
-	strings "strings"
-	time "time"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 )
 
 type ctrPublisherFiles struct{ dir string }

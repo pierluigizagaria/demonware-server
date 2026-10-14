@@ -1,19 +1,20 @@
 package ctr
 
 import (
-	sha256 "crypto/sha256"
-	base64 "encoding/base64"
-	hex "encoding/hex"
-	json "encoding/json"
-	errors "errors"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	slices "slices"
-	sort "sort"
-	strconv "strconv"
-	strings "strings"
-	sync "sync"
-	atomic "sync/atomic"
-	time "time"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 )
 
 // ctrPeer is the engine's connection identity and notification seam. A PID
@@ -22,7 +23,7 @@ type CtrPeer interface {
 	ConnID() uint64
 	PID() uint64
 	Logf(string, ...any)
-	SendPush(uint32, func(*demonwarepkg.Writer)) error
+	SendPush(uint32, func(*demonware.Writer)) error
 }
 
 // Event layouts verified against CTR 1.0.15's bdAsyncMatchMakingEventHandler.
@@ -158,7 +159,7 @@ type ctrNotice struct {
 	Host, Backend string
 }
 
-func (n ctrNotice) Write(w *demonwarepkg.Writer) {
+func (n ctrNotice) Write(w *demonware.Writer) {
 	for _, id := range n.Ids {
 		w.Uint64(id)
 	}

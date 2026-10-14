@@ -1,34 +1,35 @@
 package main
 
 import (
-	binary "encoding/binary"
-	demonwarepkg "github.com/pierluigizagaria/demonware-server/internal/demonware"
-	lobbypkg "github.com/pierluigizagaria/demonware-server/internal/lobby"
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
-	presencepkg "github.com/pierluigizagaria/demonware-server/internal/presence"
-	testing "testing"
+	"encoding/binary"
+	"testing"
+
+	"github.com/pierluigizagaria/demonware-server/internal/demonware"
+	"github.com/pierluigizagaria/demonware-server/internal/lobby"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
 // request builders in the documented layout
-func rpStr(s string) []byte { return append(append([]byte{demonwarepkg.TagString}, s...), 0) }
+func rpStr(s string) []byte { return append(append([]byte{demonware.TagString}, s...), 0) }
 
 func rpU64(v uint64) []byte {
-	return binary.LittleEndian.AppendUint64([]byte{demonwarepkg.TagUint64}, v)
+	return binary.LittleEndian.AppendUint64([]byte{demonware.TagUint64}, v)
 }
 
 func rpU32(v uint32) []byte {
-	return binary.LittleEndian.AppendUint32([]byte{demonwarepkg.TagUint32}, v)
+	return binary.LittleEndian.AppendUint32([]byte{demonware.TagUint32}, v)
 }
 
 func rpBlob(b []byte) []byte {
-	return append(append([]byte{demonwarepkg.TagBlob}, rpU32(uint32(len(b)))...), b...)
+	return append(append([]byte{demonware.TagBlob}, rpU32(uint32(len(b)))...), b...)
 }
 
-func rpSetRequest(ctx string, id uint64, platform string, flag byte, data []byte) []byte {
+func rpSetRequest(ctx string, id uint64, provider string, flag byte, data []byte) []byte {
 	out := rpStr(ctx)
 	out = append(out, rpU64(id)...)
-	out = append(out, rpStr(platform)...)
-	out = append(out, demonwarepkg.TagUint8, flag)
+	out = append(out, rpStr(provider)...)
+	out = append(out, demonware.TagUint8, flag)
 	return append(out, rpBlob(data)...)
 }
 
@@ -41,9 +42,9 @@ func rpGetRequest(ctx string, ids ...uint64) []byte {
 }
 
 // parse a get reply: transaction, error, task, count, [total, rows]
-func rpRows(t *testing.T, reply []byte) (rows []presencepkg.RichPresence, ids []uint64) {
+func rpRows(t *testing.T, reply []byte) (rows []presence.RichPresence, ids []uint64) {
 	t.Helper()
-	r := demonwarepkg.NewReader(reply)
+	r := demonware.NewReader(reply)
 	if _, err := r.Uint64(); err != nil {
 		t.Fatal(err)
 	}
@@ -71,58 +72,58 @@ func rpRows(t *testing.T, reply []byte) (rows []presencepkg.RichPresence, ids []
 		if e1 != nil || e2 != nil || e3 != nil || e4 != nil {
 			t.Fatalf("row %d unreadable", i)
 		}
-		rows, ids = append(rows, presencepkg.RichPresence{Platform: plat, Flag: flag, Data: data}), append(ids, id)
+		rows, ids = append(rows, presence.RichPresence{Platform: plat, Flag: flag, Data: data}), append(ids, id)
 	}
 	return rows, ids
 }
 
-func withOnline(t *testing.T, players map[uint64]*platformpkg.PlayerID) {
+func withOnline(t *testing.T, players map[uint64]*platform.PlayerID) {
 	t.Helper()
 	testPresence.OnlineMu.Lock()
 	old := testPresence.Online
 	testPresence.Online = players
 	testPresence.OnlineMu.Unlock()
 	testPresence.RichMu.Lock()
-	testPresence.Rich = map[uint64]presencepkg.RichPresence{}
+	testPresence.Rich = map[uint64]presence.RichPresence{}
 	testPresence.RichMu.Unlock()
 	t.Cleanup(func() { testPresence.OnlineMu.Lock(); testPresence.Online = old; testPresence.OnlineMu.Unlock() })
 }
 
 func TestRichPresenceSetAndGet(t *testing.T) {
-	alice := &platformpkg.PlayerID{Username: "player1", PID: 1800000101}
-	bob := &platformpkg.PlayerID{Username: "player2", PID: 1800000102}
-	withOnline(t, map[uint64]*platformpkg.PlayerID{1: alice, 2: bob})
-	la, lb := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 1, Player: alice}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR}), newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 2, Player: bob}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	alice := &platform.PlayerID{Username: "player1", PID: 1800000101}
+	bob := &platform.PlayerID{Username: "player2", PID: 1800000102}
+	withOnline(t, map[uint64]*platform.PlayerID{1: alice, 2: bob})
+	la, lb := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 1, Player: alice}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR}), newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 2, Player: bob}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 
 	// player1 sets a presence, as the game does (id 0 = me)
-	la.onRichPresence(presencepkg.RpSet, demonwarepkg.NewReader(rpSetRequest("", 0, "", 1, []byte("hello"))))
+	la.onRichPresence(presence.RpSet, demonware.NewReader(rpSetRequest("", 0, "", 1, []byte("hello"))))
 
 	// player2 asks about player1, by PID (the way Citron identifies a friend)
-	rows, ids := rpRows(t, lb.onRichPresence(presencepkg.RpGetAndSubscribe, demonwarepkg.NewReader(rpGetRequest("", alice.PID))))
+	rows, ids := rpRows(t, lb.onRichPresence(presence.RpGetAndSubscribe, demonware.NewReader(rpGetRequest("", alice.PID))))
 	if len(rows) != 1 || string(rows[0].Data) != "hello" || rows[0].Flag != 1 || ids[0] != alice.PID {
 		t.Fatalf("got %+v ids %v", rows, ids)
 	}
 	// Explicit offline states for someone with no published presence or who is offline.
-	rows, _ = rpRows(t, lb.onRichPresence(presencepkg.RpGet, demonwarepkg.NewReader(rpGetRequest("", bob.PID, 999))))
+	rows, _ = rpRows(t, lb.onRichPresence(presence.RpGet, demonware.NewReader(rpGetRequest("", bob.PID, 999))))
 	if len(rows) != 2 || rows[0].Flag != 0 || rows[1].Flag != 0 || len(rows[0].Data) != 0 || len(rows[1].Data) != 0 {
 		t.Fatalf("unexpected rows %+v", rows)
 	}
 	// id 0 means the asker
-	rows, _ = rpRows(t, la.onRichPresence(presencepkg.RpGet, demonwarepkg.NewReader(rpGetRequest("", 0))))
+	rows, _ = rpRows(t, la.onRichPresence(presence.RpGet, demonware.NewReader(rpGetRequest("", 0))))
 	if len(rows) != 1 {
 		t.Fatalf("own presence: %+v", rows)
 	}
 }
 
 func TestRichPresenceGoneWhenThePlayerLeaves(t *testing.T) {
-	alice := &platformpkg.PlayerID{Username: "player1", PID: 1800000101}
-	bob := &platformpkg.PlayerID{Username: "player2", PID: 1800000102}
-	withOnline(t, map[uint64]*platformpkg.PlayerID{1: alice, 2: bob})
-	la, lb := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 1, Player: alice}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR}), newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 2, Player: bob}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-	la.onRichPresence(presencepkg.RpSet, demonwarepkg.NewReader(rpSetRequest("", 0, "", 1, []byte("x"))))
+	alice := &platform.PlayerID{Username: "player1", PID: 1800000101}
+	bob := &platform.PlayerID{Username: "player2", PID: 1800000102}
+	withOnline(t, map[uint64]*platform.PlayerID{1: alice, 2: bob})
+	la, lb := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 1, Player: alice}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR}), newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 2, Player: bob}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	la.onRichPresence(presence.RpSet, demonware.NewReader(rpSetRequest("", 0, "", 1, []byte("x"))))
 
 	testPresence.DropOnline(1)
-	if rows, _ := rpRows(t, lb.onRichPresence(presencepkg.RpGet, demonwarepkg.NewReader(rpGetRequest("", alice.PID)))); len(rows) != 1 || rows[0].Flag != 0 || len(rows[0].Data) != 0 {
+	if rows, _ := rpRows(t, lb.onRichPresence(presence.RpGet, demonware.NewReader(rpGetRequest("", alice.PID)))); len(rows) != 1 || rows[0].Flag != 0 || len(rows[0].Data) != 0 {
 		t.Fatalf("a player who left is still shown: %+v", rows)
 	}
 	testPresence.RichMu.Lock()
@@ -136,10 +137,10 @@ func TestRichPresenceGoneWhenThePlayerLeaves(t *testing.T) {
 func TestRichPresenceFromTheRealLog(t *testing.T) {
 	// the bytes after "service 68 task 3" from a real Diablo III login
 	raw := []byte{0x10, 0x00, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x00, 0x03, 0x01, 0x13, 0x08, 0x04, 0, 0, 0, 0xde, 0xad, 0xbe, 0xef}
-	alice := &platformpkg.PlayerID{Username: "player1", PID: 1800000101}
-	withOnline(t, map[uint64]*platformpkg.PlayerID{1: alice})
-	l := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 1, Player: alice}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-	l.onRichPresence(presencepkg.RpSet, demonwarepkg.NewReader(raw))
+	alice := &platform.PlayerID{Username: "player1", PID: 1800000101}
+	withOnline(t, map[uint64]*platform.PlayerID{1: alice})
+	l := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 1, Player: alice}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	l.onRichPresence(presence.RpSet, demonware.NewReader(raw))
 	testPresence.RichMu.Lock()
 	p, ok := testPresence.Rich[alice.PID]
 	testPresence.RichMu.Unlock()
@@ -149,9 +150,9 @@ func TestRichPresenceFromTheRealLog(t *testing.T) {
 }
 
 func TestRichPresenceNeedsAPlayer(t *testing.T) {
-	withOnline(t, map[uint64]*platformpkg.PlayerID{})
-	guest := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 9}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR}) // no identity
-	guest.onRichPresence(presencepkg.RpSet, demonwarepkg.NewReader(rpSetRequest("", 0, "", 1, []byte("x"))))
+	withOnline(t, map[uint64]*platform.PlayerID{})
+	guest := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 9}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR}) // no identity
+	guest.onRichPresence(presence.RpSet, demonware.NewReader(rpSetRequest("", 0, "", 1, []byte("x"))))
 	testPresence.RichMu.Lock()
 	n := len(testPresence.Rich)
 	testPresence.RichMu.Unlock()
@@ -159,6 +160,6 @@ func TestRichPresenceNeedsAPlayer(t *testing.T) {
 		t.Errorf("a player without a PID stored a presence")
 	}
 	// a truncated request must not panic
-	guest.onRichPresence(presencepkg.RpSet, demonwarepkg.NewReader([]byte{demonwarepkg.TagString, 0, demonwarepkg.TagUint64, 1}))
-	guest.onRichPresence(presencepkg.RpGet, demonwarepkg.NewReader(rpU32(1<<30)))
+	guest.onRichPresence(presence.RpSet, demonware.NewReader([]byte{demonware.TagString, 0, demonware.TagUint64, 1}))
+	guest.onRichPresence(presence.RpGet, demonware.NewReader(rpU32(1<<30)))
 }

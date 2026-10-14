@@ -3,7 +3,7 @@
 package dashboard
 
 import (
-	platformpkg "github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
 // The monitoring consumer receives snapshots and never locks its providers.
@@ -14,7 +14,7 @@ type SessionSnapshot struct {
 }
 
 type DashboardViews struct {
-	Online   func(string) map[uint64]platformpkg.PlayerID
+	Online   func(string) map[uint64]platform.PlayerID
 	Sessions func() []SessionSnapshot
 	Rooms    func(map[uint64]string) ([]ApiGathering, map[uint64]ApiGathering)
 }

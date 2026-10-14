@@ -5,21 +5,22 @@
 package dashboard
 
 import (
-	subtle "crypto/subtle"
-	binary "encoding/binary"
-	json "encoding/json"
-	fmt "fmt"
-	configpkg "github.com/pierluigizagaria/demonware-server/internal/config"
-	diagnosticspkg "github.com/pierluigizagaria/demonware-server/internal/diagnostics"
+	"crypto/subtle"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"sort"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/pierluigizagaria/demonware-server/internal/config"
+	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	"github.com/pierluigizagaria/demonware-server/internal/httpserver"
-	ps4pkg "github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	net "net"
-	http "net/http"
-	sort "sort"
-	strconv "strconv"
-	sync "sync"
-	atomic "sync/atomic"
-	time "time"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
 type Telemetry struct {
@@ -35,7 +36,7 @@ type Telemetry struct {
 	sniHost, dashToken, bindAddr            string
 }
 
-func NewTelemetry(cfg configpkg.ServerConfig, natIntros func() int64) *Telemetry {
+func NewTelemetry(cfg config.ServerConfig, natIntros func() int64) *Telemetry {
 	return &Telemetry{dashStart: time.Now(), ConnStats: map[uint64]*ConnStat{}, taskCount: map[string]int64{}, natIntros: natIntros, authPort: cfg.AuthPort, natPort: cfg.NatPort, dashPort: cfg.DashPort, sniHost: cfg.SniHost, dashToken: cfg.DashToken, bindAddr: cfg.BindAddr}
 }
 
@@ -204,7 +205,7 @@ func (monitor *Telemetry) BuildGameStats(views DashboardViews, game string) ApiS
 	gs := make([]ApiGathering, 0, len(snaps))
 	for _, s := range snaps {
 		host, live := who[s.Owner]
-		if !live || host.PID == 0 || ps4pkg.IsCTRTitle(host.Title) {
+		if !live || host.PID == 0 || ps4.IsCTRTitle(host.Title) {
 			continue
 		}
 		state := "searching"
@@ -308,7 +309,7 @@ func (monitor *Telemetry) BuildGameStats(views DashboardViews, game string) ApiS
 	}
 }
 
-func (monitor *Telemetry) StartDashboard(views DashboardViews, diag *diagnosticspkg.Diagnostics) (*httpserver.Server, error) {
+func (monitor *Telemetry) StartDashboard(views DashboardViews, diag *diagnostics.Diagnostics) (*httpserver.Server, error) {
 	port, token := strconv.Itoa(monitor.dashPort), monitor.dashToken
 
 	authed := func(w http.ResponseWriter, r *http.Request) bool {

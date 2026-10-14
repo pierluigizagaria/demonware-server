@@ -14,9 +14,9 @@
 package ctr
 
 import (
-	json "encoding/json"
-	strconv "strconv"
-	time "time"
+	"encoding/json"
+	"strconv"
+	"time"
 )
 
 type lobbyHostDoc struct {
