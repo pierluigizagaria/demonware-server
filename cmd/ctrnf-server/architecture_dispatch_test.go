@@ -67,7 +67,7 @@ func architectureFrames(t *testing.T, l *lobbyConn, w *architectureWire, before 
 		}
 		out = append(out, architectureFrame{frame.Sequence, message.Type, hex.EncodeToString(message.Payload), w.fail != i+1})
 	}
-	if l.S2cSeq != before+uint32(len(w.writes)) {
+	if l.S2CSeq != before+uint32(len(w.writes)) {
 		t.Fatal("write failure changed sequence increment point")
 	}
 	return out
@@ -92,18 +92,18 @@ type architectureSnapshot struct {
 
 // Deliberately serial: the baseline uses process globals. Cleanup restores all
 // replaced registries; the instance refactor must retain these observations.
-func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *store.CtrSQLite) {
+func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *store.SQLite) {
 	t.Helper()
 	oldSessions, oldOnline, oldUserData, oldRich := testRegistry.Sessions, testPresence.Online, testPresence.UserData, testPresence.Rich
 	oldEconomy, oldStats, oldNames, oldNews := testCTR.Economy, testCTR.Stats, testPresence.PlayerNames, testCTR.News
 	oldWaiting, oldPending, oldRooms := testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms
-	oldTx, oldIDs := testReplies.Transactions.Load(), testMatchmaker.Ids.Load()
-	testRegistry.Sessions, testPresence.Online, testPresence.UserData, testPresence.Rich = map[[8]byte]*lobby.MmSession{}, map[uint64]*platform.PlayerID{}, map[string][]byte{}, map[uint64]presence.RichPresence{}
-	testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms = nil, nil, map[uint64]*ctr.CtrRoom{}
+	oldTx, oldIDs := testReplies.Transactions.Load(), testMatchmaker.IDs.Load()
+	testRegistry.Sessions, testPresence.Online, testPresence.UserData, testPresence.Rich = map[[8]byte]*lobby.MatchSession{}, map[uint64]*platform.PlayerID{}, map[string][]byte{}, map[uint64]presence.RichPresence{}
+	testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms = nil, nil, map[uint64]*ctr.Room{}
 	testReplies.Transactions.Store(0)
-	testMatchmaker.Ids.Store(0)
+	testMatchmaker.IDs.Store(0)
 	e, db := newTestEconomy(t, false)
-	testCTR.Economy, testCTR.Stats, testPresence.PlayerNames, testCTR.News = e, db, db, config.CtrNewsConfig{}
+	testCTR.Economy, testCTR.Stats, testPresence.PlayerNames, testCTR.News = e, db, db, config.News{}
 	setStartBalance(t, 10000)
 	l, _ := sharedPS4Lobby()
 	w := &architectureWire{}
@@ -115,12 +115,12 @@ func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *store.C
 		testCTR.Economy, testCTR.Stats, testPresence.PlayerNames, testCTR.News = oldEconomy, oldStats, oldNames, oldNews
 		testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms = oldWaiting, oldPending, oldRooms
 		testReplies.Transactions.Store(oldTx)
-		testMatchmaker.Ids.Store(oldIDs)
+		testMatchmaker.IDs.Store(oldIDs)
 	})
 	return l, w, db
 }
 
-func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *store.CtrSQLite, request []byte, before, after time.Time) architectureSnapshot {
+func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *store.SQLite, request []byte, before, after time.Time) architectureSnapshot {
 	t.Helper()
 	frames := architectureFrames(t, l, w, 0)
 	// The baseline has no clock seam. Only getServerTime's single result may
@@ -151,7 +151,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *stor
 			var id [8]byte
 			copy(id[:], p[32:40])
 			s := testRegistry.Sessions[id]
-			if s == nil || !s.Reserved || s.Owner != l.N || s.OwnerPID != l.Pid() || s.Updated.Before(before) || s.Updated.After(after) {
+			if s == nil || !s.Reserved || s.Owner != l.N || s.OwnerPID != l.PID() || s.Updated.Before(before) || s.Updated.After(after) {
 				t.Fatal("reservation state does not match reply")
 			}
 			clear(p[32:40])

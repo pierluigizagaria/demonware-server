@@ -10,13 +10,13 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
-const GuestTrustID = "ctrnf:anonymous-guests:v1"
+const TrustID = "ctrnf:anonymous-guests:v1"
 
-type GuestPlatform struct {
+type Platform struct {
 	Random io.Reader
 }
 
-func (p GuestPlatform) Authenticate(body []byte) (platform.PlayerID, error) {
+func (p Platform) Authenticate(body []byte) (platform.PlayerID, error) {
 	if _, ok := ps4.ReadPSNEnvelope(body); !ok || p.Random == nil {
 		return platform.PlayerID{}, fmt.Errorf("invalid guest admission")
 	}
@@ -33,12 +33,12 @@ func (p GuestPlatform) Authenticate(body []byte) (platform.PlayerID, error) {
 		}
 		return platform.PlayerID{
 			PID: pid, Username: "G-" + strconv.FormatUint(pid, 36),
-			Sub: "guest:" + strconv.FormatUint(pid, 10), Kind: "guest", Title: ps4.CtrTitle,
+			Sub: "guest:" + strconv.FormatUint(pid, 10), Kind: "guest", Title: ps4.CTRTitle,
 		}, nil
 	}
 	return platform.PlayerID{}, fmt.Errorf("guest identity generation failed")
 }
 
-func (GuestPlatform) AuthData(id platform.PlayerID) map[string]string {
+func (Platform) AuthData(id platform.PlayerID) map[string]string {
 	return map[string]string{"extended_data": fmt.Sprintf("nextendo:guest:%d", id.PID)}
 }

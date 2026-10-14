@@ -84,7 +84,7 @@ func TestPlatformMarketplaceBalances(t *testing.T) {
 
 // The Switch context is refused on every Pit Stop task.
 func TestPlatformMarketplaceRejectsWrongContexts(t *testing.T) {
-	for _, task := range []byte{ctr.TaskGetBalancesV3, ctr.TaskGetInventoryPaginated, ctr.TaskPurchaseSkus} {
+	for _, task := range []byte{ctr.TaskGetBalancesV3, ctr.TaskGetInventoryPaginated, ctr.TaskPurchaseSKUs} {
 		s := marketplaceTestStore(t)
 		l, wire := sharedPS4Lobby()
 		w := demonware.NewWriter([]byte{ctr.SvcMarketplace, demonware.TagUint8, task})
@@ -96,7 +96,7 @@ func TestPlatformMarketplaceRejectsWrongContexts(t *testing.T) {
 			w.String("octane_switch")
 			w.Uint32(1)
 			w.Uint32(16)
-		case ctr.TaskPurchaseSkus:
+		case ctr.TaskPurchaseSKUs:
 			w = demonware.NewWriter(marketplaceHex(t, realPurchase))
 		}
 		marketplaceOutcome(t, sharedTask(t, l, wire, w.Bytes()), lobby.ErrUnhandled)
@@ -112,7 +112,7 @@ func TestPS4MarketplaceRejectsUnsupportedTasksWithoutWrite(t *testing.T) {
 	payload := marketplaceHex(t, ps4PurchaseRequest)
 	check := func() {
 		for task := 0; task <= 255; task++ {
-			if task == ctr.TaskGetBalancesV3 || task == ctr.TaskGetInventoryPaginated || task == ctr.TaskPurchaseSkus {
+			if task == ctr.TaskGetBalancesV3 || task == ctr.TaskGetInventoryPaginated || task == ctr.TaskPurchaseSKUs {
 				continue
 			}
 			payload[2] = byte(task)
@@ -124,15 +124,15 @@ func TestPS4MarketplaceRejectsUnsupportedTasksWithoutWrite(t *testing.T) {
 	}
 	check()
 	marketplaceNoFiles(t, s)
-	if _, err := s.Purchase(l.Pid(), []uint32{200085}); err != nil {
+	if _, err := s.Purchase(l.PID(), []uint32{200085}); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.ReadFile(s.AccountPath(l.Pid()))
+	before, err := os.ReadFile(s.AccountPath(l.PID()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	check()
-	after, err := os.ReadFile(s.AccountPath(l.Pid()))
+	after, err := os.ReadFile(s.AccountPath(l.PID()))
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("unsupported task changed an existing ledger")
 	}
@@ -210,7 +210,7 @@ func marketplaceFrames(t *testing.T, l *lobbyConn, wire *platformWire) [][]byte 
 		frames = append(frames, append([]byte{message.Type}, message.Payload...))
 		raw = raw[size:]
 	}
-	if len(frames) != 0 && previous != l.S2cSeq {
+	if len(frames) != 0 && previous != l.S2CSeq {
 		t.Fatal("last server sequence not recorded")
 	}
 	return frames
@@ -236,7 +236,7 @@ func TestPlatformMarketplacePurchaseInventoryAndBalancePush(t *testing.T) {
 			marketplaceOutcome(t, frames[0][1:], 0)
 			wantBalance := int64(10000) - ctr.EconomyCatalogSnapshot()[200597].Price
 			// Check the entire push, including nested owner identity and demonware.ZigZag amount.
-			owner := demonware.AppendVarintField(nil, 1, l.Pid())
+			owner := demonware.AppendVarintField(nil, 1, l.PID())
 			owner = demonware.AppendBytesField(owner, 2, []byte(tc.owner))
 			entry := demonware.AppendBytesField(nil, 1, owner)
 			entry = demonware.AppendVarintField(entry, 2, 10)
@@ -250,7 +250,7 @@ func TestPlatformMarketplacePurchaseInventoryAndBalancePush(t *testing.T) {
 				t.Fatal("wrong balance push owner or amount")
 			}
 			// Reload through a fresh store to prove the shared purchase was persisted.
-			a, err := (&ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: s.Dir}).Snapshot(l.Pid())
+			a, err := (&ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: s.Dir}).Snapshot(l.PID())
 			if err != nil || a.Balances[10] != wantBalance || !ctr.OwnsSKU(a, ctr.EconomyCatalogSnapshot()[200597]) {
 				t.Fatal("purchase debit/grant not persisted")
 			}
@@ -268,7 +268,7 @@ func TestPlatformMarketplacePurchaseInventoryAndBalancePush(t *testing.T) {
 			pid, e4 := r.Uint64()
 			kind, e5 := r.String()
 			item, e6 := r.Uint32()
-			if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil || e6 != nil || task != ctr.TaskGetInventoryPaginated || count != 1 || total != 1 || pid != l.Pid() || kind != tc.owner || len(kind) > 10 || item != ctr.EconomyCatalogSnapshot()[200597].Items[0] {
+			if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil || e6 != nil || task != ctr.TaskGetInventoryPaginated || count != 1 || total != 1 || pid != l.PID() || kind != tc.owner || len(kind) > 10 || item != ctr.EconomyCatalogSnapshot()[200597].Items[0] {
 				t.Fatal("wrong inventory wire identity or catalog item")
 			}
 		})

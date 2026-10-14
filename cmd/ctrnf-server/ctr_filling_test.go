@@ -11,29 +11,29 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
-func fillTestRoom(t *testing.T, m *ctr.CtrMatchmaker, base uint64, count int) *ctr.CtrRoom {
+func fillTestRoom(t *testing.T, m *ctr.Matchmaker, base uint64, count int) *ctr.Room {
 	t.Helper()
 	a := testCTRSearchFor(m, t, base, 0)
 	m.Enqueue(a)
 	out := m.Enqueue(testCTRSearchFor(m, t, base+1, 0))
-	r := m.Rooms[out[0].Ids[1]]
+	r := m.Rooms[out[0].IDs[1]]
 	for i := 2; i < count; i++ {
 		m.Enqueue(testCTRSearchFor(m, t, base+uint64(i), 0))
 	}
 	states := map[string]int{}
 	for _, p := range r.Players {
-		states[strconv.FormatUint(p.Pid, 10)] = 2
+		states[strconv.FormatUint(p.PID, 10)] = 2
 	}
 	r.HostDoc["player_state"] = states
 	raw, _ := json.Marshal(r.HostDoc)
-	if ok, _ := m.SyncDoc(a.Conn, r.Id, r.Version, string(raw)); !ok {
+	if ok, _ := m.SyncDoc(a.Conn, r.ID, r.Version, string(raw)); !ok {
 		t.Fatal("sync failed")
 	}
 	return r
 }
 
 func TestCTRFailedReservationsAllowFivePlusThree(t *testing.T) {
-	m := ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	r := fillTestRoom(t, &m, 1000, 8)
 	states := map[string]int{}
 	for i := 0; i < 8; i++ {
@@ -45,7 +45,7 @@ func TestCTRFailedReservationsAllowFivePlusThree(t *testing.T) {
 	}
 	r.HostDoc["player_state"] = states
 	raw, _ := json.Marshal(r.HostDoc)
-	if ok, _ := m.SyncDoc(r.Host.Conn, r.Id, r.Version, string(raw)); !ok {
+	if ok, _ := m.SyncDoc(r.Host.Conn, r.ID, r.Version, string(raw)); !ok {
 		t.Fatal("sync rejected")
 	}
 	if r.Occupancy() != 5 {
@@ -55,7 +55,7 @@ func TestCTRFailedReservationsAllowFivePlusThree(t *testing.T) {
 	party.Doc.Members = []uint64{2000, 2001, 2002}
 	party.Seats = 3
 	out := m.Enqueue(party)
-	if len(out) != 1 || out[0].Event != ctr.CtrUpdateLobby || out[0].Ids[0] != r.Id || len(m.Rooms) != 1 {
+	if len(out) != 1 || out[0].Event != ctr.EventUpdateLobby || out[0].IDs[0] != r.ID || len(m.Rooms) != 1 {
 		t.Fatal("party did not backfill five-player room")
 	}
 	h, b := r.Documents()
@@ -66,28 +66,28 @@ func TestCTRFailedReservationsAllowFivePlusThree(t *testing.T) {
 	if len(backend.Players) != 8 || backend.Players["1005"] != "" || backend.Players["2002"] != "expected" {
 		t.Fatal("incorrect expected membership")
 	}
-	ok, notices := m.SyncDoc(r.Host.Conn, r.Id, r.Version, h)
-	if !ok || len(notices) != 1 || notices[0].Conn != party.Conn || notices[0].Event != ctr.CtrJoinLobby {
+	ok, notices := m.SyncDoc(r.Host.Conn, r.ID, r.Version, h)
+	if !ok || len(notices) != 1 || notices[0].Conn != party.Conn || notices[0].Event != ctr.EventJoinLobby {
 		t.Fatal("party not released after host sync")
 	}
-	if ok, notices := m.SyncDoc(r.Host.Conn, r.Id, r.Version, h); !ok || len(notices) != 0 {
+	if ok, notices := m.SyncDoc(r.Host.Conn, r.ID, r.Version, h); !ok || len(notices) != 0 {
 		t.Fatal("sync generated repeated notifications")
 	}
 }
 
 func TestCTRFullestOpenRoomWins(t *testing.T) {
-	m := ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	fuller := fillTestRoom(t, &m, 3000, 5)
 	fuller.HostDoc["lobby_open"] = false
 	smaller := fillTestRoom(t, &m, 4000, 2)
 	fuller.HostDoc["lobby_open"] = true
 	out := m.Enqueue(testCTRSearchFor(&m, t, 5000, 0))
-	if len(out) != 1 || out[0].Ids[0] != fuller.Id {
+	if len(out) != 1 || out[0].IDs[0] != fuller.ID {
 		t.Fatal("did not fill fullest room")
 	}
 	fuller.HostDoc["lobby_open"] = false
 	out = m.Enqueue(testCTRSearchFor(&m, t, 5001, 0))
-	if len(out) != 1 || out[0].Ids[0] != smaller.Id {
+	if len(out) != 1 || out[0].IDs[0] != smaller.ID {
 		t.Fatal("selected closed room")
 	}
 }
@@ -96,18 +96,18 @@ func TestCTRRejectDuplicatePartyMembers(t *testing.T) {
 	s := testCTRSearch(t, 6000, 0)
 	s.Doc.Members = []uint64{6000, 6000}
 	raw, _ := json.Marshal(s.Doc)
-	if _, err := testMatchmaker.ParseCTRSearch(s.Conn, string(raw), s.Conn.(*lobbyConn).lobbyDoc); err == nil {
+	if _, err := testMatchmaker.ParseSearch(s.Conn, string(raw), s.Conn.(*lobbyConn).lobbyDoc); err == nil {
 		t.Fatal("duplicate members accepted")
 	}
 	s.Doc.Members = []uint64{6000, 0}
 	raw, _ = json.Marshal(s.Doc)
-	if _, err := testMatchmaker.ParseCTRSearch(s.Conn, string(raw), s.Conn.(*lobbyConn).lobbyDoc); err == nil {
+	if _, err := testMatchmaker.ParseSearch(s.Conn, string(raw), s.Conn.(*lobbyConn).lobbyDoc); err == nil {
 		t.Fatal("zero member accepted")
 	}
 }
 
 func TestCTRWaitingSearchBackfilledWhenHostOpens(t *testing.T) {
-	m := ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	r := fillTestRoom(t, &m, 7000, 5)
 	r.HostDoc["lobby_open"] = false
 	guest := testCTRSearchFor(&m, t, 8000, 0)
@@ -116,18 +116,18 @@ func TestCTRWaitingSearchBackfilledWhenHostOpens(t *testing.T) {
 	}
 	r.HostDoc["lobby_open"] = true
 	h, _ := r.Documents()
-	ok, out := m.SyncDoc(r.Host.Conn, r.Id, r.Version, h)
-	if !ok || len(out) != 1 || out[0].Event != ctr.CtrUpdateLobby || len(m.Waiting) != 0 {
+	ok, out := m.SyncDoc(r.Host.Conn, r.ID, r.Version, h)
+	if !ok || len(out) != 1 || out[0].Event != ctr.EventUpdateLobby || len(m.Waiting) != 0 {
 		t.Fatal("opening room did not pick up existing waiter")
 	}
 	h, _ = r.Documents()
-	ok, out = m.SyncDoc(r.Host.Conn, r.Id, r.Version, h)
-	if !ok || len(out) != 1 || out[0].Event != ctr.CtrJoinLobby || out[0].Conn != guest.Conn {
+	ok, out = m.SyncDoc(r.Host.Conn, r.ID, r.Version, h)
+	if !ok || len(out) != 1 || out[0].Event != ctr.EventJoinLobby || out[0].Conn != guest.Conn {
 		t.Fatal("waiter not released after host acknowledged membership")
 	}
 }
 
-func partySearchFor(m *ctr.CtrMatchmaker, t *testing.T, leader uint64, members ...uint64) *ctr.CtrSearch {
+func partySearchFor(m *ctr.Matchmaker, t *testing.T, leader uint64, members ...uint64) *ctr.Search {
 	t.Helper()
 	s := testCTRSearchFor(m, t, leader, 0)
 	s.Doc.Members = append([]uint64{leader}, members...)
@@ -136,9 +136,9 @@ func partySearchFor(m *ctr.CtrMatchmaker, t *testing.T, leader uint64, members .
 }
 
 // seatsHeld counts, per player, the seats held across waiting searches and rooms.
-func seatsHeld(m *ctr.CtrMatchmaker) map[uint64]int {
+func seatsHeld(m *ctr.Matchmaker) map[uint64]int {
 	seats := map[uint64]int{}
-	count := func(p *ctr.CtrSearch) {
+	count := func(p *ctr.Search) {
 		for _, pid := range p.Doc.Members {
 			seats[pid]++
 		}
@@ -157,7 +157,7 @@ func seatsHeld(m *ctr.CtrMatchmaker) map[uint64]int {
 // A party member who searches alone leaves the party: two people never hold
 // three seats, whether the party is still waiting or already seated.
 func TestCTRPartyMemberSearchingAloneHoldsOneSeat(t *testing.T) {
-	m := &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := &ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	party := partySearchFor(m, t, 7000, 7001)
 	party.Doc.Slots.Min = 8 // keeps waiting
 	m.Enqueue(party)
@@ -166,7 +166,7 @@ func TestCTRPartyMemberSearchingAloneHoldsOneSeat(t *testing.T) {
 		t.Fatalf("seats %v after a waiting party member searched alone", seats)
 	}
 
-	m = &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m = &ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	r := fillTestRoom(t, m, 7100, 2)
 	m.Enqueue(partySearchFor(m, t, 7110, 7111))
 	if r.Occupancy() != 4 {
@@ -182,19 +182,19 @@ func TestCTRPartyMemberSearchingAloneHoldsOneSeat(t *testing.T) {
 // Party members are only the leader's claim: a claim can never take a seat
 // another player holds, whether that player waits or hosts a room.
 func TestCTRPartyClaimCannotEvictAnotherPlayer(t *testing.T) {
-	m := &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := &ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	m.Enqueue(testCTRSearchFor(m, t, 7201, 1))
 	if err := m.Reserve(partySearchFor(m, t, 7200, 7201)); err == nil {
 		t.Fatal("claim on a waiting player accepted")
 	}
-	if seats := seatsHeld(m); seats[7201] != 1 || len(m.Waiting) != 1 || m.Waiting[0].Pid != 7201 || len(m.Pending) != 0 {
+	if seats := seatsHeld(m); seats[7201] != 1 || len(m.Waiting) != 1 || m.Waiting[0].PID != 7201 || len(m.Pending) != 0 {
 		t.Fatalf("waiting player's search changed: %v", seats)
 	}
 	r := fillTestRoom(t, m, 7300, 2)
-	if err := m.Reserve(partySearchFor(m, t, 7310, r.Host.Pid)); err == nil {
+	if err := m.Reserve(partySearchFor(m, t, 7310, r.Host.PID)); err == nil {
 		t.Fatal("claim on a room host accepted")
 	}
-	if m.Rooms[r.Id] != r || r.Occupancy() != 2 {
+	if m.Rooms[r.ID] != r || r.Occupancy() != 2 {
 		t.Fatal("claimed host's room changed")
 	}
 }
@@ -202,7 +202,7 @@ func TestCTRPartyClaimCannotEvictAnotherPlayer(t *testing.T) {
 // The conflict check and the reservation are one step, so two parties are
 // never both told they claimed the same free player.
 func TestCTRConcurrentPartyClaimsReserveAtomically(t *testing.T) {
-	m := &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := &ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	first, second := partySearchFor(m, t, 7400, 7402), partySearchFor(m, t, 7401, 7402)
 	first.Doc.Slots.Min, second.Doc.Slots.Min = 8, 8
 	if err := m.Reserve(first); err != nil {
@@ -226,7 +226,7 @@ func TestCTRConcurrentPartyClaimsReserveAtomically(t *testing.T) {
 // and a failed reply still releases the reduced reservation.
 func TestCTRReservedPartyShrinksBeforeActivation(t *testing.T) {
 	for _, replySent := range []bool{true, false} {
-		m := &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+		m := &ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 		leader := partySearchFor(m, t, 7450, 7451)
 		leader.Doc.Slots.Min = 8
 		if err := m.Reserve(leader); err != nil {
@@ -235,7 +235,7 @@ func TestCTRReservedPartyShrinksBeforeActivation(t *testing.T) {
 		m.Enqueue(testCTRSearchFor(m, t, 7451, 1))
 		if replySent {
 			m.Activate(leader)
-			if len(m.Waiting) != 2 || len(m.Pending) != 0 || !slices.ContainsFunc(m.Waiting, func(p *ctr.CtrSearch) bool { return p.Id == leader.Id && p.Seats == 1 }) {
+			if len(m.Waiting) != 2 || len(m.Pending) != 0 || !slices.ContainsFunc(m.Waiting, func(p *ctr.Search) bool { return p.ID == leader.ID && p.Seats == 1 }) {
 				t.Fatal("acknowledged leader search dropped or kept the departed follower")
 			}
 		} else {
@@ -249,16 +249,16 @@ func TestCTRReservedPartyShrinksBeforeActivation(t *testing.T) {
 
 // A connected follower who disbands its lobby gives its seat back.
 func TestCTRFollowerDisbandReleasesSeat(t *testing.T) {
-	m := &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := &ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	r := fillTestRoom(t, m, 7800, 2)
 	m.Enqueue(partySearchFor(m, t, 7810, 7811))
-	follower := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 7811, Player: &platform.PlayerID{PID: 7811}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	follower := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 7811, Player: &platform.PlayerID{PID: 7811}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	testPresence.OnlineMu.Lock()
 	testPresence.Online[follower.N] = follower.Player
 	testPresence.OnlineMu.Unlock()
 	defer testPresence.DropOnline(follower.N)
 	version := r.Version
-	out := m.Leave(follower, r.Id)
+	out := m.Leave(follower, r.ID)
 	if seats := seatsHeld(m); seats[7811] != 0 || r.Version != version+1 || len(out) != 1 || out[0].Conn != r.Host.Conn {
 		t.Fatalf("seats %v after a connected follower disbanded", seats)
 	}
@@ -266,7 +266,7 @@ func TestCTRFollowerDisbandReleasesSeat(t *testing.T) {
 
 // A leader who searches again with the same party replaces its own search.
 func TestCTRPartyRetryReplacesOwnSearch(t *testing.T) {
-	m := &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := &ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	for range 2 {
 		s := partySearchFor(m, t, 7500, 7501)
 		s.Doc.Slots.Min = 8
@@ -283,11 +283,11 @@ func TestCTRPartyRetryReplacesOwnSearch(t *testing.T) {
 // A late disconnect of an account's old connection leaves the seats its
 // newer connection holds.
 func TestCTRStaleDisconnectKeepsReplacementSeats(t *testing.T) {
-	m := &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := &ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	party := partySearchFor(m, t, 7600, 7601)
 	party.Doc.Slots.Min = 8
 	m.Enqueue(party)
-	old := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 7699, Player: &platform.PlayerID{PID: 7601}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	old := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 7699, Player: &platform.PlayerID{PID: 7601}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	testPresence.OnlineMu.Lock()
 	testPresence.Online[7698] = &platform.PlayerID{PID: 7601} // the replacement connection
 	testPresence.OnlineMu.Unlock()
@@ -301,13 +301,13 @@ func TestCTRStaleDisconnectKeepsReplacementSeats(t *testing.T) {
 // Disbanding an old lobby ends no search: a player who already searches again
 // keeps that search.
 func TestCTROldLobbyDisbandKeepsNewSearch(t *testing.T) {
-	m := &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := &ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	r := fillTestRoom(t, m, 7700, 3)
 	player := r.Players[2]
-	again := testCTRSearchFor(m, t, player.Pid, 1)
+	again := testCTRSearchFor(m, t, player.PID, 1)
 	again.Conn = player.Conn
 	m.Enqueue(again)
-	m.Leave(player.Conn, r.Id)
+	m.Leave(player.Conn, r.ID)
 	if len(m.Waiting) != 1 || m.Waiting[0] != again {
 		t.Fatal("old lobby disband cancelled the new search")
 	}

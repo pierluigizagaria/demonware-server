@@ -32,7 +32,7 @@ func psnAuthRequest(t *testing.T, token string) map[string]string {
 
 func TestPSNPlatformUsesVerifiedIdentityAndOriginalEnvelope(t *testing.T) {
 	calls := 0
-	p := ps4.PsnPlatform{Verifier: platformVerifierFunc(func(token string, now time.Time) (platform.Identity, error) {
+	p := ps4.PSNPlatform{Verifier: platformVerifierFunc(func(token string, now time.Time) (platform.Identity, error) {
 		calls++
 		if token != "synthetic-fixture" || now.IsZero() {
 			t.Fatal("credential envelope or admission clock lost")
@@ -51,7 +51,7 @@ func TestPSNPlatformUsesVerifiedIdentityAndOriginalEnvelope(t *testing.T) {
 }
 
 func TestPSNPlatformRejectsInvalidEnvelopesBeforeVerification(t *testing.T) {
-	p := ps4.PsnPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
+	p := ps4.PSNPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
 		t.Fatal("invalid envelope reached the verifier")
 		return platform.Identity{}, nil
 	})}
@@ -82,13 +82,13 @@ func TestPSNPlatformRejectsInvalidEnvelopesBeforeVerification(t *testing.T) {
 
 func TestPlatformAdmissionFailsClosed(t *testing.T) {
 	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
-	p := ps4.PsnPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
+	p := ps4.PSNPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
 		return platform.Identity{}, errors.New("refused")
 	})}
 	if id, err := p.Authenticate(body); err == nil || id.PID != 0 || id.Kind != "" {
 		t.Fatal("failed verification returned an identity")
 	}
-	if _, err := (ps4.PsnPlatform{}).Authenticate(body); err == nil {
+	if _, err := (ps4.PSNPlatform{}).Authenticate(body); err == nil {
 		t.Fatal("missing verifier admitted a player")
 	}
 }

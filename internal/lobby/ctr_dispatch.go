@@ -17,8 +17,8 @@ type ContextHandler struct {
 	*ReplyCounter
 	ReadInfo func(*demonware.Reader) ([]byte, uint32, uint32, []byte, error)
 	Registry *SessionRegistry
-	Presence *presence.PresenceStore
-	Relay    *relay.RelayTable
+	Presence *presence.Store
+	Relay    *relay.Table
 }
 
 func DefaultTask(replies taskReplies, peer TaskSession, request TaskRequest) TaskResult {

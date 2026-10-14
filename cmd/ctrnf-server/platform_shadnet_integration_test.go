@@ -63,7 +63,7 @@ func TestShadNetPublisherInterop(t *testing.T) {
 	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0600); err != nil {
 		t.Fatal(err)
 	}
-	signer, err := auth.LoadCTRAuthSigner(keyPath)
+	signer, err := auth.LoadCTRSigner(keyPath)
 	if err != nil {
 		t.Fatal(err)
 	}

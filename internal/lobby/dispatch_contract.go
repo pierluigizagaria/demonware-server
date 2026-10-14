@@ -30,11 +30,9 @@ type TaskHandler interface {
 	Handle(TaskSession, TaskRequest) TaskResult
 }
 
-func (l *LobbySession) ConnID() uint64 { return l.N }
+func (l *Session) ConnID() uint64 { return l.N }
 
-func (l *LobbySession) PID() uint64 { return l.Pid() }
-
-func (l *LobbySession) Identity() *platform.PlayerID {
+func (l *Session) Identity() *platform.PlayerID {
 	if l.Player == nil {
 		return nil
 	}
@@ -42,22 +40,22 @@ func (l *LobbySession) Identity() *platform.PlayerID {
 	return &identity
 }
 
-func (l *LobbySession) Title() uint32 {
+func (l *Session) Title() uint32 {
 	if l.Player == nil {
 		return 0
 	}
 	return l.Player.Title
 }
 
-func (l *LobbySession) Logf(format string, args ...any) { l.logf(format, args...) }
+func (l *Session) Logf(format string, args ...any) { l.logf(format, args...) }
 
-func (l *LobbySession) SendPush(event uint32, write func(*demonware.Writer)) error {
+func (l *Session) SendPush(event uint32, write func(*demonware.Writer)) error {
 	return l.sendPush(event, write)
 }
 
-func (l *LobbySession) Now() time.Time { return l.now() }
+func (l *Session) Now() time.Time { return l.now() }
 
-func (l *LobbySession) Random(p []byte) (int, error) { return l.random(p) }
+func (l *Session) Random(p []byte) (int, error) { return l.random(p) }
 
 // One immutable table is wired for the instance; routing never selects a game
 // table from an untrusted request or from the current session's title.

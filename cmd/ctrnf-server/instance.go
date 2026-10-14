@@ -21,22 +21,22 @@ import (
 // serverInstance composes owners; request handlers receive their individual
 // dependencies, never this orchestration object.
 type serverInstance struct {
-	cfg         config.ServerConfig
-	database    *store.CtrSQLite
+	cfg         config.Config
+	database    *store.SQLite
 	diagnostics *diagnostics.Diagnostics
 
 	tickets    *auth.TicketStore
-	presence   *presence.PresenceStore
-	ctr        *ctr.CtrServices
-	matchmaker *ctr.CtrMatchmaker
+	presence   *presence.Store
+	ctr        *ctr.Services
+	matchmaker *ctr.Matchmaker
 	registry   *lobby.SessionRegistry
-	relay      *relay.RelayTable
-	nat        *nat.NatServer
+	relay      *relay.Table
+	nat        *nat.Server
 	monitor    *dashboard.Telemetry
-	lobby      *lobby.LobbyServer
+	lobby      *lobby.Server
 }
 
-func newInstance(cfg config.ServerConfig, database *store.CtrSQLite) *serverInstance {
+func newInstance(cfg config.Config, database *store.SQLite) *serverInstance {
 	// Freeze the reference-valued parts as well as the scalar configuration.
 	cfg.Shadnet.Scopes = slices.Clone(cfg.Shadnet.Scopes)
 	cfg.News.Languages = maps.Clone(cfg.News.Languages)
@@ -49,17 +49,17 @@ func newInstance(cfg config.ServerConfig, database *store.CtrSQLite) *serverInst
 	i := &serverInstance{cfg: cfg, database: database, diagnostics: diag}
 
 	i.tickets = auth.NewTicketStore()
-	i.presence = presence.NewPresenceStore(database)
+	i.presence = presence.NewStore(database)
 	database.InitialBalance = func() int64 { return cfg.StartBalance }
-	i.ctr = &ctr.CtrServices{Economy: &ctr.EconomyStore{Dir: cfg.DataDir, UnlockAll: cfg.UnlockAll, Backend: database, InitialBalance: database.InitialBalance}, Stats: database, News: cfg.News}
-	i.matchmaker = &ctr.CtrMatchmaker{OnlinePIDs: i.presence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	i.ctr = &ctr.Services{Economy: &ctr.EconomyStore{Dir: cfg.DataDir, UnlockAll: cfg.UnlockAll, Backend: database, InitialBalance: database.InitialBalance}, Stats: database, News: cfg.News}
+	i.matchmaker = &ctr.Matchmaker{OnlinePIDs: i.presence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	i.registry = lobby.NewSessionRegistry()
-	i.relay = relay.NewRelayTable(diag, cfg.BindAddr, cfg.RelayPIDs)
+	i.relay = relay.NewTable(diag, cfg.BindAddr, cfg.RelayPIDs)
 	ids := &atomic.Uint64{}
-	i.nat = &nat.NatServer{Diagnostics: diag, BindAddr: cfg.BindAddr, NextendoHost: cfg.PublicIP, ConnNum: ids, NatSeen: map[string]int{}}
-	i.monitor = dashboard.NewTelemetry(cfg, i.nat.NatIntros.Load)
+	i.nat = &nat.Server{Diagnostics: diag, BindAddr: cfg.BindAddr, NextendoHost: cfg.PublicIP, ConnNum: ids, NATSeen: map[string]int{}}
+	i.monitor = dashboard.NewTelemetry(cfg, i.nat.NATIntros.Load)
 	replies := &lobby.ReplyCounter{}
-	table, _ := ctr.NewCTRServiceTable(replies, i.ctr, i.presence, i.registry, i.matchmaker, cfg.PubfilesDir, i.relay)
-	i.lobby = &lobby.LobbyServer{Table: table, Cfg: cfg, Diag: diag, Tickets: i.tickets, Presence: i.presence, Replies: replies, Ids: ids, Monitor: i.monitor, Options: &lobby.LobbyOptions{MigrateEnabled: cfg.Migrate, PublicHost: cfg.PublicIP}}
+	table, _ := ctr.NewServiceTable(replies, i.ctr, i.presence, i.registry, i.matchmaker, cfg.PubfilesDir, i.relay)
+	i.lobby = &lobby.Server{Table: table, Cfg: cfg, Diag: diag, Tickets: i.tickets, Presence: i.presence, Replies: replies, IDs: ids, Monitor: i.monitor, Options: &lobby.Options{MigrateEnabled: cfg.Migrate, PublicHost: cfg.PublicIP}}
 	return i
 }

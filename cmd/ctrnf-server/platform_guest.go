@@ -10,15 +10,15 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
-func loadPublisherPlatform(c config.ServerConfig) (auth.PublisherPlatform, string, error) {
+func loadPublisherPlatform(c config.Config) (auth.PublisherPlatform, string, error) {
 	switch c.Admission {
 	case "guest":
 		if !c.UnlockAll {
 			return nil, "", fmt.Errorf("guest admission requires an unlock-all instance")
 		}
-		return guest.GuestPlatform{Random: rand.Reader}, guest.GuestTrustID, nil
+		return guest.Platform{Random: rand.Reader}, guest.TrustID, nil
 	case "shadnet":
-		return ps4.LoadPSNPlatform(c.Shadnet, c.JwksURL)
+		return ps4.LoadPSNPlatform(c.Shadnet, c.JWKSURL)
 	default:
 		return nil, "", fmt.Errorf("unknown publisher admission")
 	}

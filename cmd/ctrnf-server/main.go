@@ -35,7 +35,7 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	cfg, err := config.ReadConfig(*envFile, !pubfilesOnly)
+	cfg, err := config.Read(*envFile, !pubfilesOnly)
 	if err != nil {
 		log.Printf("[server] configuration:\n%v", err)
 		os.Exit(1)
@@ -56,7 +56,7 @@ func main() {
 
 const shutdownLimit = 30 * time.Second
 
-func runServer(ctx context.Context, cfg config.ServerConfig) error {
+func runServer(ctx context.Context, cfg config.Config) error {
 	var resources drainPlan
 	finish := func(cause error) error { return errors.Join(cause, drainWithin(shutdownLimit, resources)) }
 	platform, trustID, err := loadPublisherPlatform(cfg)
@@ -70,7 +70,7 @@ func runServer(ctx context.Context, cfg config.ServerConfig) error {
 	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
 		return finish(err)
 	}
-	database, err := store.OpenCTRSQLite(filepath.Join(cfg.DataDir, store.CtrDB), cfg.UnlockAll, trustID)
+	database, err := store.OpenSQLite(filepath.Join(cfg.DataDir, store.DBFile), cfg.UnlockAll, trustID)
 	if err != nil {
 		return finish(fmt.Errorf("CTR database: %w", err))
 	}
@@ -91,10 +91,10 @@ func runServer(ctx context.Context, cfg config.ServerConfig) error {
 	}
 	resources.admission = append(resources.admission, dashboard.BeginShutdown)
 	resources.wait = append(resources.wait, dashboard.Wait)
-	if err := i.nat.Start(cfg.NatPort); err != nil {
+	if err := i.nat.Start(cfg.NATPort); err != nil {
 		return finish(fmt.Errorf("NAT: %w", err))
 	}
-	i.relay.StartCTRRelay(cfg.RelayLow, cfg.RelayHigh, cfg.PublicIP, i.presence.OnlinePIDs)
+	i.relay.Start(cfg.RelayLow, cfg.RelayHigh, cfg.PublicIP, i.presence.OnlinePIDs)
 	i.registry.StartReaper()
 	if err := i.lobby.Start(); err != nil {
 		return finish(err)

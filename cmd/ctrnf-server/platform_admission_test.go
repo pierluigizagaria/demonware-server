@@ -25,7 +25,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
-func testCTRSigner(t *testing.T) *auth.CtrAuthSigner {
+func testCTRSigner(t *testing.T) *auth.CTRSigner {
 	t.Helper()
 	if _, err := exec.LookPath("openssl"); err != nil {
 		t.Skip("openssl unavailable")
@@ -38,15 +38,15 @@ func testCTRSigner(t *testing.T) *auth.CtrAuthSigner {
 	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0600); err != nil {
 		t.Fatal(err)
 	}
-	s, err := auth.LoadCTRAuthSigner(path)
+	s, err := auth.LoadCTRSigner(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return s
 }
 
-func fixturePSNPlatform() ps4.PsnPlatform {
-	return ps4.PsnPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
+func fixturePSNPlatform() ps4.PSNPlatform {
+	return ps4.PSNPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
 		return platform.Identity{AccountID: 17, Subject: "17", OnlineID: "fixture"}, nil
 	})}
 }
@@ -167,18 +167,18 @@ func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
 }
 
 func TestCTRFollowerLeaveKeepsPartyAndNotifiesHost(t *testing.T) {
-	m := &ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := &ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	r := fillTestRoom(t, m, 30000, 2)
 	leader := r.Players[1]
-	leader.Doc.Members = []uint64{leader.Pid, 30009}
+	leader.Doc.Members = []uint64{leader.PID, 30009}
 	leader.Seats = 2
-	follower := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 30009, Player: &platform.PlayerID{PID: 30009}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	follower := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 30009, Player: &platform.PlayerID{PID: 30009}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	version := r.Version
 	out := m.Leave(follower, 0)
-	if len(out) != 1 || out[0].Conn != r.Host.Conn || out[0].Event != ctr.CtrUpdateLobby || r.Version != version+1 {
+	if len(out) != 1 || out[0].Conn != r.Host.Conn || out[0].Event != ctr.EventUpdateLobby || r.Version != version+1 {
 		t.Fatal("host not notified of the follower's departure")
 	}
-	if got := r.Players[1].Doc.Members; len(got) != 1 || got[0] != leader.Pid || r.Occupancy() != 2 {
+	if got := r.Players[1].Doc.Members; len(got) != 1 || got[0] != leader.PID || r.Occupancy() != 2 {
 		t.Fatal("follower seat not released")
 	}
 	if out := m.Leave(leader.Conn, 0); len(out) != 1 || len(r.Players) != 1 {

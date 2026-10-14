@@ -32,8 +32,8 @@ import (
 // bdAuth ticket magic, read from the NSO (rodata 0xF07FB8): bytes DE AD BD EF.
 const TicketMagic uint32 = 0xEFBDADDE
 
-func StartAuth(platform PublisherPlatform, tickets *TicketStore, presenceStore *presence.PresenceStore, cfg config.ServerConfig, diag *diagnostics.Diagnostics, monitor *dashboard.Telemetry, umbrella AuxiliaryAuthHandler) (*httpserver.Server, error) {
-	ctrSigner, err := LoadCTRAuthSigner(cfg.SigningKey)
+func StartAuth(platform PublisherPlatform, tickets *TicketStore, presenceStore *presence.Store, cfg config.Config, diag *diagnostics.Diagnostics, monitor *dashboard.Telemetry, umbrella AuxiliaryAuthHandler) (*httpserver.Server, error) {
+	ctrSigner, err := LoadCTRSigner(cfg.SigningKey)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func StartAuth(platform PublisherPlatform, tickets *TicketStore, presenceStore *
 	return httpserver.Start(srv, ln, true), nil
 }
 
-func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Telemetry, tickets *TicketStore, presenceStore *presence.PresenceStore, platform PublisherPlatform, ctrSigner *CtrAuthSigner, dumps string, umbrella AuxiliaryAuthHandler) http.Handler {
+func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Telemetry, tickets *TicketStore, presenceStore *presence.Store, platform PublisherPlatform, ctrSigner *CTRSigner, dumps string, umbrella AuxiliaryAuthHandler) http.Handler {
 	var authReqNum atomic.Uint64
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := authReqNum.Add(1)

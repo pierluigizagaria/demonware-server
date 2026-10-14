@@ -76,7 +76,7 @@ func TestPlatformMarketplaceUnlockAllInventory(t *testing.T) {
 		t.Fatal("purchase must reply before balance push")
 	}
 	marketplaceOutcome(t, frames[0][1:], 0)
-	a, err := s.Snapshot(l.Pid())
+	a, err := s.Snapshot(l.PID())
 	if err != nil || a.Balances[ctr.WumpaCurrency] != 10000 || len(a.Items) != 0 {
 		t.Fatal("unlock-all purchase debited or granted persisted items")
 	}
@@ -109,12 +109,12 @@ func TestSQLiteUsesDataDir(t *testing.T) {
 			if testCTR.Economy.Dir != filepath.Join(root, ns) {
 				t.Fatalf("wallet dir = %s", testCTR.Economy.Dir)
 			}
-			db := openTestCTR(t, filepath.Join(testCTR.Economy.Dir, store.CtrDB), false)
+			db := openTestCTR(t, filepath.Join(testCTR.Economy.Dir, store.DBFile), false)
 			testCTR.Economy.Backend = db
 			if _, err := testCTR.Economy.Snapshot(7); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.Write([]ctr.CtrStatWrite{{CtrStat: ctr.CtrStat{Board: 89, PID: 7, Score: 2}}}); err != nil {
+			if err := db.Write([]ctr.StatWrite{{Stat: ctr.Stat{Board: 89, PID: 7, Score: 2}}}); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(filepath.Join(root, ns, "ctrnf.db")); err != nil {

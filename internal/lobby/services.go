@@ -58,7 +58,7 @@ type ReplyCounter struct{ Transactions atomic.Uint64 }
 
 // sendPush sends a pushed message (inner type 0x02). bdLobbyService::handlePushMessage reads a
 // tagged u32: the bdEventType, resolved in the table of registered handlers.
-func (l *LobbySession) sendPush(event uint32, build func(w *demonware.Writer)) error {
+func (l *Session) sendPush(event uint32, build func(w *demonware.Writer)) error {
 	w := &demonware.Writer{}
 	w.Uint32(event)
 	if build != nil {
@@ -68,7 +68,7 @@ func (l *LobbySession) sendPush(event uint32, build func(w *demonware.Writer)) e
 }
 
 // onTask handles a decrypted request. payload = bytes after the inner type.
-func (l *LobbySession) ProcessTask(payload []byte) {
+func (l *Session) ProcessTask(payload []byte) {
 	// This check linearizes task admission with RequestStop. Once admitted,
 	// the session worker owns the whole reply and AfterReply operation.
 	if l.isStopping() {
@@ -107,7 +107,7 @@ func (l *LobbySession) ProcessTask(payload []byte) {
 	l.DeliverResult(l.Table.Handle(l, TaskRequest{Service: service, Task: task, Args: r, Payload: payload}))
 }
 
-func (l *LobbySession) DeliverResult(result TaskResult) {
+func (l *Session) DeliverResult(result TaskResult) {
 	var sendErr error
 	if result.AfterReply != nil {
 		defer func() {
@@ -134,7 +134,7 @@ func (replies *ReplyCounter) TaskReply(task byte, code uint32, results func(w *d
 	return demonware.TaskReply(replies.Transactions.Add(1), task, code, results)
 }
 
-func (replies *ReplyCounter) HttpProxyReply(task byte, status uint32, body []byte) []byte {
+func (replies *ReplyCounter) HTTPProxyReply(task byte, status uint32, body []byte) []byte {
 	return demonware.HTTPProxyReply(replies.Transactions.Add(1), task, status, body)
 }
 

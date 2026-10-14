@@ -11,8 +11,8 @@ import (
 
 func TestJSONReferenceCtr(t *testing.T) {
 	cases := []jsonreference.Case{
-		{Name: "CtrSearchDoc", Type: reflect.TypeOf((*CtrSearchDoc)(nil)).Elem(), Shape: ""},
-		{Name: "CtrPlayerInfo", Type: reflect.TypeOf((*CtrPlayerInfo)(nil)).Elem(), Shape: ""},
+		{Name: "CtrSearchDoc", Type: reflect.TypeOf((*SearchDoc)(nil)).Elem(), Shape: ""},
+		{Name: "CtrPlayerInfo", Type: reflect.TypeOf((*PlayerInfo)(nil)).Elem(), Shape: ""},
 		{Name: "economySKU", Type: reflect.TypeOf((*economySKU)(nil)).Elem(), Shape: ""},
 		{Name: "EconomyAccount", Type: reflect.TypeOf((*EconomyAccount)(nil)).Elem(), Shape: ""},
 		{Name: "ChallengeCompletion", Type: reflect.TypeOf((*ChallengeCompletion)(nil)).Elem(), Shape: ""},
@@ -23,13 +23,13 @@ func TestJSONReferenceCtr(t *testing.T) {
 		{Name: "windowShoppingRule", Type: reflect.TypeOf((*windowShoppingRule)(nil)).Elem(), Shape: ""},
 		{Name: "raceRate", Type: reflect.TypeOf((*raceRate)(nil)).Elem(), Shape: ""},
 		{Name: "AchievementEvent", Type: reflect.TypeOf((*AchievementEvent)(nil)).Elem(), Shape: ""},
-		{Name: "CtrStat", Type: reflect.TypeOf((*CtrStat)(nil)).Elem(), Shape: ""},
+		{Name: "CtrStat", Type: reflect.TypeOf((*Stat)(nil)).Elem(), Shape: ""},
 		{Name: "lobbyHostDoc", Type: reflect.TypeOf((*lobbyHostDoc)(nil)).Elem(), Shape: ""},
 		{Name: "lobbyListenServer", Type: reflect.TypeOf((*lobbyListenServer)(nil)).Elem(), Shape: ""},
 		{Name: "lobbyTeamBalance", Type: reflect.TypeOf((*lobbyTeamBalance)(nil)).Elem(), Shape: ""},
 		{Name: "value_0", Type: reflect.TypeOf((*map[uint32]economySKU)(nil)).Elem(), Shape: ""},
 		{Name: "value_1", Type: reflect.TypeOf((*map[uint64]raceRate)(nil)).Elem(), Shape: ""},
-		{Name: "value_2", Type: reflect.TypeOf((*map[uint32]map[uint64]CtrStat)(nil)).Elem(), Shape: ""},
+		{Name: "value_2", Type: reflect.TypeOf((*map[uint32]map[uint64]Stat)(nil)).Elem(), Shape: ""},
 		{Name: "value_3", Type: reflect.TypeOf((*map[string]json.RawMessage)(nil)).Elem(), Shape: ""},
 		{Name: "value_4", Type: reflect.TypeOf((*map[string]any)(nil)).Elem(), Shape: ""},
 		{Name: "value_5", Type: reflect.TypeOf((*map[string]string)(nil)).Elem(), Shape: ""},

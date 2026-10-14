@@ -42,11 +42,11 @@ type ChallengeCompletion struct {
 	Distinct  map[string]bool   `json:"distinct,omitempty"`
 }
 
-func WindowShoppingState(a *EconomyAccount, now time.Time) (ctrAchievementState, bool) {
+func WindowShoppingState(a *EconomyAccount, now time.Time) (achievementState, bool) {
 	r := windowShopping
 	_, start, end := pitStopDay(now)
 	if int64(start) < r.CycleStart {
-		return ctrAchievementState{}, false
+		return achievementState{}, false
 	}
 	day := ((int64(start) - r.CycleStart) / 86400) % r.CycleDays
 	active := false
@@ -56,7 +56,7 @@ func WindowShoppingState(a *EconomyAccount, now time.Time) (ctrAchievementState,
 			break
 		}
 	}
-	state := ctrAchievementState{Name: r.Name, ID: r.ID, Kind: r.Kind, Target: r.Target, Status: 2, Start: start, End: end}
+	state := achievementState{Name: r.Name, ID: r.ID, Kind: r.Kind, Target: r.Target, Status: 2, Start: start, End: end}
 	key := fmt.Sprintf("%s:%d", r.Name, start)
 	if c, ok := a.Challenges[key]; ok {
 		state.Progress = r.Target

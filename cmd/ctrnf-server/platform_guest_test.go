@@ -28,13 +28,13 @@ func guestEntropy(ids ...uint64) *bytes.Reader {
 }
 
 func TestGuestAdmissionIgnoresAccountClaims(t *testing.T) {
-	p := guest.GuestPlatform{Random: guestEntropy(0, 17, 29, 1<<63-1)}
+	p := guest.Platform{Random: guestEntropy(0, 17, 29, 1<<63-1)}
 	for _, token := range []string{"TOKEN", "", "not-a-signed-credential"} {
 		req := psnAuthRequest(t, token)
 		req["username"], req["account_id"] = "ClaimedName", "999"
 		body, _ := json.Marshal(req)
 		id, err := p.Authenticate(body)
-		if err != nil || id.PID == 0 || id.PID == 999 || id.Username == "ClaimedName" || len(id.Username) > 16 || id.Kind != "guest" || id.Title != ps4.CtrTitle || !strings.HasPrefix(id.Sub, "guest:") {
+		if err != nil || id.PID == 0 || id.PID == 999 || id.Username == "ClaimedName" || len(id.Username) > 16 || id.Kind != "guest" || id.Title != ps4.CTRTitle || !strings.HasPrefix(id.Sub, "guest:") {
 			t.Fatal("guest depends on account claims or has invalid identity", err)
 		}
 		if !strings.HasPrefix(p.AuthData(id)["extended_data"], "nextendo:guest:") {
@@ -44,7 +44,7 @@ func TestGuestAdmissionIgnoresAccountClaims(t *testing.T) {
 }
 
 func TestGuestAdmissionRefusesMalformedInputAndEntropyFailure(t *testing.T) {
-	p := guest.GuestPlatform{Random: iotest.ErrReader(errors.New("entropy unavailable"))}
+	p := guest.Platform{Random: iotest.ErrReader(errors.New("entropy unavailable"))}
 	body, _ := json.Marshal(psnAuthRequest(t, "TOKEN"))
 	if id, err := p.Authenticate(body); err == nil || id.PID != 0 {
 		t.Fatal("entropy failure issued a guest")
@@ -56,7 +56,7 @@ func TestGuestAdmissionRefusesMalformedInputAndEntropyFailure(t *testing.T) {
 		req := psnAuthRequest(t, "TOKEN")
 		req[change.field] = change.value
 		body, _ = json.Marshal(req)
-		if _, err := (guest.GuestPlatform{Random: guestEntropy(17)}).Authenticate(body); err == nil {
+		if _, err := (guest.Platform{Random: guestEntropy(17)}).Authenticate(body); err == nil {
 			t.Fatal("malformed guest request accepted", change.field)
 		}
 	}
@@ -64,7 +64,7 @@ func TestGuestAdmissionRefusesMalformedInputAndEntropyFailure(t *testing.T) {
 		[]byte(`{"title_id":"5760","title_id":"5760"}`),
 		[]byte(strings.Repeat(" ", 16385)),
 	} {
-		if _, err := (guest.GuestPlatform{Random: guestEntropy(17)}).Authenticate(body); err == nil {
+		if _, err := (guest.Platform{Random: guestEntropy(17)}).Authenticate(body); err == nil {
 			t.Fatal("ambiguous or oversized guest request accepted")
 		}
 	}
@@ -72,15 +72,15 @@ func TestGuestAdmissionRefusesMalformedInputAndEntropyFailure(t *testing.T) {
 
 func TestGuestConfigIsExplicitAndNeedsNoShadNet(t *testing.T) {
 	env := map[string]string{"CTR_ADMISSION": "guest", "CTR_UNLOCK_ALL": "1", "CTR_AUTH_SIGNING_KEY": "fixture.pem"}
-	c, err := config.LoadConfig(lookupFrom(env), nil, true)
+	c, err := config.Load(lookupFrom(env), nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p, namespace, err := loadPublisherPlatform(c)
-	if err != nil || namespace != guest.GuestTrustID {
+	if err != nil || namespace != guest.TrustID {
 		t.Fatal("guest admission tried to load shadNet", err)
 	}
-	if _, ok := p.(guest.GuestPlatform); !ok {
+	if _, ok := p.(guest.Platform); !ok {
 		t.Fatal("wrong admission provider")
 	}
 	for _, tc := range []struct{ field, value string }{
@@ -91,42 +91,42 @@ func TestGuestConfigIsExplicitAndNeedsNoShadNet(t *testing.T) {
 			prior := env[tc.field]
 			env[tc.field] = tc.value
 			defer func() { env[tc.field] = prior }()
-			if _, err := config.LoadConfig(lookupFrom(env), nil, true); err == nil {
+			if _, err := config.Load(lookupFrom(env), nil, true); err == nil {
 				t.Fatal("invalid guest configuration accepted")
 			}
 		})
 	}
 	delete(env, "CTR_ADMISSION")
-	if _, err := config.LoadConfig(lookupFrom(env), nil, true); err == nil {
+	if _, err := config.Load(lookupFrom(env), nil, true); err == nil {
 		t.Fatal("unlock-all silently disabled account authentication")
 	}
 }
 
 func TestGuestNamespaceCannotReuseVerifiedAccountDatabase(t *testing.T) {
-	path := filepath.Join(t.TempDir(), store.CtrDB)
-	db, err := store.OpenCTRSQLite(path, true, testTrustID)
+	path := filepath.Join(t.TempDir(), store.DBFile)
+	db, err := store.OpenSQLite(path, true, testTrustID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	db.Close()
-	if guestValue, err := store.OpenCTRSQLite(path, true, guest.GuestTrustID); err == nil {
+	if guestValue, err := store.OpenSQLite(path, true, guest.TrustID); err == nil {
 		guestValue.Close()
 		t.Fatal("guest instance reused verified account state")
 	}
-	path = filepath.Join(t.TempDir(), store.CtrDB)
-	db, err = store.OpenCTRSQLite(path, true, guest.GuestTrustID)
+	path = filepath.Join(t.TempDir(), store.DBFile)
+	db, err = store.OpenSQLite(path, true, guest.TrustID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	db.Close()
-	if signed, err := store.OpenCTRSQLite(path, true, testTrustID); err == nil {
+	if signed, err := store.OpenSQLite(path, true, testTrustID); err == nil {
 		signed.Close()
 		t.Fatal("verified instance reused anonymous state")
 	}
 }
 
 func TestGuestTicketsReachLobbyAndUmbrella(t *testing.T) {
-	p := guest.GuestPlatform{Random: guestEntropy(17, 29)}
+	p := guest.Platform{Random: guestEntropy(17, 29)}
 	handler := testAuthHandler(p, testCTRSigner(t), "")
 	body, _ := json.Marshal(psnAuthRequest(t, "TOKEN"))
 	for _, want := range []uint64{17, 29} {
@@ -159,7 +159,7 @@ func TestGuestTicketsReachLobbyAndUmbrella(t *testing.T) {
 			t.Fatal("publisher name lookup lost the random nickname")
 		}
 		testPresence.DropOnline(l.N)
-		umbrella, _ := json.Marshal(map[string]any{"ticket": response.ServerTicket, "titleID": ps4.CtrTitle})
+		umbrella, _ := json.Marshal(map[string]any{"ticket": response.ServerTicket, "titleID": ps4.CTRTitle})
 		uw := httptest.NewRecorder()
 		handler.ServeHTTP(uw, httptest.NewRequest("POST", "/v1.0/tokens/lsg/", bytes.NewReader(umbrella)))
 		var result struct {

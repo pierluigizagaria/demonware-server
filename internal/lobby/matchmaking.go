@@ -31,18 +31,18 @@ import (
 const (
 	SvcMatchMaking = 21
 
-	MmCreateSession     = 1
-	MmUpdateSession     = 2
-	MmDeleteSession     = 3
+	MMCreateSession     = 1
+	MMUpdateSession     = 2
+	MMDeleteSession     = 3
 	mmFindSessions      = 5
-	MmUpdatePlayers     = 12
-	MmRequestSessionID  = 19
-	MmInitializeSession = 20
+	MMUpdatePlayers     = 12
+	MMRequestSessionID  = 19
+	MMInitializeSession = 20
 )
 
-type MmSession struct {
+type MatchSession struct {
 	Context    string
-	Id         [8]byte
+	ID         [8]byte
 	Owner      uint64 // host's lobby connection number, 0 if disconnected
 	OwnerPID   uint64
 	Orphaned   time.Time
@@ -59,14 +59,14 @@ type MmSession struct {
 // host reconnecting in order to stay joinable.
 const OrphanGrace = 2 * time.Minute
 
-func (l *LobbySession) Pid() uint64 {
+func (l *Session) PID() uint64 {
 	if l.Player == nil {
 		return 0
 	}
 	return l.Player.PID
 }
 
-func (handler *ContextHandler) Owns(peer TaskSession, s *MmSession) bool {
+func (handler *ContextHandler) Owns(peer TaskSession, s *MatchSession) bool {
 	if s.Owner == peer.ConnID() {
 		return true
 	}
@@ -128,11 +128,11 @@ type SessionRegistry struct {
 	reaperWorkers                sync.WaitGroup
 	reaperStarted, reaperStopped bool
 	Mu                           sync.Mutex
-	Sessions                     map[[8]byte]*MmSession
+	Sessions                     map[[8]byte]*MatchSession
 }
 
 func NewSessionRegistry() *SessionRegistry {
-	return &SessionRegistry{Sessions: map[[8]byte]*MmSession{}}
+	return &SessionRegistry{Sessions: map[[8]byte]*MatchSession{}}
 }
 
 // dropSessionsOf detaches the games of a closed connection; reapSessions removes
@@ -160,11 +160,11 @@ func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *
 	seen := map[[8]byte]bool{}
 	type hit struct {
 		id uint64
-		s  *MmSession
+		s  *MatchSession
 	}
 	var found []hit
 	for _, id := range ids {
-		pid := handler.Presence.PidOnline(id)
+		pid := handler.Presence.PIDOnline(id)
 		if pid == 0 {
 			// On Citron the friend id IS the PID; the host may be
 			// reconnecting and so missing from the online list.
@@ -175,8 +175,8 @@ func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *
 		}
 		handler.Registry.Mu.Lock()
 		for _, s := range handler.Registry.Sessions {
-			if s.OwnerPID == pid && s.Context == context && !s.Reserved && !seen[s.Id] {
-				seen[s.Id] = true
+			if s.OwnerPID == pid && s.Context == context && !s.Reserved && !seen[s.ID] {
+				seen[s.ID] = true
 				copy := *s
 				found = append(found, hit{id, &copy})
 			}
@@ -190,7 +190,7 @@ func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *
 	return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, h := range found {
 			w.Blob(handler.Relay.WithRelay(h.s.hostAddr, h.s.OwnerPID, peer.PID()))
-			w.Blob(h.s.Id[:])
+			w.Blob(h.s.ID[:])
 			w.Uint32(h.s.gameType)
 			w.Uint32(h.s.MaxPlayers)
 			w.Uint32(h.s.NumPlayers)
@@ -202,9 +202,9 @@ func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *
 
 func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte, r *demonware.Reader, context string) []byte {
 	switch task {
-	case MmRequestSessionID:
-		s := &MmSession{Context: context, Owner: peer.ConnID(), OwnerPID: peer.PID(), Reserved: true, Updated: peer.Now()}
-		if _, err := peer.Random(s.Id[:]); err != nil {
+	case MMRequestSessionID:
+		s := &MatchSession{Context: context, Owner: peer.ConnID(), OwnerPID: peer.PID(), Reserved: true, Updated: peer.Now()}
+		if _, err := peer.Random(s.ID[:]); err != nil {
 			return handler.TaskReply(task, ErrUnhandled, nil)
 		}
 		handler.Registry.Mu.Lock()
@@ -213,18 +213,18 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 				delete(handler.Registry.Sessions, id)
 			}
 		}
-		handler.Registry.Sessions[s.Id] = s
+		handler.Registry.Sessions[s.ID] = s
 		handler.Registry.Mu.Unlock()
-		peer.Logf("matchmaking RESERVE session=%X", s.Id)
-		return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.Id[:]); return 1 })
-	case MmCreateSession:
+		peer.Logf("matchmaking RESERVE session=%X", s.ID)
+		return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.ID[:]); return 1 })
+	case MMCreateSession:
 		host, gt, maxp, attrs, err := handler.ReadInfo(r)
 		if err != nil {
 			peer.Logf("createSession unreadable: %v", err)
 			return handler.TaskReply(task, ErrUnhandled, nil)
 		}
-		s := &MmSession{Owner: peer.ConnID(), OwnerPID: peer.PID(), hostAddr: host, gameType: gt, MaxPlayers: maxp, NumPlayers: 1, Attrs: attrs, Updated: peer.Now()}
-		_, _ = peer.Random(s.Id[:])
+		s := &MatchSession{Owner: peer.ConnID(), OwnerPID: peer.PID(), hostAddr: host, gameType: gt, MaxPlayers: maxp, NumPlayers: 1, Attrs: attrs, Updated: peer.Now()}
+		_, _ = peer.Random(s.ID[:])
 		s.Context = context
 		handler.Registry.Mu.Lock()
 		// A host recreating its game after reconnecting replaces the old one.
@@ -235,14 +235,14 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 				}
 			}
 		}
-		handler.Registry.Sessions[s.Id] = s
+		handler.Registry.Sessions[s.ID] = s
 		n := len(handler.Registry.Sessions)
 		handler.Registry.Mu.Unlock()
 		peer.Logf("matchmaking CREATE session=%X gameType=%d max=%d host=%s (%d open games)",
-			s.Id, gt, maxp, hex.EncodeToString(host[:min(6, len(host))]), n)
-		return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.Id[:]); return 1 })
+			s.ID, gt, maxp, hex.EncodeToString(host[:min(6, len(host))]), n)
+		return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.ID[:]); return 1 })
 
-	case MmUpdateSession, MmInitializeSession:
+	case MMUpdateSession, MMInitializeSession:
 		sid, err := r.Blob()
 		if err != nil || len(sid) != 8 {
 			peer.Logf("updateSession: id unreadable (%v)", err)
@@ -260,7 +260,7 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		if ok && s.Context == context && handler.Owns(peer, s) {
 			s.Owner, s.OwnerPID = peer.ConnID(), peer.PID()
 			s.hostAddr, s.gameType, s.MaxPlayers, s.Attrs, s.Updated = host, gt, maxp, attrs, peer.Now()
-			if task == MmInitializeSession {
+			if task == MMInitializeSession {
 				s.Reserved = false
 				s.NumPlayers = 1
 			}
@@ -272,7 +272,7 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		peer.Logf("matchmaking UPDATE session=%X known=%v", id, ok)
 		return handler.TaskReply(task, 0, nil)
 
-	case MmUpdatePlayers:
+	case MMUpdatePlayers:
 		// Seen live when the console joined Citron's game:
 		// 13 blob sessionID | 08 u32 numPlayers | full info.
 		sid, err := r.Blob()
@@ -298,7 +298,7 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		peer.Logf("matchmaking PLAYERS session=%X players=%d/%d known=%v", id, players, maxp, ok)
 		return handler.TaskReply(task, 0, nil)
 
-	case MmDeleteSession:
+	case MMDeleteSession:
 		sid, err := r.Blob()
 		if err == nil && len(sid) == 8 {
 			var id [8]byte
@@ -320,7 +320,7 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 			maxr = 50
 		}
 		handler.Registry.Mu.Lock()
-		found := make([]*MmSession, 0, len(handler.Registry.Sessions))
+		found := make([]*MatchSession, 0, len(handler.Registry.Sessions))
 		for _, s := range handler.Registry.Sessions {
 			if !handler.Owns(peer, s) && s.Context == context && !s.Reserved {
 				found = append(found, s)
@@ -339,7 +339,7 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, s := range found {
 				w.Blob(handler.Relay.WithRelay(s.hostAddr, s.OwnerPID, peer.PID()))
-				w.Blob(s.Id[:])
+				w.Blob(s.ID[:])
 				w.Uint32(s.gameType)
 				w.Uint32(s.MaxPlayers)
 				w.Uint32(s.NumPlayers)

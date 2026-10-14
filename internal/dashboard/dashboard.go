@@ -36,8 +36,8 @@ type Telemetry struct {
 	sniHost, dashToken, bindAddr            string
 }
 
-func NewTelemetry(cfg config.ServerConfig, natIntros func() int64) *Telemetry {
-	return &Telemetry{dashStart: time.Now(), ConnStats: map[uint64]*ConnStat{}, taskCount: map[string]int64{}, natIntros: natIntros, authPort: cfg.AuthPort, natPort: cfg.NatPort, dashPort: cfg.DashPort, sniHost: cfg.SniHost, dashToken: cfg.DashToken, bindAddr: cfg.BindAddr}
+func NewTelemetry(cfg config.Config, natIntros func() int64) *Telemetry {
+	return &Telemetry{dashStart: time.Now(), ConnStats: map[uint64]*ConnStat{}, taskCount: map[string]int64{}, natIntros: natIntros, authPort: cfg.AuthPort, natPort: cfg.NATPort, dashPort: cfg.DashPort, sniHost: cfg.SNIHost, dashToken: cfg.DashToken, bindAddr: cfg.BindAddr}
 }
 
 type ConnStat struct {
@@ -133,25 +133,25 @@ type apiPlayer struct {
 	IsHost     bool   `json:"isHost"`
 }
 
-type ApiLobbyP struct {
+type APILobbyPlayer struct {
 	PID  uint64 `json:"pid"`
 	Name string `json:"name"`
 	VR   uint32 `json:"vr"`
 	Host bool   `json:"host"`
 }
 
-type ApiGathering struct {
-	ID       uint32      `json:"id"`
-	HostPID  uint64      `json:"hostPid"`
-	HostName string      `json:"hostName"`
-	Type     string      `json:"type"`
-	Mode     uint32      `json:"mode"`
-	VR       uint32      `json:"vr"`
-	Players  []ApiLobbyP `json:"players"`
-	Count    int         `json:"count"`
-	Max      uint16      `json:"max"`
-	State    string      `json:"state"`
-	Code     string      `json:"code,omitempty"`
+type APIGathering struct {
+	ID       uint32           `json:"id"`
+	HostPID  uint64           `json:"hostPid"`
+	HostName string           `json:"hostName"`
+	Type     string           `json:"type"`
+	Mode     uint32           `json:"mode"`
+	VR       uint32           `json:"vr"`
+	Players  []APILobbyPlayer `json:"players"`
+	Count    int              `json:"count"`
+	Max      uint16           `json:"max"`
+	State    string           `json:"state"`
+	Code     string           `json:"code,omitempty"`
 }
 
 type apiEvent struct {
@@ -175,7 +175,7 @@ type apiServer struct {
 	Stack      string `json:"stack"`
 }
 
-type ApiStats struct {
+type APIStats struct {
 	ServerTime     string         `json:"serverTime"`
 	UptimeSeconds  int            `json:"uptimeSeconds"`
 	Connected      int            `json:"connected"`
@@ -188,21 +188,21 @@ type ApiStats struct {
 	NATIntros      int64          `json:"natIntroductions"`
 	Server         apiServer      `json:"server"`
 	Players        []apiPlayer    `json:"players"`
-	Gatherings     []ApiGathering `json:"gatherings"`
+	Gatherings     []APIGathering `json:"gatherings"`
 	Events         []apiEvent     `json:"events"`
 	Methods        []apiMethod    `json:"methods"`
 }
 
-func (monitor *Telemetry) BuildStats(views DashboardViews) ApiStats {
+func (monitor *Telemetry) BuildStats(views Views) APIStats {
 	return monitor.BuildGameStats(views, "")
 }
 
-func (monitor *Telemetry) BuildGameStats(views DashboardViews, game string) ApiStats {
+func (monitor *Telemetry) BuildGameStats(views Views, game string) APIStats {
 	who := views.Online(game)
 	snaps := views.Sessions()
 
-	hosting := map[uint64]ApiGathering{} // host connection -> its public game
-	gs := make([]ApiGathering, 0, len(snaps))
+	hosting := map[uint64]APIGathering{} // host connection -> its public game
+	gs := make([]APIGathering, 0, len(snaps))
 	for _, s := range snaps {
 		host, live := who[s.Owner]
 		if !live || host.PID == 0 || ps4.IsCTRTitle(host.Title) {
@@ -212,10 +212,10 @@ func (monitor *Telemetry) BuildGameStats(views DashboardViews, game string) ApiS
 		if s.NumPlayers >= 2 {
 			state = "matched"
 		}
-		g := ApiGathering{
-			ID: binary.LittleEndian.Uint32(s.Id[:4]), HostPID: host.PID, HostName: host.Username,
+		g := APIGathering{
+			ID: binary.LittleEndian.Uint32(s.ID[:4]), HostPID: host.PID, HostName: host.Username,
 			Type: fmt.Sprintf("Public game (type %d)", s.GameType), Mode: s.GameType,
-			Players: []ApiLobbyP{{PID: host.PID, Name: host.Username, Host: true}},
+			Players: []APILobbyPlayer{{PID: host.PID, Name: host.Username, Host: true}},
 			Count:   int(s.NumPlayers), Max: uint16(s.MaxPlayers), State: state,
 		}
 		hosting[s.Owner] = g
@@ -223,7 +223,7 @@ func (monitor *Telemetry) BuildGameStats(views DashboardViews, game string) ApiS
 	}
 	// CTR legacy session adverts are per-player presence, not actual rooms.
 	// Use host-confirmed membership, excluding pending reservations.
-	ctrMembership := map[uint64]ApiGathering{}
+	ctrMembership := map[uint64]APIGathering{}
 	if game != "d3" {
 		names := map[uint64]string{}
 		for _, p := range who {
@@ -286,7 +286,7 @@ func (monitor *Telemetry) BuildGameStats(views DashboardViews, game string) ApiS
 	}
 	sort.Slice(ms, func(i, j int) bool { return ms[i].Count > ms[j].Count })
 
-	return ApiStats{
+	return APIStats{
 		ServerTime:     time.Now().Format("15:04:05"),
 		UptimeSeconds:  int(time.Since(monitor.dashStart).Seconds()),
 		Connected:      len(players),
@@ -309,7 +309,7 @@ func (monitor *Telemetry) BuildGameStats(views DashboardViews, game string) ApiS
 	}
 }
 
-func (monitor *Telemetry) StartDashboard(views DashboardViews, diag *diagnostics.Diagnostics) (*httpserver.Server, error) {
+func (monitor *Telemetry) StartDashboard(views Views, diag *diagnostics.Diagnostics) (*httpserver.Server, error) {
 	port, token := strconv.Itoa(monitor.dashPort), monitor.dashToken
 
 	authed := func(w http.ResponseWriter, r *http.Request) bool {

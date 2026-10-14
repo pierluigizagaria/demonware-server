@@ -27,7 +27,7 @@ import (
 // CTR wraps its title-specific attributes when uploading MatchMakingInfo,
 // but its result deserializer reads those fields directly after the base info.
 // Trailing request options are outside that blob and are not result fields.
-func ReadCTRInfo(r *demonware.Reader) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
+func ReadInfo(r *demonware.Reader) (host []byte, gameType, maxPlayers uint32, attrs []byte, err error) {
 	if host, err = r.Blob(); err != nil {
 		return
 	}

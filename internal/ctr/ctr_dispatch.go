@@ -12,19 +12,19 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/relay"
 )
 
-type utilityHandler struct{ *presence.PresenceHandler }
+type utilityHandler struct{ *presence.Handler }
 
-type userDataHandler struct{ *presence.PresenceHandler }
+type userDataHandler struct{ *presence.Handler }
 
-type richPresenceHandler struct{ *presence.PresenceHandler }
+type richPresenceHandler struct{ *presence.Handler }
 
 type httpProxyHandler struct{ *lobby.ReplyCounter }
 
-type ctrContextHandler struct{ *lobby.ContextHandler }
+type contextHandler struct{ *lobby.ContextHandler }
 
 type asyncHandler struct {
 	*lobby.ReplyCounter
-	matchmaker *CtrMatchmaker
+	matchmaker *Matchmaker
 	mu         sync.Mutex
 	info       map[uint64]string
 }
@@ -62,7 +62,7 @@ func (handler *StatsHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 	var reply []byte
 	switch {
 	case service == 4 && peer.Identity() != nil && ps4.IsCTRTitle(peer.Identity().Title):
-		reply = handler.OnCTRStats(peer, task, r)
+		reply = handler.OnStats(peer, task, r)
 
 	default:
 		return lobby.DefaultTask(handler.ReplyCounter, peer, request)
@@ -87,7 +87,7 @@ func (handler *utilityHandler) Handle(peer lobby.TaskSession, request lobby.Task
 		reply = handler.OnGetUserIDs(peer, task, r)
 
 	default:
-		return lobby.DefaultTask(handler.PresenceReplies, peer, request)
+		return lobby.DefaultTask(handler.Replies, peer, request)
 	}
 	result.Reply = reply
 	return result
@@ -103,13 +103,13 @@ func (handler *userDataHandler) Handle(peer lobby.TaskSession, request lobby.Tas
 		}
 
 	default:
-		return lobby.DefaultTask(handler.PresenceReplies, peer, request)
+		return lobby.DefaultTask(handler.Replies, peer, request)
 	}
 	result.Reply = reply
 	return result
 }
 
-func (handler *ctrContextHandler) Handle(peer lobby.TaskSession, request lobby.TaskRequest) (result lobby.TaskResult) {
+func (handler *contextHandler) Handle(peer lobby.TaskSession, request lobby.TaskRequest) (result lobby.TaskResult) {
 	service, task, r := request.Service, request.Task, request.Args
 	var reply []byte
 	switch {
@@ -119,7 +119,7 @@ func (handler *ctrContextHandler) Handle(peer lobby.TaskSession, request lobby.T
 			reply = handler.TaskReply(task, lobby.ErrUnhandled, nil)
 			break
 		}
-		if task == lobby.MmCreateSession || task == lobby.MmUpdateSession || task == lobby.MmDeleteSession || task == lobby.MmUpdatePlayers || task == lobby.MmRequestSessionID || task == lobby.MmInitializeSession {
+		if task == lobby.MMCreateSession || task == lobby.MMUpdateSession || task == lobby.MMDeleteSession || task == lobby.MMUpdatePlayers || task == lobby.MMRequestSessionID || task == lobby.MMInitializeSession {
 			reply = handler.OnMatchMakingContext(peer, task, r, "ctr:"+ctx)
 		} else if task == 14 {
 			reply = handler.OnFriendSessions(peer, task, r, "ctr:"+ctx)
@@ -143,7 +143,7 @@ func (handler *richPresenceHandler) Handle(peer lobby.TaskSession, request lobby
 		reply = handler.OnRichPresence(peer, task, r)
 
 	default:
-		return lobby.DefaultTask(handler.PresenceReplies, peer, request)
+		return lobby.DefaultTask(handler.Replies, peer, request)
 	}
 	result.Reply = reply
 	return result
@@ -170,9 +170,9 @@ func (handler *asyncHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 		raw, e3 := r.String()
 		ok := false
 		if e1 == nil && e2 == nil && e3 == nil {
-			var notices []ctrNotice
+			var notices []notice
 			ok, notices = handler.matchmaker.SyncDoc(peer, id, version, raw)
-			result.AfterReply = func(sendErr error) { SendCTRNotices(notices) }
+			result.AfterReply = func(sendErr error) { SendNotices(notices) }
 		}
 		reply = handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
 		peer.Logf("[ctr] sync lobby=%d version=%d accepted=%v", id, version, ok)
@@ -190,7 +190,7 @@ func (handler *asyncHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 			reply = handler.TaskReply(task, lobby.ErrUnhandled, nil)
 			break
 		}
-		search, err := handler.matchmaker.ParseCTRSearch(peer, raw, handler.PlayerInfo(peer.ConnID()))
+		search, err := handler.matchmaker.ParseSearch(peer, raw, handler.PlayerInfo(peer.ConnID()))
 		if err == nil {
 			err = handler.matchmaker.Reserve(search)
 		}
@@ -199,7 +199,7 @@ func (handler *asyncHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 			reply = handler.TaskReply(task, lobby.ErrUnhandled, nil)
 			break
 		}
-		doc := "{\"mm_id\":" + strconv.FormatUint(search.Id, 10) + "}"
+		doc := "{\"mm_id\":" + strconv.FormatUint(search.ID, 10) + "}"
 		reply = handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(doc); return 1 })
 		result.AfterReply = func(sendErr error) {
 			if sendErr != nil {
@@ -208,8 +208,8 @@ func (handler *asyncHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 			}
 			notices := handler.matchmaker.Activate(search)
 			peer.Logf("[ctr] search id=%d registered; seats=%d filter=%s notifications=%d",
-				search.Id, search.Seats, search.filterID, len(notices))
-			SendCTRNotices(notices)
+				search.ID, search.Seats, search.filterID, len(notices))
+			SendNotices(notices)
 		}
 
 	case service == lobby.SvcAsyncMatchMaking && task == 8:
@@ -220,7 +220,7 @@ func (handler *asyncHandler) Handle(peer lobby.TaskSession, request lobby.TaskRe
 		id, err := r.Uint64()
 		if err == nil {
 			notices := handler.matchmaker.Leave(peer, id)
-			result.AfterReply = func(sendErr error) { SendCTRNotices(notices) }
+			result.AfterReply = func(sendErr error) { SendNotices(notices) }
 		}
 		reply = handler.TaskReply(task, 0, nil)
 
@@ -265,7 +265,7 @@ func (handler *httpProxyHandler) Handle(peer lobby.TaskSession, request lobby.Ta
 		// ABToken NON-EMPTY: bdABTestingEnrollResponse reads it with getString, and an empty string
 		// fails deserialization -> bdRemoteTask error 4 -> the login sequence fails.
 		body := []byte(`{"expiresIn":3600,"ABToken":"nextendo","enrollments":[]}`)
-		reply = handler.HttpProxyReply(task, 200, body)
+		reply = handler.HTTPProxyReply(task, 200, body)
 		peer.Logf("[ctr] task bdABTesting.enroll -> 200 (%d bytes)", len(body))
 
 	default:
@@ -312,14 +312,14 @@ func (handler *EconomyHandler) Handle(peer lobby.TaskSession, request lobby.Task
 	return result
 }
 
-func NewCTRServiceTable(replies *lobby.ReplyCounter, ctr *CtrServices, presenceStore *presence.PresenceStore, registry *lobby.SessionRegistry, matchmaker *CtrMatchmaker, pubDir string, relayTable *relay.RelayTable) (*lobby.ServiceTable, *asyncHandler) {
-	friends := &presence.PresenceHandler{PresenceReplies: replies, Presence: presenceStore}
+func NewServiceTable(replies *lobby.ReplyCounter, ctr *Services, presenceStore *presence.Store, registry *lobby.SessionRegistry, matchmaker *Matchmaker, pubDir string, relayTable *relay.Table) (*lobby.ServiceTable, *asyncHandler) {
+	friends := &presence.Handler{Replies: replies, Presence: presenceStore}
 	economy := &EconomyHandler{ReplyCounter: replies, Economy: ctr.Economy}
-	context := &lobby.ContextHandler{ReadInfo: ReadCTRInfo, ReplyCounter: replies, Registry: registry, Presence: presenceStore, Relay: relayTable}
+	context := &lobby.ContextHandler{ReadInfo: ReadInfo, ReplyCounter: replies, Registry: registry, Presence: presenceStore, Relay: relayTable}
 	async := &asyncHandler{ReplyCounter: replies, matchmaker: matchmaker, info: map[uint64]string{}}
 	table := &lobby.ServiceTable{Replies: replies, Handlers: map[byte]lobby.TaskHandler{
 		4:   &StatsHandler{ReplyCounter: replies, Stats: ctr.Stats, Presence: presenceStore},
-		10:  &lobby.StorageHandler{ReplyCounter: replies, Files: ctrPublisherFiles{dir: pubDir}},
+		10:  &lobby.StorageHandler{ReplyCounter: replies, Files: publisherFiles{dir: pubDir}},
 		12:  &utilityHandler{friends},
 		29:  &userDataHandler{friends},
 		38:  &PlatformHandler{replies},
@@ -327,14 +327,14 @@ func NewCTRServiceTable(replies *lobby.ReplyCounter, ctr *CtrServices, presenceS
 		80:  economy,
 		104: &NewsHandler{ReplyCounter: replies, News: ctr.News},
 		125: economy,
-		138: &ctrContextHandler{context},
+		138: &contextHandler{context},
 		145: async,
 		194: &httpProxyHandler{replies},
 	}}
 	table.OnCloseSession = func(peer lobby.TaskSession) {
 		defer registry.DropSessionsOf(peer.ConnID())
 		defer async.forget(peer.ConnID())
-		SendCTRNotices(matchmaker.Leave(peer, 0))
+		SendNotices(matchmaker.Leave(peer, 0))
 	}
 	return table, async
 }

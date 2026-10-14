@@ -45,7 +45,7 @@ func TestParseRealHostAddr(t *testing.T) {
 // The gate is what keeps this away from the ~69% of rooms that already connect directly.
 func TestRelayGateDefaultsToNobody(t *testing.T) {
 	b := realAddr(t)
-	testRelay.Low, testRelay.High, testRelay.Ip = 3100, 3139, net.IPv4(1, 2, 3, 4)
+	testRelay.Low, testRelay.High, testRelay.IP = 3100, 3139, net.IPv4(1, 2, 3, 4)
 	defer func() { testRelay.Low, testRelay.High = 0, 0 }()
 
 	setRelayPIDs(t, "")
@@ -60,14 +60,14 @@ func TestRelayGateDefaultsToNobody(t *testing.T) {
 
 func TestRelayInjectsIntoFirstFreeSlotOnly(t *testing.T) {
 	b := realAddr(t)
-	testRelay.Low, testRelay.High, testRelay.Next, testRelay.Ip = 3100, 3139, 3100, net.IPv4(203, 0, 113, 9)
-	testRelay.Pairs, testRelay.ByPort = map[string]*relay.RelayPair{}, map[int]*relay.RelayPair{}
+	testRelay.Low, testRelay.High, testRelay.Next, testRelay.IP = 3100, 3139, 3100, net.IPv4(203, 0, 113, 9)
+	testRelay.Pairs, testRelay.ByPort = map[string]*relay.Pair{}, map[int]*relay.Pair{}
 	defer func() {
 		for _, p := range testRelay.Pairs {
 			_ = p.Conn.Close()
 		}
 		testRelay.Low, testRelay.High = 0, 0
-		testRelay.Pairs, testRelay.ByPort = map[string]*relay.RelayPair{}, map[int]*relay.RelayPair{}
+		testRelay.Pairs, testRelay.ByPort = map[string]*relay.Pair{}, map[int]*relay.Pair{}
 	}()
 
 	setRelayPIDs(t, "222")
@@ -104,14 +104,14 @@ func TestRelayInjectsIntoFirstFreeSlotOnly(t *testing.T) {
 // since the session list is rebuilt on every friends query.
 func TestRelayReusesPortForSamePair(t *testing.T) {
 	b := realAddr(t)
-	testRelay.Low, testRelay.High, testRelay.Next, testRelay.Ip = 3140, 3149, 3140, net.IPv4(203, 0, 113, 9)
-	testRelay.Pairs, testRelay.ByPort = map[string]*relay.RelayPair{}, map[int]*relay.RelayPair{}
+	testRelay.Low, testRelay.High, testRelay.Next, testRelay.IP = 3140, 3149, 3140, net.IPv4(203, 0, 113, 9)
+	testRelay.Pairs, testRelay.ByPort = map[string]*relay.Pair{}, map[int]*relay.Pair{}
 	defer func() {
 		for _, p := range testRelay.Pairs {
 			_ = p.Conn.Close()
 		}
 		testRelay.Low, testRelay.High = 0, 0
-		testRelay.Pairs, testRelay.ByPort = map[string]*relay.RelayPair{}, map[int]*relay.RelayPair{}
+		testRelay.Pairs, testRelay.ByPort = map[string]*relay.Pair{}, map[int]*relay.Pair{}
 	}()
 	setRelayPIDs(t, "*")
 
@@ -129,14 +129,14 @@ func TestRelayReusesPortForSamePair(t *testing.T) {
 // released as soon as either one leaves.
 func TestRelayReleasesPairsOnlyWhenAPlayerLeaves(t *testing.T) {
 	b := realAddr(t)
-	testRelay.Low, testRelay.High, testRelay.Next, testRelay.Ip = 3150, 3159, 3150, net.IPv4(203, 0, 113, 9)
-	testRelay.Pairs, testRelay.ByPort = map[string]*relay.RelayPair{}, map[int]*relay.RelayPair{}
+	testRelay.Low, testRelay.High, testRelay.Next, testRelay.IP = 3150, 3159, 3150, net.IPv4(203, 0, 113, 9)
+	testRelay.Pairs, testRelay.ByPort = map[string]*relay.Pair{}, map[int]*relay.Pair{}
 	defer func() {
 		for _, p := range testRelay.Pairs {
 			_ = p.Conn.Close()
 		}
 		testRelay.Low, testRelay.High = 0, 0
-		testRelay.Pairs, testRelay.ByPort = map[string]*relay.RelayPair{}, map[int]*relay.RelayPair{}
+		testRelay.Pairs, testRelay.ByPort = map[string]*relay.Pair{}, map[int]*relay.Pair{}
 	}()
 	setRelayPIDs(t, "*")
 	testRelay.WithRelay(b, 111, 222)

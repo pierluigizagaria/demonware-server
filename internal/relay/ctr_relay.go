@@ -41,8 +41,8 @@ import (
 // bdCommonAddr. Empty means nobody, so turning the ports on alone changes nothing for
 // anyone; "*" means everyone. It exists so the relay can be proven on one account before
 // it is allowed near the ~69% of rooms that already connect directly.
-func (relay *RelayTable) relayFor(joinerPID uint64) bool {
-	list := strings.TrimSpace(relay.Pids)
+func (relay *Table) relayFor(joinerPID uint64) bool {
+	list := strings.TrimSpace(relay.PIDs)
 	if list == "" {
 		return false
 	}
@@ -67,8 +67,8 @@ const (
 // emptySlot is what the game writes into an unused relay slot.
 var emptySlot = [4]byte{0, 255, 0, 255}
 
-type RelayPair struct {
-	table              *RelayTable
+type Pair struct {
+	table              *Table
 	port               int
 	hostPID, joinerPID uint64
 	host               *net.UDPAddr // the host's public endpoint, from its own hostAddr
@@ -76,29 +76,29 @@ type RelayPair struct {
 	Conn               *net.UDPConn
 }
 
-type RelayTable struct {
+type Table struct {
 	stopped       bool
 	stop          chan struct{}
 	workers       sync.WaitGroup
 	reaperStarted bool
 	*diagnostics.Diagnostics
-	BindAddr, Pids string
+	BindAddr, PIDs string
 	mu             sync.Mutex
-	Pairs          map[string]*RelayPair // "hostPID:joinerPID" -> pair
-	ByPort         map[int]*RelayPair
+	Pairs          map[string]*Pair // "hostPID:joinerPID" -> pair
+	ByPort         map[int]*Pair
 	Low            int
 	High           int
 	Next           int
-	Ip             net.IP
+	IP             net.IP
 }
 
-func NewRelayTable(diag *diagnostics.Diagnostics, bindAddr, pids string) *RelayTable {
-	return &RelayTable{Diagnostics: diag, BindAddr: bindAddr, Pids: pids, Pairs: map[string]*RelayPair{}, ByPort: map[int]*RelayPair{}}
+func NewTable(diag *diagnostics.Diagnostics, bindAddr, pids string) *Table {
+	return &Table{Diagnostics: diag, BindAddr: bindAddr, PIDs: pids, Pairs: map[string]*Pair{}, ByPort: map[int]*Pair{}}
 }
 
-func (relay *RelayTable) relayEnabled() bool { return relay.High >= relay.Low && relay.Low > 0 }
+func (relay *Table) relayEnabled() bool { return relay.High >= relay.Low && relay.Low > 0 }
 
-func (relay *RelayTable) StartCTRRelay(low, high int, host string, onlinePIDs func() []uint64) {
+func (relay *Table) Start(low, high int, host string, onlinePIDs func() []uint64) {
 	ip := net.ParseIP(host).To4()
 	if ip == nil || low <= 0 || high < low {
 		relay.DiagnosticLogf("[relay] disabled (host=%q ports %d-%d)", host, low, high)
@@ -112,7 +112,7 @@ func (relay *RelayTable) StartCTRRelay(low, high int, host string, onlinePIDs fu
 	relay.reaperStarted = true
 	relay.stop = make(chan struct{})
 	relay.workers.Add(1)
-	relay.Low, relay.High, relay.Next, relay.Ip = low, high, low, ip
+	relay.Low, relay.High, relay.Next, relay.IP = low, high, low, ip
 	relay.mu.Unlock()
 	relay.DiagnosticLogf("[relay] enabled on %s:%d-%d", ip, low, high)
 	go func() { defer relay.workers.Done(); relay.reap(onlinePIDs) }()
@@ -150,7 +150,7 @@ func HostPublicAddr(hostAddr []byte) *net.UDPAddr {
 // withRelay returns a copy of hostAddr with a relay endpoint written into the first free
 // relay slot, allocating a port for this (host, joiner) pair. The original is returned
 // unchanged when the relay is off or the blob is not a bdCommonAddr.
-func (relay *RelayTable) WithRelay(hostAddr []byte, hostPID, joinerPID uint64) []byte {
+func (relay *Table) WithRelay(hostAddr []byte, hostPID, joinerPID uint64) []byte {
 	if !relay.relayEnabled() || len(hostAddr) < CommonAddrLen || hostPID == 0 || joinerPID == 0 || hostPID == joinerPID {
 		return hostAddr
 	}
@@ -172,7 +172,7 @@ func (relay *RelayTable) WithRelay(hostAddr []byte, hostPID, joinerPID uint64) [
 		if ParseAddrSlot(out[off:off+RelayAddrLen]) != nil {
 			continue // already occupied
 		}
-		writeAddrSlot(out[off:off+RelayAddrLen], &net.UDPAddr{IP: relay.Ip, Port: p.port})
+		writeAddrSlot(out[off:off+RelayAddrLen], &net.UDPAddr{IP: relay.IP, Port: p.port})
 		relay.DiagnosticLogf("[relay] offered :%d to pid=%d for host=%d (slot %d)", p.port, joinerPID, hostPID, slot)
 		return out
 	}
@@ -184,7 +184,7 @@ func PairKey(hostPID, joinerPID uint64) string {
 }
 
 // pairFor returns the relay pair for these two players, opening a socket on first use.
-func (t *RelayTable) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *RelayPair {
+func (t *Table) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *Pair {
 	key := PairKey(hostPID, joinerPID)
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -208,7 +208,7 @@ func (t *RelayTable) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *Rela
 		if err != nil {
 			continue
 		}
-		p := &RelayPair{table: t, port: port, hostPID: hostPID, joinerPID: joinerPID, host: host, Conn: conn}
+		p := &Pair{table: t, port: port, hostPID: hostPID, joinerPID: joinerPID, host: host, Conn: conn}
 		t.Pairs[key], t.ByPort[port] = p, p
 		t.workers.Add(1)
 		go func() { defer t.workers.Done(); p.serve() }()
@@ -221,7 +221,7 @@ func (t *RelayTable) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *Rela
 
 // serve forwards in both directions. Anything from the host goes to the joiner; anything
 // else is taken to be the joiner (learned on its first packet) and goes to the host.
-func (p *RelayPair) serve() {
+func (p *Pair) serve() {
 	buf := make([]byte, 2048)
 	for {
 		n, src, err := p.Conn.ReadFromUDP(buf)
@@ -254,7 +254,7 @@ func (p *RelayPair) serve() {
 // reap releases a pair's port once either player has no lobby connection.
 // A quiet pair between connected players is kept: races and menus may be
 // idle for any length of time.
-func (t *RelayTable) reap(onlinePIDs func() []uint64) {
+func (t *Table) reap(onlinePIDs func() []uint64) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -271,7 +271,7 @@ func (t *RelayTable) reap(onlinePIDs func() []uint64) {
 	}
 }
 
-func (t *RelayTable) ReapOffline(online map[uint64]bool) {
+func (t *Table) ReapOffline(online map[uint64]bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for key, p := range t.Pairs {
@@ -284,7 +284,7 @@ func (t *RelayTable) ReapOffline(online map[uint64]bool) {
 	}
 }
 
-func (t *RelayTable) Close() {
+func (t *Table) Close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.stopped {
@@ -298,4 +298,4 @@ func (t *RelayTable) Close() {
 		_ = pair.Conn.Close()
 	}
 }
-func (t *RelayTable) Wait() { t.workers.Wait() }
+func (t *Table) Wait() { t.workers.Wait() }

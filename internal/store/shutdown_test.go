@@ -27,7 +27,7 @@ func (d closingDriver) Open(string) (driver.Conn, error) { return d.connector.co
 
 func TestInstanceLockOutlivesDatabaseClose(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "synthetic.db")
-	lock, err := lockCTRInstance(path)
+	lock, err := lockInstance(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,11 +37,11 @@ func TestInstanceLockOutlivesDatabaseClose(t *testing.T) {
 	if err := db.Ping(); err != nil {
 		t.Fatal(err)
 	}
-	s := &CtrSQLite{Db: db, lock: lock}
+	s := &SQLite{DB: db, lock: lock}
 	done := make(chan error, 1)
 	go func() { done <- s.Close() }()
 	<-conn.entered
-	second, err := lockCTRInstance(path)
+	second, err := lockInstance(path)
 	if err == nil {
 		second.Close()
 		t.Error("lock released while DB.Close was blocked")
@@ -55,7 +55,7 @@ func TestInstanceLockOutlivesDatabaseClose(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("database close did not finish")
 	}
-	second, err = lockCTRInstance(path)
+	second, err = lockInstance(path)
 	if err != nil {
 		t.Fatalf("lock retained after DB.Close: %v", err)
 	}

@@ -13,8 +13,8 @@ import (
 )
 
 func TestMarketplaceRejectsShortTaskHeaders(t *testing.T) {
-	l := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-	for _, task := range []byte{ctr.TaskGetInventoryPaginated, ctr.TaskPurchaseSkus} {
+	l := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	for _, task := range []byte{ctr.TaskGetInventoryPaginated, ctr.TaskPurchaseSKUs} {
 		request := []byte{80, 3, task}
 		for n := 0; n <= len(request); n++ {
 			reply := l.onMarketplace(task, request[:n]).Reply
@@ -164,7 +164,7 @@ func TestAmountSurvivesZigzagRoundTrip(t *testing.T) {
 // Both achievements responses end on a string read and return its result, so a missing
 // string field fails the whole deserialize. That is what broke the Pit Stop refresh.
 func TestAchievementsRepliesCarryTheirStringField(t *testing.T) {
-	l := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	l := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 
 	states := l.onAchievements(ctr.TaskGetAchievementStates, nil).Reply
 	if !hasField(structBodyOf(t, states), 2) {
@@ -217,7 +217,7 @@ func TestParsePurchaseSkuFromRealCapture(t *testing.T) {
 	}
 	// The PS4 build sends the same request with its own context (ps4PurchaseRequest).
 	payload = bytes.Replace(payload, []byte("octane_switch"), []byte(ps4.MarketplaceContext), 1)
-	sku, ok := ctr.ParsePurchaseSku(payload)
+	sku, ok := ctr.ParsePurchaseSKU(payload)
 	if !ok {
 		t.Fatal("could not read the sku out of a real purchase request")
 	}

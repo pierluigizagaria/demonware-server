@@ -41,6 +41,6 @@ func ReadInfo(r *demonware.Reader) (host []byte, gameType, maxPlayers uint32, at
 }
 
 // onMatchMaking handles service 21. Returns nil if the task isn't handled.
-func (handler *DiabloMatchHandler) OnMatchMaking(peer lobby.TaskSession, task byte, r *demonware.Reader) []byte {
+func (handler *MatchHandler) OnMatchMaking(peer lobby.TaskSession, task byte, r *demonware.Reader) []byte {
 	return handler.OnMatchMakingContext(peer, task, r, "d3")
 }

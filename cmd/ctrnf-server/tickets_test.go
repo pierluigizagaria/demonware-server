@@ -23,9 +23,9 @@ func issuedTicketCount() int {
 	return len(testTickets.Entries)
 }
 
-func withTestPlayerNames(t *testing.T) *store.CtrSQLite {
+func withTestPlayerNames(t *testing.T) *store.SQLite {
 	t.Helper()
-	db := openTestCTR(t, filepath.Join(t.TempDir(), store.CtrDB), false)
+	db := openTestCTR(t, filepath.Join(t.TempDir(), store.DBFile), false)
 	old := testPresence.PlayerNames
 	testPresence.PlayerNames = db
 	t.Cleanup(func() { testPresence.PlayerNames = old })
@@ -62,7 +62,7 @@ func TestIssuedTicketsLeaveMemoryAfterTheirWindow(t *testing.T) {
 }
 
 func TestPlayerNamesSurviveRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), store.CtrDB)
+	path := filepath.Join(t.TempDir(), store.DBFile)
 	db := openTestCTR(t, path, false)
 	at := time.Now().Add(-time.Hour)
 	for _, r := range []struct {
@@ -87,14 +87,14 @@ func TestPlayerNamesSurviveRestart(t *testing.T) {
 
 func TestCTRSchemaRefusesPreReleaseVersions(t *testing.T) {
 	for _, old := range []int{2, 3} {
-		path := filepath.Join(t.TempDir(), store.CtrDB)
+		path := filepath.Join(t.TempDir(), store.DBFile)
 		db := openTestCTR(t, path, false)
 		sqliteExec(t, db, fmt.Sprintf("PRAGMA user_version = %d", old))
 		if err := db.RememberName(9, "Fixture", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		db.Close()
-		if other, err := store.OpenCTRSQLite(path, false, testTrustID); err == nil {
+		if other, err := store.OpenSQLite(path, false, testTrustID); err == nil {
 			other.Close()
 			t.Fatalf("pre-release schema %d accepted", old)
 		}
@@ -116,24 +116,24 @@ func TestCTRSchemaRefusesPreReleaseVersions(t *testing.T) {
 }
 
 func TestCTRDatabaseRefusesAnotherTrust(t *testing.T) {
-	path := filepath.Join(t.TempDir(), store.CtrDB)
+	path := filepath.Join(t.TempDir(), store.DBFile)
 	openTestCTR(t, path, false).Close()
-	if other, err := store.OpenCTRSQLite(path, false, "another-issuer"); err == nil {
+	if other, err := store.OpenSQLite(path, false, "another-issuer"); err == nil {
 		other.Close()
 		t.Fatal("database opened for another shadNet issuer")
 	}
-	if _, err := store.OpenCTRSQLite(filepath.Join(t.TempDir(), store.CtrDB), false, ""); err == nil {
+	if _, err := store.OpenSQLite(filepath.Join(t.TempDir(), store.DBFile), false, ""); err == nil {
 		t.Fatal("database opened without a trust ID")
 	}
 	for _, statement := range []string{"DELETE FROM meta WHERE key = 'trust_id'", "UPDATE meta SET value = 'x' WHERE key = 'trust_id'"} {
 		db := openTestCTR(t, path, false)
 		sqliteExec(t, db, statement)
 		db.Close()
-		if reopened, err := store.OpenCTRSQLite(path, false, testTrustID); err == nil {
+		if reopened, err := store.OpenSQLite(path, false, testTrustID); err == nil {
 			reopened.Close()
 			t.Fatalf("%s accepted", statement)
 		}
-		path = filepath.Join(t.TempDir(), store.CtrDB)
+		path = filepath.Join(t.TempDir(), store.DBFile)
 		openTestCTR(t, path, false).Close()
 	}
 }

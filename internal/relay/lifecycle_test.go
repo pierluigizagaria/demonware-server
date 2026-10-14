@@ -9,13 +9,13 @@ import (
 )
 
 func TestRelayShutdownJoinsReaperAndSocket(t *testing.T) {
-	r := NewRelayTable(&diagnostics.Diagnostics{RedactLogs: true}, "127.0.0.1", "*")
-	r.StartCTRRelay(20000, 20001, "127.0.0.1", func() []uint64 { return nil })
+	r := NewTable(&diagnostics.Diagnostics{RedactLogs: true}, "127.0.0.1", "*")
+	r.Start(20000, 20001, "127.0.0.1", func() []uint64 { return nil })
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	pair := &RelayPair{table: r, Conn: conn}
+	pair := &Pair{table: r, Conn: conn}
 	r.mu.Lock()
 	r.Pairs["fixture"] = pair
 	r.workers.Add(1)

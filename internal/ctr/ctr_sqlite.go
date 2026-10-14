@@ -9,23 +9,23 @@ type economyBackend interface {
 
 type EconomyChange struct {
 	Source string
-	Skus   []uint32
+	SKUs   []uint32
 }
 
 type LeaderboardStore interface {
-	Write(writes []CtrStatWrite) error
-	Read(board uint32) ([]CtrStat, error)
+	Write(writes []StatWrite) error
+	Read(board uint32) ([]Stat, error)
 }
 
 // rankedLeaderboard answers stats reads without loading a whole board.
 type rankedLeaderboard interface {
-	ReadRanks(board uint32, start uint64, limit uint32) ([]CtrStat, uint64, error)
-	ReadEntities(board uint32, pids []uint64) ([]CtrStat, error)
+	ReadRanks(board uint32, start uint64, limit uint32) ([]Stat, uint64, error)
+	ReadEntities(board uint32, pids []uint64) ([]Stat, error)
 }
 
 // readLeaderboard returns the rows for stats task 4 (ranks from start) or 13
 // (the given entities) and the total the reply reports.
-func ReadLeaderboard(store LeaderboardStore, task byte, board uint32, start uint64, limit uint32, ids map[uint64]bool) ([]CtrStat, uint32, error) {
+func ReadLeaderboard(store LeaderboardStore, task byte, board uint32, start uint64, limit uint32, ids map[uint64]bool) ([]Stat, uint32, error) {
 	if ranked, ok := store.(rankedLeaderboard); ok {
 		if task == 4 {
 			rows, total, err := ranked.ReadRanks(board, start, limit)
@@ -42,7 +42,7 @@ func ReadLeaderboard(store LeaderboardStore, task byte, board uint32, start uint
 	if err != nil {
 		return nil, 0, err
 	}
-	rows := []CtrStat{}
+	rows := []Stat{}
 	for _, row := range all {
 		if task == 4 {
 			if row.Rank >= start && uint32(len(rows)) < limit {

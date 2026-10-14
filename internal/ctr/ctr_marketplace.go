@@ -36,7 +36,7 @@ import (
 const (
 	SvcMarketplace            = 80
 	TaskGetInventoryPaginated = 165
-	TaskPurchaseSkus          = 154
+	TaskPurchaseSKUs          = 154
 	TaskGetBalancesV3         = 245
 	taskSwitchReconciliation  = 246
 )
@@ -129,7 +129,7 @@ func (h *EconomyHandler) OnMarketplace(peer lobby.TaskSession, task byte, payloa
 			return uint32(len(items))
 		})
 		return result
-	case TaskPurchaseSkus:
+	case TaskPurchaseSKUs:
 		skus, ok := parsePurchaseSkus(payload)
 		if !ok {
 			result.Reply = h.TaskReply(task, lobby.ErrUnhandled, nil)
@@ -284,7 +284,7 @@ func defaultPS4PurchaseOptions(tail []byte, count uint32) bool {
 	return bytes.Equal(tail, append(w.Bytes(), 0))
 }
 
-func ParsePurchaseSku(payload []byte) (uint32, bool) {
+func ParsePurchaseSKU(payload []byte) (uint32, bool) {
 	ids, ok := parsePurchaseSkus(payload)
 	if !ok || len(ids) != 1 {
 		return 0, false

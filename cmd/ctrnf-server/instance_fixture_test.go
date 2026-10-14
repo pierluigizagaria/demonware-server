@@ -28,12 +28,12 @@ import (
 // ticket directory; auth, lobby and Umbrella receive the same instance owner.
 var testTickets = auth.NewTicketStore()
 
-func testAuthHandler(p auth.PublisherPlatform, s *auth.CtrAuthSigner, dumps string) http.Handler {
+func testAuthHandler(p auth.PublisherPlatform, s *auth.CTRSigner, dumps string) http.Handler {
 	return auth.NewPlatformAuthHandler(testDiagnostics, testTelemetry, testTickets, testPresence, p, s, dumps, ctr.NewUmbrellaHandler(testDiagnostics, testTickets))
 }
 
 func testUmbrellaHandler(w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
-	ctr.HandleCTRUmbrella(testDiagnostics, testTickets, w, r, body, n, dumps)
+	ctr.HandleUmbrella(testDiagnostics, testTickets, w, r, body, n, dumps)
 }
 
 func TestInstanceTicketDirectoriesAreIsolated(t *testing.T) {
@@ -52,22 +52,22 @@ func TestInstanceTicketDirectoriesAreIsolated(t *testing.T) {
 	}
 }
 
-var testPresence = presence.NewPresenceStore(nil)
+var testPresence = presence.NewStore(nil)
 
 func init() { testMatchmaker.OnlinePIDs = testPresence.OnlinePIDs }
 
-func testBuildStats() dashboard.ApiStats {
+func testBuildStats() dashboard.APIStats {
 	return testTelemetry.BuildStats(newDashboardViews(testPresence, testMatchmaker, testRegistry))
 }
 
-func testBuildGameStats(game string) dashboard.ApiStats {
+func testBuildGameStats(game string) dashboard.APIStats {
 	return testTelemetry.BuildGameStats(newDashboardViews(testPresence, testMatchmaker, testRegistry), game)
 }
 
 func TestInstancePresenceAndPersistentNamesAreIsolated(t *testing.T) {
-	firstDB := openTestCTR(t, filepath.Join(t.TempDir(), store.CtrDB), false)
-	secondDB := openTestCTR(t, filepath.Join(t.TempDir(), store.CtrDB), false)
-	a, b := presence.NewPresenceStore(firstDB), presence.NewPresenceStore(secondDB)
+	firstDB := openTestCTR(t, filepath.Join(t.TempDir(), store.DBFile), false)
+	secondDB := openTestCTR(t, filepath.Join(t.TempDir(), store.DBFile), false)
+	a, b := presence.NewStore(firstDB), presence.NewStore(secondDB)
 	now := time.Now()
 	if a.RememberPlayerName(platform.PlayerID{PID: 17, Username: "first"}, now) != nil || b.RememberPlayerName(platform.PlayerID{PID: 17, Username: "second"}, now) != nil {
 		t.Fatal("record names")
@@ -145,12 +145,12 @@ func TestInstanceReplyCountersAreIsolated(t *testing.T) {
 
 var testStartBalance int64
 
-var testCTR = &ctr.CtrServices{Economy: &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }}, Stats: &ctr.CtrStatsStore{}}
+var testCTR = &ctr.Services{Economy: &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }}, Stats: &ctr.StatsStore{}}
 
 func testLoadWallets() { testCTR.Economy.LoadWallets(testConfig.DataDir) }
 
 func init() {
-	testCTR.Stats.(*ctr.CtrStatsStore).FallbackDir = func() string { return testCTR.Economy.Dir }
+	testCTR.Stats.(*ctr.StatsStore).FallbackDir = func() string { return testCTR.Economy.Dir }
 }
 
 func TestInstanceEconomyAndLeaderboardAreIsolated(t *testing.T) {
@@ -160,25 +160,25 @@ func TestInstanceEconomyAndLeaderboardAreIsolated(t *testing.T) {
 	bDB.InitialBalance = func() int64 { return 20000 }
 	first, _ := sharedPS4Lobby()
 	second, _ := sharedPS4Lobby()
-	first.ctr = &ctr.CtrServices{Economy: a, Stats: aDB}
-	second.ctr = &ctr.CtrServices{Economy: b, Stats: bDB}
+	first.ctr = &ctr.Services{Economy: a, Stats: aDB}
+	second.ctr = &ctr.Services{Economy: b, Stats: bDB}
 	first.C = &architectureWire{}
 	second.C = &architectureWire{}
 	for _, l := range []*lobbyConn{first, second} {
 		frames := architectureCall(t, l, l.C.(*architectureWire), marketplaceHex(t, ps4BalancesRequest))
 		payload, _ := hex.DecodeString(frames[0].Payload)
-		want := ctr.GetPlayerBalancesResponse(map[uint64]int64{10: l.ctr.Economy.Backend.(*store.CtrSQLite).StartingBalance()}, 3)
+		want := ctr.GetPlayerBalancesResponse(map[uint64]int64{10: l.ctr.Economy.Backend.(*store.SQLite).StartingBalance()}, 3)
 		if !bytes.Equal(structBodyOf(t, payload), want) {
 			t.Fatal("balance crossed instance boundary")
 		}
 	}
 	architectureCall(t, first, first.C.(*architectureWire), marketplaceHex(t, ps4PurchaseRequest))
-	aa, errA := a.Snapshot(first.Pid())
-	bb, errB := b.Snapshot(second.Pid())
+	aa, errA := a.Snapshot(first.PID())
+	bb, errB := b.Snapshot(second.PID())
 	if errA != nil || errB != nil || aa.Balances[10] >= 10000 || bb.Balances[10] != 20000 || len(bb.Items) != 0 {
 		t.Fatal("purchase crossed instance boundary")
 	}
-	if err := aDB.Write([]ctr.CtrStatWrite{{CtrStat: ctr.CtrStat{Board: 89, PID: first.Pid(), Score: 7}}}); err != nil {
+	if err := aDB.Write([]ctr.StatWrite{{Stat: ctr.Stat{Board: 89, PID: first.PID(), Score: 7}}}); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := bDB.Read(89)
@@ -187,14 +187,14 @@ func TestInstanceEconomyAndLeaderboardAreIsolated(t *testing.T) {
 	}
 }
 
-var testMatchmaker = &ctr.CtrMatchmaker{Rooms: map[uint64]*ctr.CtrRoom{}}
+var testMatchmaker = &ctr.Matchmaker{Rooms: map[uint64]*ctr.Room{}}
 
 var testRegistry = lobby.NewSessionRegistry()
 
 func TestInstanceMatchmakingAndPushesAreIsolated(t *testing.T) {
-	a := &ctr.CtrMatchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, Rooms: map[uint64]*ctr.CtrRoom{}}
-	b := &ctr.CtrMatchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, Rooms: map[uint64]*ctr.CtrRoom{}}
-	prepare := func(m *ctr.CtrMatchmaker, pid uint64) (*ctr.CtrSearch, *architectureWire) {
+	a := &ctr.Matchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, Rooms: map[uint64]*ctr.Room{}}
+	b := &ctr.Matchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, Rooms: map[uint64]*ctr.Room{}}
+	prepare := func(m *ctr.Matchmaker, pid uint64) (*ctr.Search, *architectureWire) {
 		s := testCTRSearchFor(m, t, pid, 0)
 		l, _ := sharedPS4Lobby()
 		l.N, l.Player.PID, l.matchmaker = pid, pid, m
@@ -206,19 +206,19 @@ func TestInstanceMatchmakingAndPushesAreIsolated(t *testing.T) {
 	ba, bw := prepare(b, 17)
 	ab, _ := prepare(a, 18)
 	bb, _ := prepare(b, 18)
-	if aa.Id != ba.Id || ab.Id != bb.Id {
+	if aa.ID != ba.ID || ab.ID != bb.ID {
 		t.Fatal("instance search ID sequences differ")
 	}
 	a.Enqueue(aa)
 	b.Enqueue(ba)
 	notices := a.Enqueue(ab)
-	ctr.SendCTRNotices(notices)
+	ctr.SendNotices(notices)
 	if len(aw.writes) != 1 || len(bw.writes) != 0 || len(a.Rooms) != 1 || len(b.Rooms) != 0 {
 		t.Fatal("match or push crossed instances")
 	}
 	architectureFrames(t, aa.Conn.(*lobbyConn), aw, 0)
 	notices = b.Enqueue(bb)
-	ctr.SendCTRNotices(notices)
+	ctr.SendNotices(notices)
 	if len(aw.writes) != 1 || len(bw.writes) != 1 || len(b.Rooms) != 1 {
 		t.Fatal("second instance failed to form its own room")
 	}
@@ -232,8 +232,8 @@ func TestInstanceMatchmakingAndPushesAreIsolated(t *testing.T) {
 func TestInstanceContextRegistriesAreIsolated(t *testing.T) {
 	a, b := lobby.NewSessionRegistry(), lobby.NewSessionRegistry()
 	id := [8]byte{1}
-	a.Sessions[id] = &lobby.MmSession{Id: id, Owner: 17, OwnerPID: 17}
-	b.Sessions[id] = &lobby.MmSession{Id: id, Owner: 17, OwnerPID: 17}
+	a.Sessions[id] = &lobby.MatchSession{ID: id, Owner: 17, OwnerPID: 17}
+	b.Sessions[id] = &lobby.MatchSession{ID: id, Owner: 17, OwnerPID: 17}
 	a.DropSessionsOf(17)
 	if a.Sessions[id].Owner != 0 || b.Sessions[id].Owner != 17 {
 		t.Fatal("registry disconnect crossed instances")
@@ -244,28 +244,28 @@ var testDiagnostics = &diagnostics.Diagnostics{RedactLogs: true, DumpRoot: "off"
 
 var testFiles = &diablo.PublisherFiles{Diagnostics: testDiagnostics, PubDir: "pubfiles", PubConfigPath: "pubfiles.json", RiftDir: "riftdata"}
 
-var testOptions = &lobby.LobbyOptions{PublicHost: "127.0.0.1"}
+var testOptions = &lobby.Options{PublicHost: "127.0.0.1"}
 
-var testRelay = relay.NewRelayTable(testDiagnostics, "", "")
+var testRelay = relay.NewTable(testDiagnostics, "", "")
 
-var testConfig = func() config.ServerConfig {
-	c, err := config.LoadConfig(func(string) string { return "" }, nil, false)
+var testConfig = func() config.Config {
+	c, err := config.Load(func(string) string { return "" }, nil, false)
 	if err != nil {
 		panic(err)
 	}
 	return c
 }()
 
-var testNAT = &nat.NatServer{}
+var testNAT = &nat.Server{}
 
-var testTelemetry = dashboard.NewTelemetry(testConfig, testNAT.NatIntros.Load)
+var testTelemetry = dashboard.NewTelemetry(testConfig, testNAT.NATIntros.Load)
 
-func testApplyConfig(c config.ServerConfig) {
+func testApplyConfig(c config.Config) {
 	testConfig = c
 	testDiagnostics.RedactLogs, testDiagnostics.Verbose, testDiagnostics.DumpRoot = c.RedactLogs, c.Verbose, c.Dumps
 	testFiles.PubDir, testFiles.PubConfigPath, testFiles.RiftDir = c.PubfilesDir, c.PubfilesConfig, c.RiftData
 	testOptions.MigrateEnabled, testOptions.PublicHost = c.Migrate, c.PublicIP
-	testRelay.BindAddr, testRelay.Pids = c.BindAddr, c.RelayPIDs
+	testRelay.BindAddr, testRelay.PIDs = c.BindAddr, c.RelayPIDs
 }
 
 func TestComposedInstancesKeepEqualIdentitiesIndependent(t *testing.T) {
@@ -273,18 +273,18 @@ func TestComposedInstancesKeepEqualIdentitiesIndependent(t *testing.T) {
 	var lobbies []*lobbyConn
 	var wires []*architectureWire
 	for n, text := range []string{"first", "second"} {
-		cfg, err := config.LoadConfig(lookupFrom(map[string]string{"CTR_NEWS": text, "CTR_NEWS_IT": text}), nil, false)
+		cfg, err := config.Load(lookupFrom(map[string]string{"CTR_NEWS": text, "CTR_NEWS_IT": text}), nil, false)
 		if err != nil {
 			t.Fatal(err)
 		}
 		cfg.DataDir = t.TempDir()
 		cfg.StartBalance = int64((n + 1) * 10000)
-		database := openTestCTR(t, filepath.Join(cfg.DataDir, store.CtrDB), false)
+		database := openTestCTR(t, filepath.Join(cfg.DataDir, store.DBFile), false)
 		instance := newInstance(cfg, database)
 		// Mutating the caller's copy cannot rewrite the instance configuration.
-		cfg.News.Languages["it"] = config.CtrNewsMessage{}
+		cfg.News.Languages["it"] = config.NewsMessage{}
 		w := &architectureWire{}
-		l := &lobbyConn{LobbySession: instance.lobby.NewConn(w, ""), lobbyDependencies: lobbyDependencies{files: testFiles, relay: instance.relay, matchmaker: instance.matchmaker, registry: instance.registry, ctr: instance.ctr}}
+		l := &lobbyConn{Session: instance.lobby.NewConn(w, ""), lobbyDependencies: lobbyDependencies{files: testFiles, relay: instance.relay, matchmaker: instance.matchmaker, registry: instance.registry, ctr: instance.ctr}}
 		fixture, _ := sharedPS4Lobby()
 		l.Keys, l.Player = fixture.Keys, fixture.Player
 		l.Player.Username = text
@@ -305,7 +305,7 @@ func TestComposedInstancesKeepEqualIdentitiesIndependent(t *testing.T) {
 		lobbies = append(lobbies, l)
 		wires = append(wires, w)
 	}
-	if lobbies[0].N != lobbies[1].N || lobbies[0].Pid() != lobbies[1].Pid() {
+	if lobbies[0].N != lobbies[1].N || lobbies[0].PID() != lobbies[1].PID() {
 		t.Fatal("fixture must reuse numeric identities")
 	}
 	for n, instance := range instances {
@@ -317,7 +317,7 @@ func TestComposedInstancesKeepEqualIdentitiesIndependent(t *testing.T) {
 		r := demonware.NewReader(p[26:])
 		pid, _ := r.Uint64()
 		name, err := r.String()
-		if err != nil || pid != lobbies[n].Pid() || name != lobbies[n].Player.Username || len(r.Remaining()) != 0 {
+		if err != nil || pid != lobbies[n].PID() || name != lobbies[n].Player.Username || len(r.Remaining()) != 0 {
 			t.Fatal("composed name stores crossed")
 		}
 		a, err := instance.ctr.Economy.Snapshot(pid)

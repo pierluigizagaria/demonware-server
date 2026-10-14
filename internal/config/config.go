@@ -20,36 +20,36 @@ var settingPrefixes = []string{"CTR_", "D3_", "DASH_", "NEXTENDO_", "SHADNET_"}
 // Read by the integration test only, never by the server.
 var testOnlySettings = map[string]bool{"SHADNET_INTEROP_FIXTURE": true}
 
-type ServerConfig struct {
+type Config struct {
 	PublicIP, BindAddr                 string
-	AuthPort, NatPort, DashPort        int
+	AuthPort, NATPort, DashPort        int
 	LobbyPorts                         string
 	ProxyProtocol                      bool
 	CertFile, KeyFile                  string
-	DashToken, SniHost                 string
+	DashToken, SNIHost                 string
 	PubfilesConfig, PubfilesDir, Dumps string
 	Verbose                            bool
 	RiftData                           string
 	Shadnet                            shadnet.Policy
 	Admission                          string
-	JwksURL                            string
+	JWKSURL                            string
 	SigningKey, DataDir                string
 	UnlockAll, Migrate, RedactLogs     bool
 	StartBalance                       int64
 	RelayLow, RelayHigh                int
 	RelayPIDs                          string
-	News                               CtrNewsConfig
+	News                               News
 }
 
 // readConfig loads envFile, if any, and reads the configuration. serving
 // requires what the server needs beyond `server pubfiles`.
-func ReadConfig(envFile string, serving bool) (ServerConfig, error) {
-	return ReadConfigEnvironment(envFile, serving, os.Environ())
+func Read(envFile string, serving bool) (Config, error) {
+	return ReadEnvironment(envFile, serving, os.Environ())
 }
 
 // Read the file as an instance overlay. Existing process values (including an
 // explicitly empty value) win, without installing file values into the process.
-func ReadConfigEnvironment(envFile string, serving bool, environ []string) (ServerConfig, error) {
+func ReadEnvironment(envFile string, serving bool, environ []string) (Config, error) {
 	values := map[string]string{}
 	for _, kv := range environ {
 		name, value, ok := strings.Cut(kv, "=")
@@ -61,7 +61,7 @@ func ReadConfigEnvironment(envFile string, serving bool, environ []string) (Serv
 	if envFile != "" {
 		vars, err := ParseEnvFile(envFile)
 		if err != nil {
-			return ServerConfig{}, err
+			return Config{}, err
 		}
 		for _, v := range vars {
 			name := canonicalName(v[0])
@@ -69,13 +69,13 @@ func ReadConfigEnvironment(envFile string, serving bool, environ []string) (Serv
 				continue
 			}
 			if strings.IndexByte(v[1], 0) >= 0 {
-				return ServerConfig{}, fmt.Errorf("%s: environment value contains NUL", v[0])
+				return Config{}, fmt.Errorf("%s: environment value contains NUL", v[0])
 			}
 			values[name] = v[1]
 			names = append(names, name+"="+v[1])
 		}
 	}
-	return LoadConfig(func(name string) string { return values[canonicalName(name)] }, SettingNames(names), serving)
+	return Load(func(name string) string { return values[canonicalName(name)] }, SettingNames(names), serving)
 }
 
 // settingNames returns the canonical names in environ, without repeats, that
@@ -104,26 +104,26 @@ func canonicalName(name string) string {
 
 // loadConfig reads every setting through lookup. Each name in check, the
 // environment's variables with a server prefix, must be a setting.
-func LoadConfig(lookup func(string) string, check []string, serving bool) (ServerConfig, error) {
+func Load(lookup func(string) string, check []string, serving bool) (Config, error) {
 	r := &envReader{lookup: lookup, known: map[string]bool{}}
 	admission := r.text("CTR_ADMISSION", "shadnet")
 	if admission != "shadnet" && admission != "guest" {
 		r.fail("CTR_ADMISSION must be shadnet or guest")
 	}
 	needsShadNet := serving && admission != "guest"
-	c := ServerConfig{
+	c := Config{
 		Admission:      admission,
 		PublicIP:       r.ipv4("NEXTENDO_HOST", "127.0.0.1"),
 		BindAddr:       r.ip("BIND_ADDR"),
 		AuthPort:       r.port("AUTH_PORT", 8460),
 		LobbyPorts:     r.ports("LOBBY_PORTS", "3074,3075,3076,3077,3078,3079,3080"),
-		NatPort:        r.port("NAT_PORT", 3074),
+		NATPort:        r.port("NAT_PORT", 3074),
 		ProxyProtocol:  r.flag("NEXTENDO_PROXY_PROTOCOL", false),
 		CertFile:       r.text("CERT_FILE", "cert.pem"),
 		KeyFile:        r.text("KEY_FILE", "key.pem"),
 		DashPort:       r.port("DASH_PORT", 8093),
 		DashToken:      r.text("DASH_TOKEN", ""),
-		SniHost:        r.text("NEXTENDO_SNI_HOST", ""),
+		SNIHost:        r.text("NEXTENDO_SNI_HOST", ""),
 		PubfilesConfig: r.text("D3_PUBFILES_CONFIG", "pubfiles.json"),
 		PubfilesDir:    r.text("D3_PUBFILES", "pubfiles"),
 		Dumps:          r.text("D3_DUMPS", "off"),
@@ -135,7 +135,7 @@ func LoadConfig(lookup func(string) string, check []string, serving bool) (Serve
 			NPTitleID: r.required("SHADNET_TITLE_ID", needsShadNet),
 			Scopes:    strings.Fields(r.required("SHADNET_SCOPES", needsShadNet)),
 		},
-		JwksURL:      r.required("SHADNET_JWKS_URL", needsShadNet),
+		JWKSURL:      r.required("SHADNET_JWKS_URL", needsShadNet),
 		SigningKey:   r.required("CTR_AUTH_SIGNING_KEY", serving),
 		DataDir:      r.text("DATA_DIR", "data"),
 		UnlockAll:    r.flag("CTR_UNLOCK_ALL", false),
@@ -151,13 +151,13 @@ func LoadConfig(lookup func(string) string, check []string, serving bool) (Serve
 		if !c.UnlockAll {
 			r.fail("CTR_ADMISSION=guest requires CTR_UNLOCK_ALL=1")
 		}
-		if c.Shadnet.Issuer != "" || c.Shadnet.ClientID != "" || c.Shadnet.NPTitleID != "" || len(c.Shadnet.Scopes) != 0 || c.JwksURL != "" {
+		if c.Shadnet.Issuer != "" || c.Shadnet.ClientID != "" || c.Shadnet.NPTitleID != "" || len(c.Shadnet.Scopes) != 0 || c.JWKSURL != "" {
 			r.fail("SHADNET_* must be empty for guest admission")
 		}
 	}
 	if needsShadNet && c.Shadnet.Issuer != "" && c.Shadnet.ClientID != "" && c.Shadnet.NPTitleID != "" &&
-		len(c.Shadnet.Scopes) != 0 && c.JwksURL != "" {
-		if err := shadnet.Check(c.Shadnet, c.JwksURL); err != nil {
+		len(c.Shadnet.Scopes) != 0 && c.JWKSURL != "" {
+		if err := shadnet.Check(c.Shadnet, c.JWKSURL); err != nil {
 			r.fail("SHADNET_*: %v", err)
 		}
 	}
@@ -193,8 +193,8 @@ var newsLanguages = []string{
 	"it", "ja", "ko", "no", "pl", "pt", "ru", "es", "mx", "sv", "ta", "tr", "pt-BR", "es-MX",
 }
 
-func (r *envReader) news() CtrNewsConfig {
-	c := CtrNewsConfig{Fallback: r.newsMessage("CTR_NEWS"), Languages: map[string]CtrNewsMessage{}}
+func (r *envReader) news() News {
+	c := News{Fallback: r.newsMessage("CTR_NEWS"), Languages: map[string]NewsMessage{}}
 	for _, language := range newsLanguages {
 		name := "CTR_NEWS_" + strings.ReplaceAll(strings.ToUpper(language), "-", "_")
 		if msg := r.newsMessage(name); len(msg.Content) != 0 {
@@ -204,8 +204,8 @@ func (r *envReader) news() CtrNewsConfig {
 	return c
 }
 
-func (r *envReader) newsMessage(name string) CtrNewsMessage {
-	msg, err := newCTRNewsMessage(r.value(name))
+func (r *envReader) newsMessage(name string) NewsMessage {
+	msg, err := newNewsMessage(r.value(name))
 	if err != nil {
 		r.fail("%s: %v", name, err)
 	}

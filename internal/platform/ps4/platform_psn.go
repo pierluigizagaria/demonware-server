@@ -15,7 +15,7 @@ import (
 
 // Crash Team Racing Nitro-Fueled on PS4 (CUSA13795).
 const (
-	CtrTitle = 5760 // Demonware title
+	CTRTitle = 5760 // Demonware title
 	// PS4 credentials expire after 120 seconds, so a publisher ticket admits
 	// only a fresh connection; established sessions are never cut off afterwards.
 	TicketWindow = 120 * time.Second
@@ -24,15 +24,15 @@ const (
 	MarketplaceAccountType = "psn" // PS4 reader 0xb3790 allows at most 10 bytes.
 )
 
-func IsCTRTitle(title uint32) bool { return title == CtrTitle }
+func IsCTRTitle(title uint32) bool { return title == CTRTitle }
 
 // psnPlatform adapts the observed CTR PS4 request envelope to platform identity.
 // The supplied verifier determines trust; failed verification has no fallback.
-type PsnPlatform struct {
+type PSNPlatform struct {
 	Verifier platform.Verifier
 }
 
-func (p PsnPlatform) Authenticate(body []byte) (platform.PlayerID, error) {
+func (p PSNPlatform) Authenticate(body []byte) (platform.PlayerID, error) {
 	refused := func() (platform.PlayerID, error) {
 		return platform.PlayerID{}, fmt.Errorf("platform identity refused")
 	}
@@ -45,7 +45,7 @@ func (p PsnPlatform) Authenticate(body []byte) (platform.PlayerID, error) {
 		return refused()
 	}
 	// Keep the publisher's subject namespace separate from shadNet's decimal sub.
-	return platform.PlayerID{PID: id.AccountID, Username: id.OnlineID, Sub: "shadnet:" + id.Subject, Kind: "shadnet", Title: CtrTitle}, nil
+	return platform.PlayerID{PID: id.AccountID, Username: id.OnlineID, Sub: "shadnet:" + id.Subject, Kind: "shadnet", Title: CTRTitle}, nil
 }
 
 // Both admission providers consume the original PS4 envelope. Only the
@@ -57,7 +57,7 @@ func ReadPSNEnvelope(body []byte) (string, bool) {
 		IVSeed    string `json:"iv_seed"`
 		ExtraData string `json:"extra_data"`
 	}
-	if len(body) > 16384 || !decodePSNObject(body, &request, "title_id", "auth_task", "iv_seed", "extra_data") || request.TitleID != strconv.Itoa(CtrTitle) || request.AuthTask != "46" {
+	if len(body) > 16384 || !decodePSNObject(body, &request, "title_id", "auth_task", "iv_seed", "extra_data") || request.TitleID != strconv.Itoa(CTRTitle) || request.AuthTask != "46" {
 		return "", false
 	}
 	if _, err := strconv.ParseUint(request.IVSeed, 10, 32); err != nil {
@@ -75,18 +75,18 @@ func ReadPSNEnvelope(body []byte) (string, bool) {
 	return envelope.IDToken, true
 }
 
-func (PsnPlatform) AuthData(id platform.PlayerID) map[string]string {
+func (PSNPlatform) AuthData(id platform.PlayerID) map[string]string {
 	return map[string]string{"extended_data": fmt.Sprintf("nextendo:shadnet:%d", id.PID)}
 }
 
 // loadPSNPlatform also returns the trust ID (issuer, client and title) that
 // the instance database is bound to.
-func LoadPSNPlatform(policy shadnet.Policy, jwksURL string) (PsnPlatform, string, error) {
+func LoadPSNPlatform(policy shadnet.Policy, jwksURL string) (PSNPlatform, string, error) {
 	verifier, err := shadnet.Load(policy, jwksURL)
 	if err != nil {
-		return PsnPlatform{}, "", err
+		return PSNPlatform{}, "", err
 	}
-	return PsnPlatform{Verifier: verifier}, verifier.TrustID(), nil
+	return PSNPlatform{Verifier: verifier}, verifier.TrustID(), nil
 }
 
 // Preserve extra game fields but reject duplicate/case-aliased required fields
@@ -109,7 +109,7 @@ func decodePSNObject(raw []byte, out any, required ...string) bool {
 	return json.Unmarshal(raw, out) == nil
 }
 
-func (p PsnPlatform) Close() error {
+func (p PSNPlatform) Close() error {
 	if closer, ok := p.Verifier.(interface{ Close() error }); ok {
 		return closer.Close()
 	}

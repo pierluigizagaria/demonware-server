@@ -53,10 +53,10 @@ type EconomyStore struct {
 	Backend        economyBackend
 }
 
-type CtrServices struct {
+type Services struct {
 	Economy *EconomyStore
 	Stats   LeaderboardStore
-	News    config.CtrNewsConfig
+	News    config.News
 }
 
 func readEconomyJSON(path string, value any) error {
@@ -168,7 +168,7 @@ func OwnsSKU(a *EconomyAccount, sku economySKU) bool {
 	return true
 }
 
-func SkuPrice(a *EconomyAccount, sku economySKU) (int64, error) {
+func SKUPrice(a *EconomyAccount, sku economySKU) (int64, error) {
 	if OwnsSKU(a, sku) {
 		return 0, nil
 	}
@@ -205,7 +205,7 @@ func (s *EconomyStore) Purchase(pid uint64, skus []uint32) (int64, error) {
 		if !ok {
 			return 0, fmt.Errorf("unknown SKU %d", id)
 		}
-		price, err := SkuPrice(a, sku)
+		price, err := SKUPrice(a, sku)
 		if err != nil {
 			return 0, err
 		}
@@ -218,7 +218,7 @@ func (s *EconomyStore) Purchase(pid uint64, skus []uint32) (int64, error) {
 			a.Items[item] = true
 		}
 	}
-	if err := s.SaveChange(pid, a, EconomyChange{Source: "purchase", Skus: skus}); err != nil {
+	if err := s.SaveChange(pid, a, EconomyChange{Source: "purchase", SKUs: skus}); err != nil {
 		return 0, err
 	}
 	return total, nil

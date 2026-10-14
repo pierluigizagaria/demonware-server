@@ -18,7 +18,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
 
-type CtrStat struct {
+type Stat struct {
 	Board   uint32
 	PID     uint64
 	Score   int64
@@ -28,12 +28,12 @@ type CtrStat struct {
 	Rank    uint64 `json:"-"`
 }
 
-type CtrStatWrite struct {
-	CtrStat
+type StatWrite struct {
+	Stat
 	Operation byte
 }
 
-type CtrStatsStore struct {
+type StatsStore struct {
 	FallbackDir func() string
 	mu          sync.Mutex
 	Dir         string
@@ -51,8 +51,8 @@ func statsEnd(r *demonware.Reader) bool {
 	return len(r.Remaining()) == 0 || (len(r.Remaining()) == 1 && r.Remaining()[0] == 0)
 }
 
-func ParseStatWrites(r *demonware.Reader, pid uint64, name string) ([]CtrStatWrite, error) {
-	out := []CtrStatWrite{}
+func ParseStatWrites(r *demonware.Reader, pid uint64, name string) ([]StatWrite, error) {
+	out := []StatWrite{}
 	for !statsEnd(r) {
 		if len(out) >= 128 {
 			return nil, fmt.Errorf("too many writes")
@@ -67,7 +67,7 @@ func ParseStatWrites(r *demonware.Reader, pid uint64, name string) ([]CtrStatWri
 		if op != 0 && op != 1 && op != 4 {
 			return nil, fmt.Errorf("unsupported write operation %d", op)
 		}
-		row := CtrStatWrite{CtrStat: CtrStat{Board: board, PID: pid, Score: score, Name: name, Updated: uint32(time.Now().Unix())}, Operation: op}
+		row := StatWrite{Stat: Stat{Board: board, PID: pid, Score: score, Name: name, Updated: uint32(time.Now().Unix())}, Operation: op}
 		if octaneBoard(board) {
 			var err error
 			row.Driver, err = r.Uint32()
@@ -86,7 +86,7 @@ func ParseStatWrites(r *demonware.Reader, pid uint64, name string) ([]CtrStatWri
 	return out, nil
 }
 
-func (s *CtrStatsStore) Path() string {
+func (s *StatsStore) Path() string {
 	d := s.Dir
 	if d == "" && s.FallbackDir != nil {
 		d = s.FallbackDir()
@@ -94,8 +94,8 @@ func (s *CtrStatsStore) Path() string {
 	return filepath.Join(d, "ctr-leaderboards-v1.json")
 }
 
-func (s *CtrStatsStore) Load() (map[uint32]map[uint64]CtrStat, error) {
-	rows := map[uint32]map[uint64]CtrStat{}
+func (s *StatsStore) Load() (map[uint32]map[uint64]Stat, error) {
+	rows := map[uint32]map[uint64]Stat{}
 	b, err := os.ReadFile(s.Path())
 	if os.IsNotExist(err) {
 		return rows, nil
@@ -112,7 +112,7 @@ func (s *CtrStatsStore) Load() (map[uint32]map[uint64]CtrStat, error) {
 	return rows, nil
 }
 
-func (s *CtrStatsStore) Write(writes []CtrStatWrite) error {
+func (s *StatsStore) Write(writes []StatWrite) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rows, err := s.Load()
@@ -122,11 +122,11 @@ func (s *CtrStatsStore) Write(writes []CtrStatWrite) error {
 	for _, w := range writes {
 		board := rows[w.Board]
 		if board == nil {
-			board = map[uint64]CtrStat{}
+			board = map[uint64]Stat{}
 			rows[w.Board] = board
 		}
 		old, exists := board[w.PID]
-		next := w.CtrStat
+		next := w.Stat
 		switch w.Operation {
 		case 1:
 			if (w.Score > 0 && old.Score > math.MaxInt64-w.Score) || (w.Score < 0 && old.Score < math.MinInt64-w.Score) {
@@ -164,14 +164,14 @@ func (s *CtrStatsStore) Write(writes []CtrStatWrite) error {
 	return os.Rename(tmp, s.Path())
 }
 
-func (s *CtrStatsStore) Read(board uint32) ([]CtrStat, error) {
+func (s *StatsStore) Read(board uint32) ([]Stat, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	all, err := s.Load()
 	if err != nil {
 		return nil, err
 	}
-	rows := []CtrStat{}
+	rows := []Stat{}
 	for _, v := range all[board] {
 		rows = append(rows, v)
 	}
@@ -187,7 +187,7 @@ func (s *CtrStatsStore) Read(board uint32) ([]CtrStat, error) {
 	return rows, nil
 }
 
-func StatsReply(replies *lobby.ReplyCounter, task byte, rows []CtrStat, total uint32) []byte {
+func StatsReply(replies *lobby.ReplyCounter, task byte, rows []Stat, total uint32) []byte {
 	w := &demonware.Writer{}
 	for _, r := range rows {
 		w.Uint64(r.PID)
@@ -206,7 +206,7 @@ func StatsReply(replies *lobby.ReplyCounter, task byte, rows []CtrStat, total ui
 	return demonware.ListReply(replies.NextTransaction(), task, 0, uint32(len(rows)), total, w.Bytes())
 }
 
-func (h *StatsHandler) OnCTRStats(peer lobby.TaskSession, task byte, r *demonware.Reader) []byte {
+func (h *StatsHandler) OnStats(peer lobby.TaskSession, task byte, r *demonware.Reader) []byte {
 	pid := peer.PID()
 	p := h.Presence.ConnectionPlayer(peer.ConnID())
 	name := ""

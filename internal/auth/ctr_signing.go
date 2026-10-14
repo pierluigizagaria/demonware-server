@@ -18,13 +18,13 @@ import (
 // CTR's bdAuth verifies RSA-PSS/SHA-256 with a zero-length salt. Go's
 // SignPSS treats SaltLength=0 as automatic, so use OpenSSL's explicit zero
 // setting. The matching public key must be installed in the CTR client mod.
-type CtrAuthSigner struct {
+type CTRSigner struct {
 	path    string
-	Openssl string
+	OpenSSL string
 	Public  *rsa.PublicKey
 }
 
-func LoadCTRAuthSigner(path string) (*CtrAuthSigner, error) {
+func LoadCTRSigner(path string) (*CTRSigner, error) {
 	if path == "" {
 		return nil, nil
 	}
@@ -59,7 +59,7 @@ func LoadCTRAuthSigner(path string) (*CtrAuthSigner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("CTR signing requires openssl: %w", err)
 	}
-	s := &CtrAuthSigner{path, bin, &key.PublicKey}
+	s := &CTRSigner{path, bin, &key.PublicKey}
 	// Fail startup if the configured key/tool cannot produce a valid signature.
 	if _, err := s.Sign([]byte("CTR signing startup self-test")); err != nil {
 		return nil, err
@@ -67,11 +67,11 @@ func LoadCTRAuthSigner(path string) (*CtrAuthSigner, error) {
 	return s, nil
 }
 
-func (s *CtrAuthSigner) Sign(body []byte) (string, error) {
+func (s *CTRSigner) Sign(body []byte) (string, error) {
 	digest := sha256.Sum256(body)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, s.Openssl, "pkeyutl", "-sign", "-inkey", s.path,
+	cmd := exec.CommandContext(ctx, s.OpenSSL, "pkeyutl", "-sign", "-inkey", s.path,
 		"-pkeyopt", "digest:sha256", "-pkeyopt", "rsa_padding_mode:pss", "-pkeyopt", "rsa_pss_saltlen:0")
 	cmd.Stdin = bytes.NewReader(digest[:])
 	sig, err := cmd.Output()

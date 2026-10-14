@@ -14,19 +14,19 @@ import (
 // session. The session itself has no dependency on CTR or Diablo implementations.
 type lobbyDependencies struct {
 	files      *diablo.PublisherFiles
-	relay      *relay.RelayTable
-	matchmaker *ctr.CtrMatchmaker
+	relay      *relay.Table
+	matchmaker *ctr.Matchmaker
 	registry   *lobby.SessionRegistry
-	ctr        *ctr.CtrServices
+	ctr        *ctr.Services
 	pubDir     string
 	lobbyDoc   string
 }
 
 type lobbyConn struct {
-	*lobby.LobbySession
+	*lobby.Session
 	lobbyDependencies
 }
 
-func newTestLobby(session *lobby.LobbySession, dependencies lobbyDependencies) *lobbyConn {
-	return &lobbyConn{LobbySession: session, lobbyDependencies: dependencies}
+func newTestLobby(session *lobby.Session, dependencies lobbyDependencies) *lobbyConn {
+	return &lobbyConn{Session: session, lobbyDependencies: dependencies}
 }

@@ -8,9 +8,9 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/relay"
 )
 
-type DiabloMatchHandler struct{ *lobby.ContextHandler }
+type MatchHandler struct{ *lobby.ContextHandler }
 
-func (handler *DiabloMatchHandler) Handle(peer lobby.TaskSession, request lobby.TaskRequest) (result lobby.TaskResult) {
+func (handler *MatchHandler) Handle(peer lobby.TaskSession, request lobby.TaskRequest) (result lobby.TaskResult) {
 	service, task, r, payload := request.Service, request.Task, request.Args, request.Payload
 	var reply []byte
 	switch {
@@ -28,9 +28,9 @@ func (handler *DiabloMatchHandler) Handle(peer lobby.TaskSession, request lobby.
 }
 
 // This compatibility table is intentionally absent from production wiring.
-func NewDiabloServiceTable(replies *lobby.ReplyCounter, registry *lobby.SessionRegistry, presenceStore *presence.PresenceStore, relayTable *relay.RelayTable, files *PublisherFiles) *lobby.ServiceTable {
+func NewServiceTable(replies *lobby.ReplyCounter, registry *lobby.SessionRegistry, presenceStore *presence.Store, relayTable *relay.Table, files *PublisherFiles) *lobby.ServiceTable {
 	return &lobby.ServiceTable{Replies: replies, Handlers: map[byte]lobby.TaskHandler{
-		21: &DiabloMatchHandler{&lobby.ContextHandler{ReadInfo: ReadInfo, ReplyCounter: replies, Registry: registry, Presence: presenceStore, Relay: relayTable}},
+		21: &MatchHandler{&lobby.ContextHandler{ReadInfo: ReadInfo, ReplyCounter: replies, Registry: registry, Presence: presenceStore, Relay: relayTable}},
 		10: &lobby.StorageHandler{ReplyCounter: replies, Files: files},
 	}}
 }

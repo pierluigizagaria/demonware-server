@@ -40,7 +40,7 @@ import (
 
 const natSeenMax = 4096
 
-type NatServer struct {
+type Server struct {
 	lifeMu  sync.Mutex
 	stopped bool
 	conn    net.PacketConn
@@ -49,11 +49,11 @@ type NatServer struct {
 	BindAddr, NextendoHost string
 	ConnNum                *atomic.Uint64
 	natSeenMu              sync.Mutex
-	NatSeen                map[string]int
-	NatIntros              atomic.Int64
+	NATSeen                map[string]int
+	NATIntros              atomic.Int64
 }
 
-func (s *NatServer) ServeNAT(port int) {
+func (s *Server) ServeNAT(port int) {
 	if err := s.Start(port); err != nil {
 		s.DiagnosticLogf("[nat] start: %v", err)
 		return
@@ -61,7 +61,7 @@ func (s *NatServer) ServeNAT(port int) {
 	s.Wait()
 }
 
-func (s *NatServer) Start(port int) error {
+func (s *Server) Start(port int) error {
 	pc, err := net.ListenPacket("udp", net.JoinHostPort(s.BindAddr, strconv.Itoa(port)))
 	if err != nil {
 		return err
@@ -69,7 +69,7 @@ func (s *NatServer) Start(port int) error {
 	return s.startPacket(pc, port)
 }
 
-func (s *NatServer) startPacket(pc net.PacketConn, port int) error {
+func (s *Server) startPacket(pc net.PacketConn, port int) error {
 	s.lifeMu.Lock()
 	defer s.lifeMu.Unlock()
 	if s.stopped || s.conn != nil {
@@ -82,7 +82,7 @@ func (s *NatServer) startPacket(pc net.PacketConn, port int) error {
 	return nil
 }
 
-func (s *NatServer) Close() {
+func (s *Server) Close() {
 	s.lifeMu.Lock()
 	s.stopped = true
 	if s.conn != nil {
@@ -90,9 +90,9 @@ func (s *NatServer) Close() {
 	}
 	s.lifeMu.Unlock()
 }
-func (s *NatServer) Wait() { s.workers.Wait() }
+func (s *Server) Wait() { s.workers.Wait() }
 
-func (s *NatServer) servePacket(pc net.PacketConn, port int) {
+func (s *Server) servePacket(pc net.PacketConn, port int) {
 	defer pc.Close()
 	serverIP := net.ParseIP(s.NextendoHost).To4()
 	if serverIP == nil {
@@ -116,11 +116,11 @@ func (s *NatServer) servePacket(pc net.PacketConn, port int) {
 		}
 		sig := fmt.Sprintf("%X", buf[:n])
 		s.natSeenMu.Lock()
-		if len(s.NatSeen) >= natSeenMax {
-			s.NatSeen = map[string]int{}
+		if len(s.NATSeen) >= natSeenMax {
+			s.NATSeen = map[string]int{}
 		}
-		cnt := s.NatSeen[sig]
-		s.NatSeen[sig] = cnt + 1
+		cnt := s.NATSeen[sig]
+		s.NATSeen[sig] = cnt + 1
 		s.natSeenMu.Unlock()
 
 		if n == 29 && (buf[0] == 0x0A || buf[0] == 0x0E) {
@@ -139,7 +139,7 @@ func (s *NatServer) servePacket(pc net.PacketConn, port int) {
 			if _, err := pc.WriteTo(intro, to); err != nil {
 				s.DiagnosticLogf("[nat] INTRO to %s: %v", to, err)
 			} else {
-				s.NatIntros.Add(1)
+				s.NATIntros.Add(1)
 				// The host answers 0x0C to sourceAddress from INSIDE the packet, not to
 				// where we saw the request come from. A client that fills in its LAN
 				// address there is unreachable and the join fails with "failed to connect".

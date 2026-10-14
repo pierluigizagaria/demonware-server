@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-type ctrPublisherFiles struct{ dir string }
+type publisherFiles struct{ dir string }
 
-func (files ctrPublisherFiles) PublisherFile(name string, _ time.Time) ([]byte, string) {
+func (files publisherFiles) PublisherFile(name string, _ time.Time) ([]byte, string) {
 	base := filepath.Base(name)
 	// These names belong to the retained Diablo generators and their aliases.
 	// Block old physical outputs too: removing generation alone would leak them.

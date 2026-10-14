@@ -20,7 +20,7 @@ func architectureCall(t *testing.T, l *lobbyConn, w *architectureWire, payload [
 	t.Helper()
 	w.Reset()
 	w.writes = nil
-	before := l.S2cSeq
+	before := l.S2CSeq
 	l.onTask(payload)
 	frames := architectureFrames(t, l, w, before)
 	if l.AfterReplyActive {
@@ -80,16 +80,16 @@ func TestArchitectureRewardReplyFailureStillCommitsAndPushes(t *testing.T) {
 			push, _ := hex.DecodeString(frames[1].Payload)
 			want := demonware.NewWriter(nil)
 			want.Uint32(76)
-			want.Struct(ctr.BalanceUpdatePayload(l.Pid(), 10027))
+			want.Struct(ctr.BalanceUpdatePayload(l.PID(), 10027))
 			if !bytes.Equal(push, want.Bytes()) {
 				t.Fatal("reward balance push changed")
 			}
 			var receipt string
 			var recorded int64
-			if err := db.Db.QueryRow("SELECT receipt, recorded_at FROM race_receipts").Scan(&receipt, &recorded); err != nil || receipt != ctr.RaceReceipt(event) || recorded != now.Unix() {
+			if err := db.DB.QueryRow("SELECT receipt, recorded_at FROM race_receipts").Scan(&receipt, &recorded); err != nil || receipt != ctr.RaceReceipt(event) || recorded != now.Unix() {
 				t.Fatal("reward timestamp/receipt not persisted exactly")
 			}
-			a, err := db.Load(l.Pid(), false)
+			a, err := db.Load(l.PID(), false)
 			if err != nil || a.Balances[10] != 10027 || !a.RaceReceipts[receipt] {
 				t.Fatal("failed reply changed committed reward")
 			}
@@ -109,7 +109,7 @@ func TestArchitectureSearchReplyFailureReleasesReservation(t *testing.T) {
 	for _, fail := range []int{0, 1} {
 		t.Run(fmt.Sprint(fail), func(t *testing.T) {
 			l, w, _ := architectureBaseline(t)
-			s := testCTRSearch(t, l.Pid(), 0)
+			s := testCTRSearch(t, l.PID(), 0)
 			l.lobbyDoc = s.Conn.(*lobbyConn).lobbyDoc
 			request := demonware.NewWriter([]byte{145, 3, 18})
 			raw, _ := json.Marshal(s.Doc)
@@ -134,7 +134,7 @@ func TestArchitectureSearchReplyFailureReleasesReservation(t *testing.T) {
 				}
 				return
 			}
-			if len(testMatchmaker.Waiting) != 1 || testMatchmaker.Waiting[0].Id != id.ID {
+			if len(testMatchmaker.Waiting) != 1 || testMatchmaker.Waiting[0].ID != id.ID {
 				t.Fatal("successful search not activated")
 			}
 			cancel := demonware.NewWriter([]byte{145, 3, 8})
@@ -152,7 +152,7 @@ func TestArchitectureContextRegistryLifecycle(t *testing.T) {
 		t.Run(fmt.Sprint(service), func(t *testing.T) {
 			l, w, _ := architectureBaseline(t)
 			if service == 21 {
-				l.Table = diablo.NewDiabloServiceTable(l.ReplyCounter, l.registry, l.Presence, l.relay, l.files)
+				l.Table = diablo.NewServiceTable(l.ReplyCounter, l.registry, l.Presence, l.relay, l.files)
 			}
 			now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 			l.Clock = func() time.Time { return now }
@@ -191,7 +191,7 @@ func TestArchitectureContextRegistryLifecycle(t *testing.T) {
 				info(q)
 				architectureReply(t, architectureCall(t, l, w, q.Bytes()), task, 0)
 				s := testRegistry.Sessions[key]
-				if s == nil || s.Reserved || s.Owner != l.N || s.OwnerPID != l.Pid() || s.Updated != now || !bytes.Equal(s.Attrs, []byte{8, 9, 0, 0, 0}) {
+				if s == nil || s.Reserved || s.Owner != l.N || s.OwnerPID != l.PID() || s.Updated != now || !bytes.Equal(s.Attrs, []byte{8, 9, 0, 0, 0}) {
 					t.Fatal("registry state changed")
 				}
 			}
@@ -221,7 +221,7 @@ func TestArchitectureContextRegistryLifecycle(t *testing.T) {
 			gw := guest.C.(*architectureWire)
 			if service == 138 {
 				q = request(14)
-				q.Uint64(l.Pid())
+				q.Uint64(l.PID())
 			} else {
 				q = request(5)
 				q.Uint32(0)
@@ -240,7 +240,7 @@ func TestArchitectureStatsWritesAndReadsThroughRouter(t *testing.T) {
 	l, w, db := architectureBaseline(t)
 	q := demonware.NewWriter([]byte{4, 3, 1})
 	q.Uint32(1001)
-	q.Uint64(l.Pid())
+	q.Uint64(l.PID())
 	q.Uint8(4)
 	q.Int64(4000000000)
 	q.Uint32(123)
@@ -256,7 +256,7 @@ func TestArchitectureStatsWritesAndReadsThroughRouter(t *testing.T) {
 			q.Uint32(1)
 		} else {
 			q.Uint32(1)
-			q.Uint64(l.Pid())
+			q.Uint64(l.PID())
 		}
 		q.Uint32(0)
 		q.Raw([]byte{0})
@@ -269,8 +269,8 @@ func TestArchitectureStatsWritesAndReadsThroughRouter(t *testing.T) {
 		stamp, _ := r.Uint32()
 		driver, err := r.Uint32()
 		var stored uint32
-		_ = db.Db.QueryRow("SELECT updated FROM leaderboard").Scan(&stored)
-		if err != nil || pid != l.Pid() || score != 4000000000 || rank != 1 || name != l.Player.Username || stamp != stored || driver != 123 || len(r.Remaining()) != 0 {
+		_ = db.DB.QueryRow("SELECT updated FROM leaderboard").Scan(&stored)
+		if err != nil || pid != l.PID() || score != 4000000000 || rank != 1 || name != l.Player.Username || stamp != stored || driver != 123 || len(r.Remaining()) != 0 {
 			t.Fatal("stats persisted result changed")
 		}
 	}
@@ -288,7 +288,7 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	testMatchmaker.Clock = func() time.Time { return now }
 	t.Cleanup(func() { testMatchmaker.Clock = oldClock })
 	search := func(l *lobbyConn, w *architectureWire) {
-		s := testCTRSearch(t, l.Pid(), 0)
+		s := testCTRSearch(t, l.PID(), 0)
 		q := demonware.NewWriter([]byte{145, 3, 2})
 		q.String(s.Conn.(*lobbyConn).lobbyDoc)
 		architectureReply(t, architectureCall(t, l, w, q.Bytes()), 2, 0)
@@ -300,7 +300,7 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	search(a, aw)
 	aw.writes = nil
 	aw.Reset()
-	beforeA := a.S2cSeq
+	beforeA := a.S2CSeq
 	search(b, bw)
 	frames := architectureFrames(t, a, aw, beforeA)
 	if len(frames) != 1 || frames[0].Inner != demonware.InnerPush {
@@ -323,7 +323,7 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	}
 	bw.writes = nil
 	bw.Reset()
-	beforeB := b.S2cSeq
+	beforeB := b.S2CSeq
 	q := demonware.NewWriter([]byte{145, 3, 15})
 	q.Uint64(roomID)
 	q.Uint64(version)
@@ -375,12 +375,12 @@ func TestArchitectureSharedLookupAndUserData(t *testing.T) {
 		t.Fatal("online/persisted lookup changed")
 	}
 	q = demonware.NewWriter([]byte{12, 3, 9})
-	q.Uint64(l.Pid())
+	q.Uint64(l.PID())
 	p = architectureReply(t, architectureCall(t, l, w, q.Bytes()), 9, 0)
 	r := demonware.NewReader(p[26:])
 	pid, _ := r.Uint64()
 	name, err := r.String()
-	if err != nil || pid != l.Pid() || name != l.Player.Username {
+	if err != nil || pid != l.PID() || name != l.Player.Username {
 		t.Fatal("online name lookup changed")
 	}
 	q = demonware.NewWriter([]byte{29, 3, 1})
@@ -390,19 +390,19 @@ func TestArchitectureSharedLookupAndUserData(t *testing.T) {
 	q = demonware.NewWriter([]byte{29, 3, 4})
 	q.String("fixture")
 	q.Bool(true)
-	q.Uint64(l.Pid())
+	q.Uint64(l.PID())
 	p = architectureReply(t, architectureCall(t, l, w, q.Bytes()), 4, 0)
 	r = demonware.NewReader(p[26:])
 	pid, _ = r.Uint64()
 	data, err := r.Blob()
-	if err != nil || pid != l.Pid() || !bytes.Equal(data, []byte{1, 2, 3}) {
+	if err != nil || pid != l.PID() || !bytes.Equal(data, []byte{1, 2, 3}) {
 		t.Fatal("user data result changed")
 	}
-	architectureReply(t, architectureCall(t, l, w, append([]byte{68, 3, 3}, rpSetRequest("fixture", l.Pid(), "psn", 1, []byte{7})...)), 3, 0)
+	architectureReply(t, architectureCall(t, l, w, append([]byte{68, 3, 3}, rpSetRequest("fixture", l.PID(), "psn", 1, []byte{7})...)), 3, 0)
 	for _, task := range []byte{4, 5} {
-		p = architectureReply(t, architectureCall(t, l, w, append([]byte{68, 3, task}, rpGetRequest("fixture", l.Pid())...)), task, 0)
+		p = architectureReply(t, architectureCall(t, l, w, append([]byte{68, 3, task}, rpGetRequest("fixture", l.PID())...)), task, 0)
 		rows, ids := rpRows(t, p)
-		if len(rows) != 1 || ids[0] != l.Pid() || rows[0].Platform != "psn" || rows[0].Flag != 1 || !bytes.Equal(rows[0].Data, []byte{7}) {
+		if len(rows) != 1 || ids[0] != l.PID() || rows[0].Platform != "psn" || rows[0].Flag != 1 || !bytes.Equal(rows[0].Data, []byte{7}) {
 			t.Fatal("presence result changed")
 		}
 	}

@@ -21,7 +21,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
-type PresenceStore struct {
+type Store struct {
 	OnlineMu    sync.Mutex
 	Online      map[uint64]*platform.PlayerID
 	userDataMu  sync.Mutex
@@ -31,18 +31,18 @@ type PresenceStore struct {
 	PlayerNames playerNameStore
 }
 
-func NewPresenceStore(names playerNameStore) *PresenceStore {
-	return &PresenceStore{Online: map[uint64]*platform.PlayerID{}, UserData: map[string][]byte{}, Rich: map[uint64]RichPresence{}, PlayerNames: names}
+func NewStore(names playerNameStore) *Store {
+	return &Store{Online: map[uint64]*platform.PlayerID{}, UserData: map[string][]byte{}, Rich: map[uint64]RichPresence{}, PlayerNames: names}
 }
 
 // dropPresence forgets a player's rich presence (ctr_presence.go keeps the store).
-func (state *PresenceStore) dropPresence(pid uint64) {
+func (state *Store) dropPresence(pid uint64) {
 	state.RichMu.Lock()
 	delete(state.Rich, pid)
 	state.RichMu.Unlock()
 }
 
-func (state *PresenceStore) DropOnline(conn uint64) {
+func (state *Store) DropOnline(conn uint64) {
 	state.OnlineMu.Lock()
 	var pid uint64
 	if p := state.Online[conn]; p != nil {
@@ -61,7 +61,7 @@ func (state *PresenceStore) DropOnline(conn uint64) {
 }
 
 // onlinePlayerFor returns the connected player whose account ID is id, or nil.
-func (state *PresenceStore) onlinePlayerFor(id uint64) *platform.PlayerID {
+func (state *Store) onlinePlayerFor(id uint64) *platform.PlayerID {
 	state.OnlineMu.Lock()
 	defer state.OnlineMu.Unlock()
 	for _, p := range state.Online {
@@ -73,7 +73,7 @@ func (state *PresenceStore) onlinePlayerFor(id uint64) *platform.PlayerID {
 }
 
 // onlinePIDs returns every connected player's PID once.
-func (state *PresenceStore) OnlinePIDs() []uint64 {
+func (state *Store) OnlinePIDs() []uint64 {
 	state.OnlineMu.Lock()
 	defer state.OnlineMu.Unlock()
 	seen := map[uint64]bool{}
@@ -88,7 +88,7 @@ func (state *PresenceStore) OnlinePIDs() []uint64 {
 }
 
 // nicknameOnline returns the nickname of a connected player identified by id.
-func (state *PresenceStore) NicknameOnline(id uint64) string {
+func (state *Store) NicknameOnline(id uint64) string {
 	if p := state.onlinePlayerFor(id); p != nil {
 		return p.Username
 	}
@@ -96,7 +96,7 @@ func (state *PresenceStore) NicknameOnline(id uint64) string {
 }
 
 // onGetUserNames: 12/9.
-func (h *PresenceHandler) OnGetUserNames(peer presencePeer, task byte, r *demonware.Reader) []byte {
+func (h *Handler) OnGetUserNames(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	ids := r.Uint64s()
 	type hit struct {
 		id   uint64
@@ -119,7 +119,7 @@ func (h *PresenceHandler) OnGetUserNames(peer presencePeer, task byte, r *demonw
 }
 
 // onUserData: service 29. 1 = write own data, 4 = read a list's.
-func (h *PresenceHandler) OnUserData(peer presencePeer, task byte, r *demonware.Reader) []byte {
+func (h *Handler) OnUserData(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	ctx, _ := r.String()
 	switch task {
 	case 1:
@@ -169,7 +169,7 @@ func (h *PresenceHandler) OnUserData(peer presencePeer, task byte, r *demonware.
 
 // pidOnline returns the PID of a connected player identified by id, or 0.
 // Used by the Crash Team Racing code.
-func (state *PresenceStore) PidOnline(id uint64) uint64 {
+func (state *Store) PIDOnline(id uint64) uint64 {
 	if p := state.onlinePlayerFor(id); p != nil {
 		return p.PID
 	}
@@ -181,7 +181,7 @@ func (state *PresenceStore) PidOnline(id uint64) uint64 {
 // last issued a ticket under still resolves (player_names in ctrnf.db), so
 // a friend is found even before they connect to the lobby. Resolving an
 // identity does not make it joinable: only live sessions are advertised.
-func (h *PresenceHandler) OnGetUserIDs(peer presencePeer, task byte, r *demonware.Reader) []byte {
+func (h *Handler) OnGetUserIDs(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	count, err := r.Uint32()
 	if err != nil || count == 0 || count > 500 {
 		return h.TaskReply(task, presenceUnhandled, nil)

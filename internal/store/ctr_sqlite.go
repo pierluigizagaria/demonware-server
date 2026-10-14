@@ -18,9 +18,9 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
-const CtrDB = "ctrnf.db"
+const DBFile = "ctrnf.db"
 
-const CtrSchemaVersion = 1
+const SchemaVersion = 1
 
 // awardRaces accepts events from the last seven days, five minutes ahead at
 // most. A race receipt or a day's online seconds last written more than nine
@@ -29,10 +29,10 @@ const ReplayRetention = 9 * 24 * time.Hour
 
 // ctrSQLite owns the only connection pool for this instance's economy, stats
 // and player names.
-type CtrSQLite struct {
+type SQLite struct {
 	InitialBalance func() int64
 	Clock          func() time.Time
-	Db             *sql.DB
+	DB             *sql.DB
 	lock           *os.File
 }
 
@@ -40,7 +40,7 @@ type CtrSQLite struct {
 // so a second process on the same database could lose updates. An OS lock on
 // a sibling file, released when the process exits, refuses a second instance.
 // Read-only tools can still open the database itself.
-func lockCTRInstance(path string) (*os.File, error) {
+func lockInstance(path string) (*os.File, error) {
 	f, err := os.OpenFile(path+".lock", os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, err
@@ -54,11 +54,11 @@ func lockCTRInstance(path string) (*os.File, error) {
 
 // openCTRSQLite binds the instance to its admission namespace: the shadNet
 // issuer/client/title or the separate anonymous-guest namespace.
-func OpenCTRSQLite(path string, unlockAll bool, trustID string) (*CtrSQLite, error) {
+func OpenSQLite(path string, unlockAll bool, trustID string) (*SQLite, error) {
 	if trustID == "" {
 		return nil, fmt.Errorf("CTR database needs a trust ID")
 	}
-	lock, err := lockCTRInstance(path)
+	lock, err := lockInstance(path)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func OpenCTRSQLite(path string, unlockAll bool, trustID string) (*CtrSQLite, err
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s := &CtrSQLite{Db: db, lock: lock}
+	s := &SQLite{DB: db, lock: lock}
 	if err := s.initialize(unlockAll, trustID); err != nil {
 		s.Close()
 		return nil, err
@@ -82,14 +82,14 @@ func OpenCTRSQLite(path string, unlockAll bool, trustID string) (*CtrSQLite, err
 	return s, nil
 }
 
-func (s *CtrSQLite) Close() error {
-	err := s.Db.Close()
+func (s *SQLite) Close() error {
+	err := s.DB.Close()
 	s.lock.Close() // releases the instance lock; repeated closes are harmless
 	return err
 }
 
-func (s *CtrSQLite) initialize(unlockAll bool, trustID string) error {
-	tx, err := s.Db.Begin()
+func (s *SQLite) initialize(unlockAll bool, trustID string) error {
+	tx, err := s.DB.Begin()
 	if err != nil {
 		return err
 	}
@@ -111,10 +111,10 @@ func (s *CtrSQLite) initialize(unlockAll bool, trustID string) error {
 		if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('unlock_all', ?), ('trust_id', ?)`, want, trustID); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, CtrSchemaVersion)); err != nil {
+		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
 			return err
 		}
-	case CtrSchemaVersion:
+	case SchemaVersion:
 		var trusted string
 		if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'trust_id'`).Scan(&trusted); err != nil {
 			return fmt.Errorf("read trust ID: %w", err)
@@ -240,8 +240,8 @@ func newSQLiteAccount(balance int64) *ctr.EconomyAccount {
 // Mutating operations receive an unsaved new account, so refusal cannot create
 // rows or an initial credit. A normal-economy snapshot creates it atomically;
 // unlock-all snapshots remain read-only. All account tables are read consistently.
-func (s *CtrSQLite) Load(pid uint64, create bool) (*ctr.EconomyAccount, error) {
-	tx, err := s.Db.Begin()
+func (s *SQLite) Load(pid uint64, create bool) (*ctr.EconomyAccount, error) {
+	tx, err := s.DB.Begin()
 	if err != nil {
 		return nil, err
 	}
@@ -373,8 +373,8 @@ func readSQLiteAccount(tx *sql.Tx, pid uint64, clock func() time.Time, balance f
 	return a, true, nil
 }
 
-func (s *CtrSQLite) Save(pid uint64, a *ctr.EconomyAccount, change ctr.EconomyChange) error {
-	tx, err := s.Db.Begin()
+func (s *SQLite) Save(pid uint64, a *ctr.EconomyAccount, change ctr.EconomyChange) error {
+	tx, err := s.DB.Begin()
 	if err != nil {
 		return err
 	}
@@ -447,11 +447,11 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *ctr.EconomyAccount
 	if len(receipts) != 0 {
 		receipt = jsonColumn(receipts)
 	}
-	if len(change.Skus) != 0 {
-		skus = jsonColumn(change.Skus)
+	if len(change.SKUs) != 0 {
+		skus = jsonColumn(change.SKUs)
 	}
-	if len(change.Skus) == 1 {
-		singleSKU = change.Skus[0]
+	if len(change.SKUs) == 1 {
+		singleSKU = change.SKUs[0]
 	}
 	currencies := map[uint64]bool{}
 	for c := range before.Balances {
@@ -476,7 +476,7 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *ctr.EconomyAccount
 			continue
 		}
 		var sku any
-		for _, id := range change.Skus {
+		for _, id := range change.SKUs {
 			for _, granted := range ctr.EconomySKUItems(id) {
 				if granted == item {
 					sku = id
@@ -577,8 +577,8 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *ctr.EconomyAccount
 	return exec(`DELETE FROM online_seconds WHERE pid = ? AND updated_at < ?`, expired)
 }
 
-func (s *CtrSQLite) Write(writes []ctr.CtrStatWrite) error {
-	tx, err := s.Db.Begin()
+func (s *SQLite) Write(writes []ctr.StatWrite) error {
+	tx, err := s.DB.Begin()
 	if err != nil {
 		return err
 	}
@@ -590,7 +590,7 @@ func (s *CtrSQLite) Write(writes []ctr.CtrStatWrite) error {
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
-		next := w.CtrStat
+		next := w.Stat
 		switch w.Operation {
 		case 1:
 			if (w.Score > 0 && old > math.MaxInt64-w.Score) || (w.Score < 0 && old < math.MinInt64-w.Score) {
@@ -611,15 +611,15 @@ func (s *CtrSQLite) Write(writes []ctr.CtrStatWrite) error {
 	return tx.Commit()
 }
 
-func (s *CtrSQLite) Read(board uint32) ([]ctr.CtrStat, error) {
-	rs, err := s.Db.Query(`SELECT pid, score, driver, name, updated FROM leaderboard WHERE board = ?`, board)
+func (s *SQLite) Read(board uint32) ([]ctr.Stat, error) {
+	rs, err := s.DB.Query(`SELECT pid, score, driver, name, updated FROM leaderboard WHERE board = ?`, board)
 	if err != nil {
 		return nil, err
 	}
 	defer rs.Close()
-	rows := []ctr.CtrStat{}
+	rows := []ctr.Stat{}
 	for rs.Next() {
-		r := ctr.CtrStat{Board: board}
+		r := ctr.Stat{Board: board}
 		var pid int64
 		if err := rs.Scan(&pid, &r.Score, &r.Driver, &r.Name, &r.Updated); err != nil {
 			return nil, err
@@ -648,8 +648,8 @@ func (s *CtrSQLite) Read(board uint32) ([]ctr.CtrStat, error) {
 // leaderboard_rank index has the same expression, so pages are index scans.
 const LeaderboardOrder = `score DESC, pid < 0, pid`
 
-func (s *CtrSQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctr.CtrStat, uint64, error) {
-	tx, err := s.Db.Begin()
+func (s *SQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctr.Stat, uint64, error) {
+	tx, err := s.DB.Begin()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -661,7 +661,7 @@ func (s *CtrSQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctr.C
 	if start == 0 {
 		start = 1
 	}
-	rows := []ctr.CtrStat{}
+	rows := []ctr.Stat{}
 	if start-1 >= total || limit == 0 {
 		return rows, total, nil
 	}
@@ -672,7 +672,7 @@ func (s *CtrSQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctr.C
 	}
 	defer rs.Close()
 	for rs.Next() {
-		r := ctr.CtrStat{Board: board, Rank: start + uint64(len(rows))}
+		r := ctr.Stat{Board: board, Rank: start + uint64(len(rows))}
 		var pid int64
 		if err := rs.Scan(&pid, &r.Score, &r.Driver, &r.Name, &r.Updated); err != nil {
 			return nil, 0, err
@@ -685,8 +685,8 @@ func (s *CtrSQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctr.C
 
 // readEntities returns the given accounts' rows in rank order; each rank
 // counts the rows ordered before it.
-func (s *CtrSQLite) ReadEntities(board uint32, pids []uint64) ([]ctr.CtrStat, error) {
-	rows := []ctr.CtrStat{}
+func (s *SQLite) ReadEntities(board uint32, pids []uint64) ([]ctr.Stat, error) {
+	rows := []ctr.Stat{}
 	if len(pids) == 0 {
 		return rows, nil
 	}
@@ -694,7 +694,7 @@ func (s *CtrSQLite) ReadEntities(board uint32, pids []uint64) ([]ctr.CtrStat, er
 	for _, pid := range pids {
 		args = append(args, int64(pid))
 	}
-	rs, err := s.Db.Query(`SELECT l.pid, l.score, l.driver, l.name, l.updated,
+	rs, err := s.DB.Query(`SELECT l.pid, l.score, l.driver, l.name, l.updated,
 		1 + (SELECT count(*) FROM leaderboard o WHERE o.board = l.board AND (o.score > l.score
 			OR (o.score = l.score AND ((o.pid < 0) < (l.pid < 0) OR ((o.pid < 0) = (l.pid < 0) AND o.pid < l.pid)))))
 		FROM leaderboard l WHERE l.board = ? AND l.pid IN (?`+strings.Repeat(", ?", len(pids)-1)+`)`, args...)
@@ -703,7 +703,7 @@ func (s *CtrSQLite) ReadEntities(board uint32, pids []uint64) ([]ctr.CtrStat, er
 	}
 	defer rs.Close()
 	for rs.Next() {
-		r := ctr.CtrStat{Board: board}
+		r := ctr.Stat{Board: board}
 		var pid int64
 		if err := rs.Scan(&pid, &r.Score, &r.Driver, &r.Name, &r.Updated, &r.Rank); err != nil {
 			return nil, err
@@ -718,8 +718,8 @@ func (s *CtrSQLite) ReadEntities(board uint32, pids []uint64) ([]ctr.CtrStat, er
 	return rows, nil
 }
 
-func (s *CtrSQLite) RememberName(pid uint64, name string, at time.Time) error {
-	_, err := s.Db.Exec(`INSERT INTO player_names(pid, name, name_key, recorded_at) VALUES (?, ?, ?, ?)
+func (s *SQLite) RememberName(pid uint64, name string, at time.Time) error {
+	_, err := s.DB.Exec(`INSERT INTO player_names(pid, name, name_key, recorded_at) VALUES (?, ?, ?, ?)
 		ON CONFLICT(pid) DO UPDATE SET name = excluded.name, name_key = excluded.name_key, recorded_at = excluded.recorded_at`,
 		int64(pid), name, strings.ToLower(name), at.Unix())
 	return err
@@ -727,7 +727,7 @@ func (s *CtrSQLite) RememberName(pid uint64, name string, at time.Time) error {
 
 // namedPlayers returns, by lower-case name, the player most recently recorded
 // under each requested name.
-func (s *CtrSQLite) NamedPlayers(names []string) (map[string]*platform.PlayerID, error) {
+func (s *SQLite) NamedPlayers(names []string) (map[string]*platform.PlayerID, error) {
 	out := map[string]*platform.PlayerID{}
 	for _, name := range names {
 		key := strings.ToLower(name)
@@ -736,7 +736,7 @@ func (s *CtrSQLite) NamedPlayers(names []string) (map[string]*platform.PlayerID,
 		}
 		var pid int64
 		var stored string
-		err := s.Db.QueryRow(`SELECT pid, name FROM player_names WHERE name_key = ?
+		err := s.DB.QueryRow(`SELECT pid, name FROM player_names WHERE name_key = ?
 			ORDER BY recorded_at DESC, pid DESC LIMIT 1`, key).Scan(&pid, &stored)
 		if err == sql.ErrNoRows {
 			continue
@@ -749,14 +749,14 @@ func (s *CtrSQLite) NamedPlayers(names []string) (map[string]*platform.PlayerID,
 	return out, nil
 }
 
-func (s *CtrSQLite) now() time.Time {
+func (s *SQLite) now() time.Time {
 	if s.Clock != nil {
 		return s.Clock()
 	}
 	return time.Now()
 }
 
-func (s *CtrSQLite) StartingBalance() int64 {
+func (s *SQLite) StartingBalance() int64 {
 	if s.InitialBalance != nil {
 		return s.InitialBalance()
 	}

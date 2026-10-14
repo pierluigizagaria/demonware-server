@@ -37,7 +37,7 @@ func TestSQLiteReplayStateRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	var expired int
-	if err := db.Db.QueryRow(`SELECT (SELECT count(*) FROM race_receipts WHERE recorded_at < ?1) +
+	if err := db.DB.QueryRow(`SELECT (SELECT count(*) FROM race_receipts WHERE recorded_at < ?1) +
 		(SELECT count(*) FROM online_seconds WHERE updated_at < ?1)`, now.Add(-store.ReplayRetention).Unix()).Scan(&expired); err != nil {
 		t.Fatal(err)
 	}
@@ -67,11 +67,11 @@ func TestSQLiteSaveWritesOnlyChangedRows(t *testing.T) {
 }
 
 func TestSQLiteRankedReadsMatchReference(t *testing.T) {
-	json := &ctr.CtrStatsStore{Dir: t.TempDir()}
-	db := openTestLeaderboard(t, filepath.Join(t.TempDir(), store.CtrDB))
-	var writes []ctr.CtrStatWrite
+	json := &ctr.StatsStore{Dir: t.TempDir()}
+	db := openTestLeaderboard(t, filepath.Join(t.TempDir(), store.DBFile))
+	var writes []ctr.StatWrite
 	for i, pid := range []uint64{5, 1 << 63, 7, math.MaxUint64, 2, 9, 1<<63 + 4, 11} {
-		writes = append(writes, ctr.CtrStatWrite{CtrStat: ctr.CtrStat{Board: 89, PID: pid, Score: int64(i % 3), Name: "p"}, Operation: 0})
+		writes = append(writes, ctr.StatWrite{Stat: ctr.Stat{Board: 89, PID: pid, Score: int64(i % 3), Name: "p"}, Operation: 0})
 	}
 	for _, storage := range []ctr.LeaderboardStore{json, db} {
 		if err := storage.Write(writes); err != nil {
@@ -96,7 +96,7 @@ func TestSQLiteRankedReadsMatchReference(t *testing.T) {
 		t.Fatalf("entities: sqlite %+v/%d, reference %+v/%d", got, gotTotal, want, wantTotal)
 	}
 	var plan strings.Builder
-	rs, err := db.Db.Query(`EXPLAIN QUERY PLAN SELECT pid FROM leaderboard WHERE board = ? ORDER BY `+store.LeaderboardOrder+` LIMIT 3 OFFSET 2`, 89)
+	rs, err := db.DB.Query(`EXPLAIN QUERY PLAN SELECT pid FROM leaderboard WHERE board = ? ORDER BY `+store.LeaderboardOrder+` LIMIT 3 OFFSET 2`, 89)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,7 +15,7 @@ package lobby
 
 // loadIdentity names the connection's player after the identity its ticket
 // was issued to; the handshake has already admitted that ticket.
-func (l *LobbySession) LoadIdentity(ticket []byte) {
+func (l *Session) LoadIdentity(ticket []byte) {
 	id, ok := l.Tickets.IssuedIdentity(ticket)
 	if !ok {
 		l.logf("identity unknown")

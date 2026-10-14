@@ -21,9 +21,9 @@ func setStartBalance(t *testing.T, n int64) {
 
 func setRelayPIDs(t *testing.T, list string) {
 	t.Helper()
-	old := testRelay.Pids
-	testRelay.Pids = list
-	t.Cleanup(func() { testRelay.Pids = old })
+	old := testRelay.PIDs
+	testRelay.PIDs = list
+	t.Cleanup(func() { testRelay.PIDs = old })
 }
 
 func lookupFrom(env map[string]string) func(string) string {
@@ -60,7 +60,7 @@ func TestParseFlag(t *testing.T) {
 }
 
 func TestConfigDefaultsNeedNoEnvironment(t *testing.T) {
-	c, err := config.LoadConfig(lookupFrom(nil), nil, false)
+	c, err := config.Load(lookupFrom(nil), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,21 +71,21 @@ func TestConfigDefaultsNeedNoEnvironment(t *testing.T) {
 }
 
 func TestConfigDefaultsDoNotReadInstalledSettings(t *testing.T) {
-	want, err := config.LoadConfig(lookupFrom(nil), nil, false)
+	want, err := config.Load(lookupFrom(nil), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	changed := want
 	changed.PublicIP = "127.0.0.2"
-	changed.AuthPort, changed.NatPort, changed.DashPort = 30001, 30002, 30003
+	changed.AuthPort, changed.NATPort, changed.DashPort = 30001, 30002, 30003
 	changed.LobbyPorts = "30004"
 	changed.CertFile, changed.KeyFile = "other-cert", "other-key"
 	changed.DataDir, changed.PubfilesConfig, changed.PubfilesDir, changed.RiftData = "other-data", "other-config", "other-files", "other-rifts"
 	changed.Dumps, changed.Verbose, changed.ProxyProtocol, changed.Migrate, changed.RedactLogs = "other-dumps", true, true, true, false
-	changed.DashToken, changed.SniHost = "synthetic-dashboard-value", "synthetic-host"
+	changed.DashToken, changed.SNIHost = "synthetic-dashboard-value", "synthetic-host"
 	testApplyConfig(changed)
 	t.Cleanup(func() { testApplyConfig(want) })
-	got, err := config.LoadConfig(lookupFrom(nil), nil, false)
+	got, err := config.Load(lookupFrom(nil), nil, false)
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatal("configuration defaults inherited prior instance settings")
 	}
@@ -96,7 +96,7 @@ func TestConfigReadsServerSettings(t *testing.T) {
 	env["BIND_ADDR"], env["AUTH_PORT"], env["LOBBY_PORTS"] = "127.0.0.2", "31443", "3074, 3075"
 	env["CTR_UNLOCK_ALL"], env["CTR_START_BALANCE"], env["NEXTENDO_REDACT_LOGS"] = "true", "500", "0"
 	env["CTR_RELAY_PORT_LOW"], env["CTR_RELAY_PORT_HIGH"], env["CTR_RELAY_PIDS"] = "3100", "3139", "7, 9"
-	c, err := config.LoadConfig(lookupFrom(env), nil, true)
+	c, err := config.Load(lookupFrom(env), nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,13 +105,13 @@ func TestConfigReadsServerSettings(t *testing.T) {
 		t.Fatalf("settings not read: %+v", c)
 	}
 	if !reflect.DeepEqual(c.Shadnet.Scopes, []string{"openid", "openid:duid"}) || c.Shadnet.NPTitleID != "CUSA13795" ||
-		c.JwksURL != env["SHADNET_JWKS_URL"] || c.SigningKey != "keys/ctr-signing.pem" {
+		c.JWKSURL != env["SHADNET_JWKS_URL"] || c.SigningKey != "keys/ctr-signing.pem" {
 		t.Fatalf("shadNet trust not read: %+v", c.Shadnet)
 	}
 }
 
 func TestConfigRefusesWithEveryProblemListed(t *testing.T) {
-	_, err := config.LoadConfig(lookupFrom(nil), nil, true)
+	_, err := config.Load(lookupFrom(nil), nil, true)
 	for _, name := range []string{"SHADNET_ISSUER", "SHADNET_CLIENT_ID", "SHADNET_TITLE_ID", "SHADNET_SCOPES", "SHADNET_JWKS_URL", "CTR_AUTH_SIGNING_KEY"} {
 		if err == nil || !strings.Contains(err.Error(), name+" is required") {
 			t.Fatalf("missing %s not reported: %v", name, err)
@@ -127,7 +127,7 @@ func TestConfigRefusesWithEveryProblemListed(t *testing.T) {
 	for name, value := range bad {
 		env[name] = value
 	}
-	_, err = config.LoadConfig(lookupFrom(env), nil, true)
+	_, err = config.Load(lookupFrom(env), nil, true)
 	for name := range bad {
 		if err == nil || !strings.Contains(err.Error(), name) {
 			t.Fatalf("invalid %s not reported: %v", name, err)
@@ -137,23 +137,23 @@ func TestConfigRefusesWithEveryProblemListed(t *testing.T) {
 	// Invalid shadNet trust is reported before any key is fetched.
 	env = serverEnv()
 	env["SHADNET_ISSUER"], env["SHADNET_JWKS_URL"] = "http://identity.example.net", "jwks.json"
-	_, err = config.LoadConfig(lookupFrom(env), nil, true)
+	_, err = config.Load(lookupFrom(env), nil, true)
 	if err == nil || !strings.Contains(err.Error(), "SHADNET_*: invalid shadNet trust policy") || !strings.Contains(err.Error(), "JWKS requires") {
 		t.Fatalf("invalid shadNet trust not reported: %v", err)
 	}
-	if _, err := config.LoadConfig(lookupFrom(serverEnv()), nil, true); err != nil {
+	if _, err := config.Load(lookupFrom(serverEnv()), nil, true); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestConfigRefusesUnknownSettings(t *testing.T) {
-	_, err := config.LoadConfig(lookupFrom(serverEnv()), []string{"CTR_UNLOCKALL", "SHADNET_INTEROP_FIXTURE", "CTR_UNLOCK_ALL"}, true)
+	_, err := config.Load(lookupFrom(serverEnv()), []string{"CTR_UNLOCKALL", "SHADNET_INTEROP_FIXTURE", "CTR_UNLOCK_ALL"}, true)
 	if err == nil || !strings.Contains(err.Error(), "CTR_UNLOCKALL is not a setting") ||
 		strings.Contains(err.Error(), "INTEROP") || strings.Contains(err.Error(), "CTR_UNLOCK_ALL ") {
 		t.Fatalf("unknown settings misreported: %v", err)
 	}
 	// Upstream Nintendo settings no longer exist here.
-	if _, err := config.LoadConfig(lookupFrom(serverEnv()), []string{"NEXTENDO_ACCOUNT_URL", "CTR_AUTH_CONFIG"}, true); err == nil ||
+	if _, err := config.Load(lookupFrom(serverEnv()), []string{"NEXTENDO_ACCOUNT_URL", "CTR_AUTH_CONFIG"}, true); err == nil ||
 		!strings.Contains(err.Error(), "NEXTENDO_ACCOUNT_URL") || !strings.Contains(err.Error(), "CTR_AUTH_CONFIG") {
 		t.Fatalf("retired settings accepted: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestExampleEnvDocumentsEverySetting(t *testing.T) {
 		asked[name] = true
 		return env[name]
 	}
-	if _, err := config.LoadConfig(lookup, names, false); err != nil {
+	if _, err := config.Load(lookup, names, false); err != nil {
 		t.Fatal(err)
 	}
 	for name := range asked {
@@ -242,12 +242,12 @@ func TestConfigFilesAreIndependentInOneProcess(t *testing.T) {
 	if err := os.WriteFile(b, []byte("CTR_NEWS=second\nCTR_START_BALANCE=18\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	first, e1 := config.ReadConfigEnvironment(a, false, nil)
-	second, e2 := config.ReadConfigEnvironment(b, false, nil)
+	first, e1 := config.ReadEnvironment(a, false, nil)
+	second, e2 := config.ReadEnvironment(b, false, nil)
 	if e1 != nil || e2 != nil || first.StartBalance != 17 || second.StartBalance != 18 || bytes.Equal(first.News.Fallback.Content, second.News.Fallback.Content) {
 		t.Fatal("instance file values crossed")
 	}
-	overridden, err := config.ReadConfigEnvironment(a, false, []string{"CTR_NEWS=", "CTR_START_BALANCE=19"})
+	overridden, err := config.ReadEnvironment(a, false, []string{"CTR_NEWS=", "CTR_START_BALANCE=19"})
 	if err != nil || overridden.StartBalance != 19 || len(overridden.News.Fallback.Content) != 0 {
 		t.Fatal("process environment precedence changed")
 	}

@@ -13,15 +13,15 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
-func testCTRSearchFor(m *ctr.CtrMatchmaker, t *testing.T, pid uint64, playlist int) *ctr.CtrSearch {
+func testCTRSearchFor(m *ctr.Matchmaker, t *testing.T, pid uint64, playlist int) *ctr.Search {
 	t.Helper()
-	info := ctr.CtrPlayerInfo{}
+	info := ctr.PlayerInfo{}
 	info.Listen.Address = base64.StdEncoding.EncodeToString(make([]byte, 67))
 	info.Listen.ID = base64.StdEncoding.EncodeToString(make([]byte, 8))
 	info.Listen.Key = base64.StdEncoding.EncodeToString(make([]byte, 16))
 	raw, _ := json.Marshal(info)
-	l := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: testSearchConns.Add(1), Player: &platform.PlayerID{PID: pid}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: m, registry: testRegistry, ctr: testCTR, lobbyDoc: string(raw)})
-	search, err := m.ParseCTRSearch(l, fmt.Sprintf(`{"members":[%d],"lobby_slots":{"min":2,"max":8},"ruleset_payload":{"filter":{"playlist_id":%d,"matchmaking_version":200}}}`, pid, playlist), l.lobbyDoc)
+	l := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: testSearchConns.Add(1), Player: &platform.PlayerID{PID: pid}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: m, registry: testRegistry, ctr: testCTR, lobbyDoc: string(raw)})
+	search, err := m.ParseSearch(l, fmt.Sprintf(`{"members":[%d],"lobby_slots":{"min":2,"max":8},"ruleset_payload":{"filter":{"playlist_id":%d,"matchmaking_version":200}}}`, pid, playlist), l.lobbyDoc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,18 +29,18 @@ func testCTRSearchFor(m *ctr.CtrMatchmaker, t *testing.T, pid uint64, playlist i
 }
 
 func TestCTRPublicPairingAndDocuments(t *testing.T) {
-	m := ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	a, b, c := testCTRSearchFor(&m, t, 101, 0), testCTRSearchFor(&m, t, 102, 0), testCTRSearchFor(&m, t, 103, 1)
 	if len(m.Enqueue(a)) != 0 || len(m.Enqueue(c)) != 0 {
 		t.Fatal("matched incompatible searches")
 	}
 	out := m.Enqueue(b)
-	if len(out) != 1 || out[0].Event != ctr.CtrCreateLobby || out[0].Conn != a.Conn {
+	if len(out) != 1 || out[0].Event != ctr.EventCreateLobby || out[0].Conn != a.Conn {
 		t.Fatal("host must create lobby before guests join")
 	}
-	id := out[0].Ids[1]
+	id := out[0].IDs[1]
 	ready, notifications := m.SyncDoc(a.Conn, id, 1, out[0].Host)
-	if !ready || len(notifications) != 1 || notifications[0].Event != ctr.CtrJoinLobby || notifications[0].Conn != b.Conn {
+	if !ready || len(notifications) != 1 || notifications[0].Event != ctr.EventJoinLobby || notifications[0].Conn != b.Conn {
 		t.Fatal("ready host did not release guest join")
 	}
 	out = append(out, notifications[0])
@@ -109,13 +109,13 @@ func TestCTRPublicPairingAndDocuments(t *testing.T) {
 	if len(m.Rooms) != 0 {
 		t.Fatal("disconnected host room retained")
 	}
-	if !m.Cancel(c.Conn, c.Id) || len(m.Waiting) != 0 {
+	if !m.Cancel(c.Conn, c.ID) || len(m.Waiting) != 0 {
 		t.Fatal("search cancellation failed")
 	}
 }
 
 func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
-	m := ctr.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := ctr.Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
 	a := testCTRSearchFor(&m, t, 201, 0)
 	m.Enqueue(a)
 	retry := testCTRSearchFor(&m, t, 201, 0)
@@ -128,21 +128,21 @@ func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
 	}
 }
 
-func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctr.CtrSearch {
+func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctr.Search {
 	return testCTRSearchFor(testMatchmaker, t, pid, playlist)
 }
 
 var testSearchConns atomic.Uint64
 
 // A view of the same connection is a distinct Go object with the same ConnID.
-type peerView struct{ ctr.CtrPeer }
+type peerView struct{ ctr.Peer }
 
 func TestCTRPeerOwnershipUsesConnectionID(t *testing.T) {
-	m := &ctr.CtrMatchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, Rooms: map[uint64]*ctr.CtrRoom{}}
+	m := &ctr.Matchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, Rooms: map[uint64]*ctr.Room{}}
 	a, b := testCTRSearchFor(m, t, 17, 0), testCTRSearchFor(m, t, 18, 0)
 	m.Enqueue(a)
 	notices := m.Enqueue(b)
-	room := notices[0].Ids[1]
+	room := notices[0].IDs[1]
 	if _, _, ok := m.Documents(&peerView{a.Conn}, room); !ok {
 		t.Fatal("another view of the owner connection was refused")
 	}

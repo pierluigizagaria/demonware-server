@@ -54,7 +54,7 @@ func (h *NewsHandler) OnMarketingComms(peer lobby.TaskSession, task byte, r *dem
 					continue
 				}
 				w.Uint32(1)
-				w.Uint64(msg.Id)
+				w.Uint64(msg.ID)
 				w.String(language)
 				w.Blob(msg.Content)
 				w.Blob([]byte("{}"))

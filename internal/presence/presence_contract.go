@@ -13,6 +13,6 @@ type presencePeer interface {
 	Logf(string, ...any)
 }
 
-type PresenceReplies interface {
+type Replies interface {
 	TaskReply(byte, uint32, func(*demonware.Writer) uint32) []byte
 }

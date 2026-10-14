@@ -119,7 +119,7 @@ func TestEconomyBundleOnlyChargesUnownedComponents(t *testing.T) {
 				expected += part.Price
 			}
 		}
-		price, err := ctr.SkuPrice(a, sku)
+		price, err := ctr.SKUPrice(a, sku)
 		if err != nil || price != expected {
 			t.Fatalf("bundle %d %v", price, err)
 		}

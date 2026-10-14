@@ -14,7 +14,7 @@ type playerNameStore interface {
 	NamedPlayers(names []string) (map[string]*platform.PlayerID, error)
 }
 
-func (state *PresenceStore) RememberPlayerName(id platform.PlayerID, at time.Time) error {
+func (state *Store) RememberPlayerName(id platform.PlayerID, at time.Time) error {
 	if state.PlayerNames == nil || id.PID == 0 || id.Username == "" {
 		return nil
 	}

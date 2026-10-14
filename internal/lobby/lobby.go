@@ -18,31 +18,31 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
-type LobbyServer struct {
+type Server struct {
 	Table *ServiceTable
-	Cfg   config.ServerConfig
+	Cfg   config.Config
 	Diag  *diagnostics.Diagnostics
 
 	Tickets  *auth.TicketStore
-	Presence *presence.PresenceStore
+	Presence *presence.Store
 	Replies  *ReplyCounter
 
-	Ids     *atomic.Uint64
+	IDs     *atomic.Uint64
 	Monitor sessionTelemetry
-	Options *LobbyOptions
+	Options *Options
 
 	mu        sync.Mutex
 	stopping  bool
 	listeners []net.Listener
-	sessions  map[*LobbySession]struct{}
+	sessions  map[*Session]struct{}
 	workers   sync.WaitGroup
 }
 
-func (server *LobbyServer) NewConn(c net.Conn, dumps string) *LobbySession {
-	return &LobbySession{Table: server.Table, Telemetry: server.Monitor, Diagnostics: server.Diag, Options: server.Options, ReplyCounter: server.Replies, Presence: server.Presence, Tickets: server.Tickets, C: c, N: server.Ids.Add(1), dumpDir: dumps}
+func (server *Server) NewConn(c net.Conn, dumps string) *Session {
+	return &Session{Table: server.Table, Telemetry: server.Monitor, Diagnostics: server.Diag, Options: server.Options, ReplyCounter: server.Replies, Presence: server.Presence, Tickets: server.Tickets, C: c, N: server.IDs.Add(1), dumpDir: dumps}
 }
 
-func (server *LobbyServer) Start() error {
+func (server *Server) Start() error {
 	dumps := server.Diag.RunDumpDir("lobby")
 	opened := 0
 	for _, p := range strings.Split(server.Cfg.LobbyPorts, ",") {
@@ -66,7 +66,7 @@ func (server *LobbyServer) Start() error {
 	return nil
 }
 
-func (server *LobbyServer) startListener(ln net.Listener, dumps string) bool {
+func (server *Server) startListener(ln net.Listener, dumps string) bool {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	if server.stopping {
@@ -75,7 +75,7 @@ func (server *LobbyServer) startListener(ln net.Listener, dumps string) bool {
 	}
 	server.listeners = append(server.listeners, ln)
 	if server.sessions == nil {
-		server.sessions = make(map[*LobbySession]struct{})
+		server.sessions = make(map[*Session]struct{})
 	}
 	server.workers.Add(1)
 	go func() {
@@ -113,7 +113,7 @@ func (server *LobbyServer) startListener(ln net.Listener, dumps string) bool {
 
 // BeginShutdown closes admission and interrupts reads, without interrupting a
 // task's reply or callback. Wait must follow it before persistence is closed.
-func (server *LobbyServer) BeginShutdown() {
+func (server *Server) BeginShutdown() {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	server.stopping = true
@@ -125,4 +125,4 @@ func (server *LobbyServer) BeginShutdown() {
 	}
 }
 
-func (server *LobbyServer) Wait() { server.workers.Wait() }
+func (server *Server) Wait() { server.workers.Wait() }

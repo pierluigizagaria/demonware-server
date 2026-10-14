@@ -19,7 +19,7 @@ import (
 
 // ctrPeer is the engine's connection identity and notification seam. A PID
 // alone cannot distinguish a stale connection from its replacement.
-type CtrPeer interface {
+type Peer interface {
 	ConnID() uint64
 	PID() uint64
 	Logf(string, ...any)
@@ -28,13 +28,13 @@ type CtrPeer interface {
 
 // Event layouts verified against CTR 1.0.15's bdAsyncMatchMakingEventHandler.
 const (
-	CtrJoinLobby   = 2001
-	CtrCreateLobby = 2005
-	CtrUpdateLobby = 2006
-	CtrMergeLobby  = 2008
+	EventJoinLobby   = 2001
+	EventCreateLobby = 2005
+	EventUpdateLobby = 2006
+	EventMergeLobby  = 2008
 )
 
-type CtrSearchDoc struct {
+type SearchDoc struct {
 	Members []uint64 `json:"members"`
 	Slots   struct {
 		Min int `json:"min"`
@@ -45,7 +45,7 @@ type CtrSearchDoc struct {
 	} `json:"ruleset_payload"`
 }
 
-type CtrPlayerInfo struct {
+type PlayerInfo struct {
 	Listen struct {
 		Address string `json:"local_address"`
 		ID      string `json:"security_id"`
@@ -53,11 +53,11 @@ type CtrPlayerInfo struct {
 	} `json:"listen_server"`
 }
 
-type CtrSearch struct {
-	Conn     CtrPeer
-	Id, Pid  uint64
-	Doc      CtrSearchDoc
-	info     CtrPlayerInfo
+type Search struct {
+	Conn     Peer
+	ID, PID  uint64
+	Doc      SearchDoc
+	info     PlayerInfo
 	Filter   string
 	filterID string
 
@@ -69,7 +69,7 @@ type CtrSearch struct {
 
 // Keep membership and its seat count together for host-reported failures and
 // platform-reported disconnects. The source search remains an immutable snapshot.
-func (s *CtrSearch) removeMembers(remove func(uint64) bool) *CtrSearch {
+func (s *Search) removeMembers(remove func(uint64) bool) *Search {
 	copy := *s
 	copy.Doc.Members = make([]uint64, 0, len(s.Doc.Members))
 	for _, pid := range s.Doc.Members {
@@ -81,39 +81,39 @@ func (s *CtrSearch) removeMembers(remove func(uint64) bool) *CtrSearch {
 	return &copy
 }
 
-type CtrRoom struct {
+type Room struct {
 	clock       func() time.Time
-	Id, Version uint64
+	ID, Version uint64
 	created     int64
-	Host        *CtrSearch
-	Players     []*CtrSearch
+	Host        *Search
+	Players     []*Search
 	HostDoc     map[string]any
 	Capacity    int
 	notified    map[uint64]bool
-	MergeSource *CtrRoom
+	MergeSource *Room
 	MergeTarget uint64
 }
 
-type CtrMatchmaker struct {
-	Ids        atomic.Uint64
+type Matchmaker struct {
+	IDs        atomic.Uint64
 	OnlinePIDs func() []uint64
 	Clock      func() time.Time
 	mu         sync.Mutex
-	Waiting    []*CtrSearch
-	Rooms      map[uint64]*CtrRoom
+	Waiting    []*Search
+	Rooms      map[uint64]*Room
 	// Searches accepted but not yet matched, by search ID: their reply is
 	// still being sent. They hold their members' seats but are not offered to
 	// anyone. A follower's own search may shrink one before it is activated.
-	Pending map[uint64]*CtrSearch
+	Pending map[uint64]*Search
 }
 
-func (m *CtrMatchmaker) ParseCTRSearch(l CtrPeer, raw, playerInfo string) (*CtrSearch, error) {
-	s := &CtrSearch{Conn: l, Pid: l.PID()}
+func (m *Matchmaker) ParseSearch(l Peer, raw, playerInfo string) (*Search, error) {
+	s := &Search{Conn: l, PID: l.PID()}
 	// A party searches as ONE request issued by its leader, listing every member.
 	// Refusing anything but a lone member meant a duo or trio never entered the
 	// queue at all: they watched a lobby wait for players and were never placed
 	// in it. The leader must be among the members it claims.
-	if json.Unmarshal([]byte(raw), &s.Doc) != nil || s.Pid == 0 || len(s.Doc.Members) < 1 || len(s.Doc.Members) > 8 || s.Doc.Slots.Min < 1 || s.Doc.Slots.Max < s.Doc.Slots.Min || s.Doc.Slots.Max > 8 || len(s.Doc.Rules.Filter) == 0 {
+	if json.Unmarshal([]byte(raw), &s.Doc) != nil || s.PID == 0 || len(s.Doc.Members) < 1 || len(s.Doc.Members) > 8 || s.Doc.Slots.Min < 1 || s.Doc.Slots.Max < s.Doc.Slots.Min || s.Doc.Slots.Max > 8 || len(s.Doc.Rules.Filter) == 0 {
 		return nil, errors.New("invalid search or unsupported party membership")
 	}
 	// The leader must be among the members it claims to be searching for.
@@ -124,7 +124,7 @@ func (m *CtrMatchmaker) ParseCTRSearch(l CtrPeer, raw, playerInfo string) (*CtrS
 			return nil, errors.New("zero or duplicate party member")
 		}
 		seen[pid] = true
-		if pid == s.Pid {
+		if pid == s.PID {
 			leader = true
 		}
 	}
@@ -148,26 +148,26 @@ func (m *CtrMatchmaker) ParseCTRSearch(l CtrPeer, raw, playerInfo string) (*CtrS
 	// The fingerprint makes that visible without logging the payload itself.
 	sum := sha256.Sum256(filter)
 	s.filterID = hex.EncodeToString(sum[:4])
-	s.Id = m.Ids.Add(1)
+	s.ID = m.IDs.Add(1)
 	return s, nil
 }
 
-type ctrNotice struct {
-	Conn          CtrPeer
+type notice struct {
+	Conn          Peer
 	Event         uint32
-	Ids           []uint64
+	IDs           []uint64
 	Host, Backend string
 }
 
-func (n ctrNotice) Write(w *demonware.Writer) {
-	for _, id := range n.Ids {
+func (n notice) Write(w *demonware.Writer) {
+	for _, id := range n.IDs {
 		w.Uint64(id)
 	}
 	w.String(n.Host)
 	w.String(n.Backend)
 }
 
-func SendCTRNotices(notices []ctrNotice) {
+func SendNotices(notices []notice) {
 	for _, n := range notices {
 		if err := n.Conn.SendPush(n.Event, n.Write); err != nil {
 			n.Conn.Logf("[ctr] matchmaking push event=%d failed: %v", n.Event, err)
@@ -178,7 +178,7 @@ func SendCTRNotices(notices []ctrNotice) {
 }
 
 // occupancy counts PEOPLE in the room, not searches: one search may be a party.
-func (r *CtrRoom) Occupancy() int {
+func (r *Room) Occupancy() int {
 	n := 0
 	for _, p := range r.Players {
 		for _, pid := range p.Doc.Members {
@@ -195,18 +195,18 @@ func (r *CtrRoom) Occupancy() int {
 
 // CTR updateLobbyPlayerStatus sets state 2 for an actual peer, and state 3
 // when an expected peer times out. A failed join must not reserve a seat forever.
-func (r *CtrRoom) state(pid uint64) int {
+func (r *Room) state(pid uint64) int {
 	states, _ := r.HostDoc["player_state"].(map[string]any)
 	v, _ := states[strconv.FormatUint(pid, 10)].(json.Number)
 	n, _ := v.Int64()
 	return int(n)
 }
 
-func (r *CtrRoom) failed(pid uint64) bool {
-	return pid != r.Host.Pid && r.state(pid) == 3
+func (r *Room) failed(pid uint64) bool {
+	return pid != r.Host.PID && r.state(pid) == 3
 }
 
-func (r *CtrRoom) connected() int {
+func (r *Room) connected() int {
 	n := 0
 	for _, p := range r.Players {
 		for _, pid := range p.Doc.Members {
@@ -219,15 +219,15 @@ func (r *CtrRoom) connected() int {
 }
 
 // Includes seats reserved by the existing merge engine, before the handoff.
-func (r *CtrRoom) expectedSearches() []*CtrSearch {
-	players := append([]*CtrSearch(nil), r.Players...)
+func (r *Room) expectedSearches() []*Search {
+	players := append([]*Search(nil), r.Players...)
 	if r.MergeSource != nil {
 		players = append(players, r.MergeSource.Players...)
 	}
 	return players
 }
 
-func (r *CtrRoom) Documents() (string, string) {
+func (r *Room) Documents() (string, string) {
 	expected := map[string]string{}
 	for _, p := range r.expectedSearches() {
 		// Every member of a party is expected, not just the leader who searched.
@@ -239,7 +239,7 @@ func (r *CtrRoom) Documents() (string, string) {
 		}
 	}
 	backend := map[string]any{
-		"update_id": r.Version, "update_time": r.now().Unix(), "lobby_id": r.Id, "create_time": r.created,
+		"update_id": r.Version, "update_time": r.now().Unix(), "lobby_id": r.ID, "create_time": r.created,
 		"players": expected, "dtls": map[string]string{"security_id": r.Host.info.Listen.ID, "security_key": r.Host.info.Listen.Key}, "ruleset_payload": r.Host.Doc.Rules,
 	}
 	h, _ := json.Marshal(r.HostDoc)
@@ -247,29 +247,29 @@ func (r *CtrRoom) Documents() (string, string) {
 	return string(h), string(b)
 }
 
-func (r *CtrRoom) notice(p *CtrSearch, event uint32) ctrNotice {
+func (r *Room) notice(p *Search, event uint32) notice {
 	h, b := r.Documents()
-	ids := []uint64{p.Id, r.Id}
-	if event == CtrCreateLobby {
+	ids := []uint64{p.ID, r.ID}
+	if event == EventCreateLobby {
 		ids = append(ids, r.Version)
 	}
-	if event == CtrUpdateLobby {
-		ids = []uint64{r.Id, r.Version}
+	if event == EventUpdateLobby {
+		ids = []uint64{r.ID, r.Version}
 	}
-	return ctrNotice{p.Conn, event, ids, h, b}
+	return notice{p.Conn, event, ids, h, b}
 }
 
 // Party members are the leader's claim: the server has no evidence of who
 // agreed to join. A claim therefore never displaces another player's seat.
 // claimConflict reports a claimed follower who already holds a seat in a
 // search not led by this leader (waiting, pending, or in a room).
-func (m *CtrMatchmaker) claimConflict(s *CtrSearch) bool {
-	claimed := func(p *CtrSearch) bool {
-		if p == s || p.Pid == s.Pid {
+func (m *Matchmaker) claimConflict(s *Search) bool {
+	claimed := func(p *Search) bool {
+		if p == s || p.PID == s.PID {
 			return false // the leader's own searches are replaced by this one
 		}
 		for _, pid := range s.Doc.Members {
-			if pid != s.Pid && slices.Contains(p.Doc.Members, pid) {
+			if pid != s.PID && slices.Contains(p.Doc.Members, pid) {
 				return true
 			}
 		}
@@ -295,27 +295,27 @@ func (m *CtrMatchmaker) claimConflict(s *CtrSearch) bool {
 // check and the seat reservation happen together, so two parties cannot both
 // be told they claimed the same player. activate matches it after the reply;
 // release drops it if the reply could not be sent.
-func (m *CtrMatchmaker) Reserve(s *CtrSearch) error {
+func (m *Matchmaker) Reserve(s *Search) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.claimConflict(s) {
 		return errors.New("a claimed party member already holds a seat")
 	}
 	if m.Pending == nil {
-		m.Pending = map[uint64]*CtrSearch{}
+		m.Pending = map[uint64]*Search{}
 	}
-	m.Pending[s.Id] = s
+	m.Pending[s.ID] = s
 	return nil
 }
 
-func (m *CtrMatchmaker) Release(s *CtrSearch) {
+func (m *Matchmaker) Release(s *Search) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.Pending, s.Id)
+	delete(m.Pending, s.ID)
 }
 
 // enqueue reserves and activates a search in one go.
-func (m *CtrMatchmaker) Enqueue(s *CtrSearch) []ctrNotice {
+func (m *Matchmaker) Enqueue(s *Search) []notice {
 	if m.Reserve(s) != nil {
 		return nil
 	}
@@ -325,15 +325,15 @@ func (m *CtrMatchmaker) Enqueue(s *CtrSearch) []ctrNotice {
 // activate matches a reserved search in its current membership. A reservation
 // withdrawn meanwhile (its leader disconnected or searched again) is not
 // revived.
-func (m *CtrMatchmaker) Activate(reserved *CtrSearch) []ctrNotice {
+func (m *Matchmaker) Activate(reserved *Search) []notice {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s := m.Pending[reserved.Id]
+	s := m.Pending[reserved.ID]
 	if s == nil {
-		reserved.Conn.Logf("[ctr] search id=%d withdrawn before activation", reserved.Id)
+		reserved.Conn.Logf("[ctr] search id=%d withdrawn before activation", reserved.ID)
 		return nil
 	}
-	delete(m.Pending, s.Id)
+	delete(m.Pending, s.ID)
 	// Retries must not match an account with itself or create duplicate searches.
 	// A player who searches again is NOT in a lobby any more, whatever this side
 	// still believes. Returning nil here left them stuck forever: they matched
@@ -342,8 +342,8 @@ func (m *CtrMatchmaker) Activate(reserved *CtrSearch) []ctrNotice {
 	// a room they were never in. Evict them and let them match normally.
 	// The leader's own seat elsewhere (as another party's follower) is released
 	// too; the other members' seats were checked free by reserve.
-	evicted := m.detach(0, func(p *CtrSearch) bool { return p.Pid == s.Pid }, map[uint64]bool{s.Pid: true})
-	rooms := make([]*CtrRoom, 0, len(m.Rooms))
+	evicted := m.detach(0, func(p *Search) bool { return p.PID == s.PID }, map[uint64]bool{s.PID: true})
+	rooms := make([]*Room, 0, len(m.Rooms))
 	for _, r := range m.Rooms {
 		rooms = append(rooms, r)
 	}
@@ -352,7 +352,7 @@ func (m *CtrMatchmaker) Activate(reserved *CtrSearch) []ctrNotice {
 		if a.Occupancy() != b.Occupancy() {
 			return a.Occupancy() > b.Occupancy()
 		}
-		return a.Id < b.Id
+		return a.ID < b.ID
 	})
 	for _, r := range rooms {
 		if r.MergeTarget != 0 && m.Rooms[r.MergeTarget] == nil {
@@ -372,7 +372,7 @@ func (m *CtrMatchmaker) Activate(reserved *CtrSearch) []ctrNotice {
 		case r.Occupancy()+s.Seats > s.Doc.Slots.Max:
 			reason = "search-capacity"
 		}
-		s.Conn.Logf("[ctr] candidate search=%d seats=%d filter=%s room=%d room_filter=%s open=%t occupied=%d connected=%d capacity=%d search_max=%d reason=%s", s.Id, s.Seats, s.filterID, r.Id, r.Host.filterID, open, r.Occupancy(), r.connected(), r.Capacity, s.Doc.Slots.Max, reason)
+		s.Conn.Logf("[ctr] candidate search=%d seats=%d filter=%s room=%d room_filter=%s open=%t occupied=%d connected=%d capacity=%d search_max=%d reason=%s", s.ID, s.Seats, s.filterID, r.ID, r.Host.filterID, open, r.Occupancy(), r.connected(), r.Capacity, s.Doc.Slots.Max, reason)
 		if reason == "selected" {
 			// A retry must not inherit its previous failed state in this room.
 			if states, ok := r.HostDoc["player_state"].(map[string]any); ok {
@@ -385,11 +385,11 @@ func (m *CtrMatchmaker) Activate(reserved *CtrSearch) []ctrNotice {
 			r.Version++
 			r.HostDoc["update_id"] = r.Version
 			r.HostDoc["update_time"] = m.now().Unix()
-			return append(evicted, r.notice(r.Host, CtrUpdateLobby))
+			return append(evicted, r.notice(r.Host, EventUpdateLobby))
 		}
 	}
 	m.Waiting = append(m.Waiting, s)
-	group := []*CtrSearch{}
+	group := []*Search{}
 	seats := 0
 	minimum, maximum := 2, 8
 	for _, p := range m.Waiting {
@@ -408,16 +408,16 @@ func (m *CtrMatchmaker) Activate(reserved *CtrSearch) []ctrNotice {
 		return evicted
 	}
 	h := group[0]
-	r := &CtrRoom{clock: m.now, Id: m.Ids.Add(1), Version: 1, created: m.now().Unix(), Host: h, Players: group, Capacity: maximum, notified: map[uint64]bool{h.Conn.ConnID(): true}}
+	r := &Room{clock: m.now, ID: m.IDs.Add(1), Version: 1, created: m.now().Unix(), Host: h, Players: group, Capacity: maximum, notified: map[uint64]bool{h.Conn.ConnID(): true}}
 	r.HostDoc = map[string]any{
-		"update_id": r.Version, "update_time": r.created, "game_id": r.Id, "lobby_open": true, "lobby_open_for_pres_join": true,
-		"player_state":  map[string]uint32{strconv.FormatUint(h.Pid, 10): 1},
-		"listen_server": lobbyListenServer{HostAddress: h.info.Listen.Address, HostPlayerID: h.Pid},
+		"update_id": r.Version, "update_time": r.created, "game_id": r.ID, "lobby_open": true, "lobby_open_for_pres_join": true,
+		"player_state":  map[string]uint32{strconv.FormatUint(h.PID, 10): 1},
+		"listen_server": lobbyListenServer{HostAddress: h.info.Listen.Address, HostPlayerID: h.PID},
 		"team_balance":  lobbyTeamBalance{CanChangeTeams: true}, "ruleset_payload": map[string]any{}, "attachment": nil,
 	}
-	m.Rooms[r.Id] = r
-	selected := map[*CtrSearch]bool{}
-	out := []ctrNotice{r.notice(h, CtrCreateLobby)}
+	m.Rooms[r.ID] = r
+	selected := map[*Search]bool{}
+	out := []notice{r.notice(h, EventCreateLobby)}
 	for _, p := range group {
 		selected[p] = true
 
@@ -432,11 +432,11 @@ func (m *CtrMatchmaker) Activate(reserved *CtrSearch) []ctrNotice {
 	return append(evicted, out...)
 }
 
-func (m *CtrMatchmaker) Cancel(conn CtrPeer, id uint64) bool {
+func (m *Matchmaker) Cancel(conn Peer, id uint64) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i, p := range m.Waiting {
-		if p.Conn.ConnID() == conn.ConnID() && p.Id == id {
+		if p.Conn.ConnID() == conn.ConnID() && p.ID == id {
 			m.Waiting = append(m.Waiting[:i], m.Waiting[i+1:]...)
 			return true
 		}
@@ -451,7 +451,7 @@ func (m *CtrMatchmaker) Cancel(conn CtrPeer, id uint64) bool {
 // A disconnect while the same account is connected elsewhere releases no
 // follower seat: the newer connection may hold it. (The run loop drops the
 // connection's own online entry before it calls leave.)
-func (m *CtrMatchmaker) Leave(conn CtrPeer, id uint64) []ctrNotice {
+func (m *Matchmaker) Leave(conn Peer, id uint64) []notice {
 	pid := conn.PID()
 	stale := id == 0 && pid != 0 && slices.Contains(m.OnlinePIDs(), pid)
 	m.mu.Lock()
@@ -460,7 +460,7 @@ func (m *CtrMatchmaker) Leave(conn CtrPeer, id uint64) []ctrNotice {
 	if pid != 0 && !stale {
 		seats[pid] = true
 	}
-	return m.detach(id, func(p *CtrSearch) bool { return p.Conn.ConnID() == conn.ConnID() }, seats)
+	return m.detach(id, func(p *Search) bool { return p.Conn.ConnID() == conn.ConnID() }, seats)
 }
 
 // detach withdraws every search for which lead is true and removes the seats
@@ -471,12 +471,12 @@ func (m *CtrMatchmaker) Leave(conn CtrPeer, id uint64) []ctrNotice {
 // membership changes releases any merge reservation and tells its host.
 // Closing rooms are settled first, so no notice targets a room that is gone.
 // The caller holds m.mu.
-func (m *CtrMatchmaker) detach(id uint64, lead func(*CtrSearch) bool, seats map[uint64]bool) []ctrNotice {
-	removable := func(p *CtrSearch, pid uint64) bool { return seats[pid] && pid != p.Pid }
-	member := func(p *CtrSearch) bool {
+func (m *Matchmaker) detach(id uint64, lead func(*Search) bool, seats map[uint64]bool) []notice {
+	removable := func(p *Search, pid uint64) bool { return seats[pid] && pid != p.PID }
+	member := func(p *Search) bool {
 		return slices.ContainsFunc(p.Doc.Members, func(pid uint64) bool { return removable(p, pid) })
 	}
-	without := func(p *CtrSearch) *CtrSearch {
+	without := func(p *Search) *Search {
 		return p.removeMembers(func(pid uint64) bool { return removable(p, pid) })
 	}
 	if id == 0 {
@@ -500,8 +500,8 @@ func (m *CtrMatchmaker) detach(id uint64, lead func(*CtrSearch) bool, seats map[
 			}
 		}
 	}
-	var notices []ctrNotice
-	closing := map[*CtrRoom]bool{}
+	var notices []notice
+	closing := map[*Room]bool{}
 	for roomID, r := range m.Rooms {
 		if (id == 0 || roomID == id) && lead(r.Host) {
 			closing[r] = true
@@ -520,7 +520,7 @@ func (m *CtrMatchmaker) detach(id uint64, lead func(*CtrSearch) bool, seats map[
 				notices = append(notices, m.cancelMerge(dst)...)
 			}
 		}
-		delete(m.Rooms, r.Id)
+		delete(m.Rooms, r.ID)
 	}
 	for roomID, r := range m.Rooms {
 		if id != 0 && roomID != id {
@@ -568,12 +568,12 @@ func (m *CtrMatchmaker) detach(id uint64, lead func(*CtrSearch) bool, seats map[
 		r.Version++
 		r.HostDoc["update_id"] = r.Version
 		r.HostDoc["update_time"] = m.now().Unix()
-		notices = append(notices, r.notice(r.Host, CtrUpdateLobby))
+		notices = append(notices, r.notice(r.Host, EventUpdateLobby))
 	}
 	return notices
 }
 
-func (m *CtrMatchmaker) Documents(conn CtrPeer, id uint64) (string, string, bool) {
+func (m *Matchmaker) Documents(conn Peer, id uint64) (string, string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if r := m.Rooms[id]; r != nil {
@@ -587,7 +587,7 @@ func (m *CtrMatchmaker) Documents(conn CtrPeer, id uint64) (string, string, bool
 	return "", "", false
 }
 
-func (m *CtrMatchmaker) SyncDoc(conn CtrPeer, id, version uint64, raw string) (bool, []ctrNotice) {
+func (m *Matchmaker) SyncDoc(conn Peer, id, version uint64, raw string) (bool, []notice) {
 	var doc map[string]any
 	decoder := json.NewDecoder(strings.NewReader(raw))
 	decoder.UseNumber()
@@ -643,9 +643,9 @@ func (m *CtrMatchmaker) SyncDoc(conn CtrPeer, id, version uint64, raw string) (b
 	}
 	r.Players = kept
 	if released > 0 {
-		conn.Logf("[ctr] released failed reservations room=%d seats=%d", r.Id, released)
+		conn.Logf("[ctr] released failed reservations room=%d seats=%d", r.ID, released)
 	}
-	conn.Logf("[ctr] room-state room=%d version=%d open=%v occupied=%d connected=%d searches=%d", r.Id, r.Version, doc["lobby_open"], r.Occupancy(), r.connected(), len(r.Players))
+	conn.Logf("[ctr] room-state room=%d version=%d open=%v occupied=%d connected=%d searches=%d", r.ID, r.Version, doc["lobby_open"], r.Occupancy(), r.connected(), len(r.Players))
 	// 2006 asks the host to produce a new document; it is not an ACK to
 	// broadcast. Echoing it on every sync causes an endless sync/push loop.
 	// Release pending guests only after the host has supplied its document.
@@ -653,7 +653,7 @@ func (m *CtrMatchmaker) SyncDoc(conn CtrPeer, id, version uint64, raw string) (b
 	for _, p := range r.Players {
 		if !r.notified[p.Conn.ConnID()] {
 			r.notified[p.Conn.ConnID()] = true
-			out = append(out, r.notice(p, CtrJoinLobby))
+			out = append(out, r.notice(p, EventJoinLobby))
 		}
 	}
 	// A search already waiting must be reconsidered when the host opens its
@@ -677,13 +677,13 @@ func (m *CtrMatchmaker) SyncDoc(conn CtrPeer, id, version uint64, raw string) (b
 			r.Players = append(r.Players, p)
 			r.Capacity = min(r.Capacity, p.Doc.Slots.Max)
 			added++
-			conn.Logf("[ctr] backfill waiting search=%d seats=%d room=%d", p.Id, p.Seats, r.Id)
+			conn.Logf("[ctr] backfill waiting search=%d seats=%d room=%d", p.ID, p.Seats, r.ID)
 		}
 		m.Waiting = remaining
 		if added > 0 {
 			r.Version++
 			doc["update_id"] = r.Version
-			out = append(out, r.notice(r.Host, CtrUpdateLobby))
+			out = append(out, r.notice(r.Host, EventUpdateLobby))
 		}
 	}
 	if len(out) == 0 {
@@ -692,14 +692,14 @@ func (m *CtrMatchmaker) SyncDoc(conn CtrPeer, id, version uint64, raw string) (b
 	return true, out
 }
 
-func (m *CtrMatchmaker) now() time.Time {
+func (m *Matchmaker) now() time.Time {
 	if m.Clock != nil {
 		return m.Clock()
 	}
 	return time.Now()
 }
 
-func (r *CtrRoom) now() time.Time {
+func (r *Room) now() time.Time {
 	if r.clock != nil {
 		return r.clock()
 	}

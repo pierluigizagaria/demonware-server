@@ -18,13 +18,13 @@ type PitStopRefreshRecord struct {
 	Receipts map[string]bool `json:"receipts"`
 }
 
-type ctrAchievementState struct {
+type achievementState struct {
 	ID, Completed                              uint64
 	Name                                       string
 	Kind, Progress, Target, Status, Start, End uint64
 }
 
-func (a ctrAchievementState) Encode() []byte {
+func (a achievementState) Encode() []byte {
 	e := demonware.AppendBytesField(nil, 1, []byte(a.Name))
 	for _, f := range []struct {
 		tag   byte
@@ -44,9 +44,9 @@ func pitStopDay(now time.Time) (string, uint64, uint64) {
 	return start.Format("2006-01-02"), uint64(start.Unix()), uint64(start.Add(24 * time.Hour).Unix())
 }
 
-func CurrentPitStopRefresh(a *EconomyAccount, now time.Time) ctrAchievementState {
+func CurrentPitStopRefresh(a *EconomyAccount, now time.Time) achievementState {
 	day, start, end := pitStopDay(now)
-	s := ctrAchievementState{Name: "pitstop_daily_refresh", ID: 255, Kind: 1, Target: 2, Status: 2, Start: start, End: end}
+	s := achievementState{Name: "pitstop_daily_refresh", ID: 255, Kind: 1, Target: 2, Status: 2, Start: start, End: end}
 	if a.PitStopRefresh != nil && a.PitStopRefresh.Day == day {
 		s.Progress = a.PitStopRefresh.Count
 	}
@@ -105,7 +105,7 @@ func (s *EconomyStore) ReportPitStopRefresh(pid uint64, events []AchievementEven
 
 // bdGetAchievementStatesRequest: kinds=2, limit=3, token=4,
 // statuses=5, names=6. Do not leak a progression state into daily challenges.
-func AchievementRequested(payload []byte, s ctrAchievementState) bool {
+func AchievementRequested(payload []byte, s achievementState) bool {
 	fields, err := demonware.ParseFields(demonware.TaskStructPayload(payload))
 	if err != nil {
 		return false

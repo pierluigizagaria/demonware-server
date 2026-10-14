@@ -39,7 +39,7 @@ func (*platformWire) SetWriteDeadline(time.Time) error { return nil }
 func sharedPS4Lobby() (*lobbyConn, *platformWire) {
 	wire := &platformWire{}
 	k := demonware.DeriveKeys([]byte("synthetic transcript"), make([]byte, 24))
-	return newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 909090, C: wire, Keys: &k, Player: &platform.PlayerID{PID: 17, Username: "fixture", Title: 5760, Kind: "shadnet", Sub: "shadnet:17"}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR}), wire
+	return newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 909090, C: wire, Keys: &k, Player: &platform.PlayerID{PID: 17, Username: "fixture", Title: 5760, Kind: "shadnet", Sub: "shadnet:17"}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR}), wire
 }
 
 func sharedTask(t *testing.T, l *lobbyConn, w *platformWire, p []byte) []byte {
@@ -87,7 +87,7 @@ func TestSharedPS4DispatcherStartup(t *testing.T) {
 func TestSharedPS4AuthUsesInjectedVerifier(t *testing.T) {
 	calls := 0
 	deny := false
-	p := ps4.PsnPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
+	p := ps4.PSNPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
 		calls++
 		if deny {
 			return platform.Identity{}, errors.New("refused")
@@ -213,13 +213,13 @@ func TestEncryptedFrameRejectionPreservesSequencePolicy(t *testing.T) {
 	for _, raw := range [][]byte{first[:20], tampered} {
 		l.fixtureTable()
 		l.OnEncrypted(raw)
-		if w.Len() != 0 || l.C2sSeq != 0 {
+		if w.Len() != 0 || l.C2SSeq != 0 {
 			t.Fatal("unauthenticated or truncated frame consumed a sequence or replied")
 		}
 	}
 	l.fixtureTable()
 	l.OnEncrypted(first)
-	if w.Len() == 0 || l.C2sSeq != 1 {
+	if w.Len() == 0 || l.C2SSeq != 1 {
 		t.Fatal("valid frame refused after rejection")
 	}
 	w.Reset()
@@ -238,12 +238,12 @@ func TestEncryptedFrameRejectionPreservesSequencePolicy(t *testing.T) {
 	copy(malformed[n:], demonware.HMACSHA1(l.Keys.C2SMAC, malformed[:n])[:8])
 	l.fixtureTable()
 	l.OnEncrypted(malformed)
-	if w.Len() != 0 || l.C2sSeq != 2 {
+	if w.Len() != 0 || l.C2SSeq != 2 {
 		t.Fatal("authenticated malformed frame changed sequence policy")
 	}
 	l.fixtureTable()
 	l.OnEncrypted(clientFrame(t, l, 3, task))
-	if w.Len() == 0 || l.C2sSeq != 3 {
+	if w.Len() == 0 || l.C2SSeq != 3 {
 		t.Fatal("next valid frame refused after malformed payload")
 	}
 }

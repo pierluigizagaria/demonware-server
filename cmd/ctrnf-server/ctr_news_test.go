@@ -18,7 +18,7 @@ import (
 
 func setNews(t *testing.T, env map[string]string) {
 	t.Helper()
-	c, err := config.LoadConfig(lookupFrom(env), nil, false)
+	c, err := config.Load(lookupFrom(env), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestCTRNewsRequestLimitsAccepted(t *testing.T) {
 func TestCTRNewsRequiresAdmittedPS4Player(t *testing.T) {
 	setNews(t, map[string]string{"CTR_NEWS": "Welcome"})
 	l, wire := sharedPS4Lobby()
-	for _, player := range []*platform.PlayerID{nil, {Title: ps4.CtrTitle}, {PID: 17, Title: 5775}, {PID: 17, Title: 5745}} {
+	for _, player := range []*platform.PlayerID{nil, {Title: ps4.CTRTitle}, {PID: 17, Title: 5775}, {PID: 17, Title: 5745}} {
 		l.Player = player
 		for _, request := range [][]byte{newsFetch("ctr", "en", [2]uint32{1, 1}), newsViewed("octane_psn", "en", 1)} {
 			newsReply(t, sharedTask(t, l, wire, request), request[2], lobby.ErrUnhandled, 0)

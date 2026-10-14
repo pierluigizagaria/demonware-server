@@ -7,6 +7,6 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
-func newDashboardViews(presenceStore *presence.PresenceStore, matchmaker *ctr.CtrMatchmaker, registry *lobby.SessionRegistry) dashboard.DashboardViews {
-	return dashboard.DashboardViews{Online: presenceStore.Snapshot, Sessions: registry.Snapshot, Rooms: matchmaker.DashboardRooms}
+func newDashboardViews(presenceStore *presence.Store, matchmaker *ctr.Matchmaker, registry *lobby.SessionRegistry) dashboard.Views {
+	return dashboard.Views{Online: presenceStore.Snapshot, Sessions: registry.Snapshot, Rooms: matchmaker.DashboardRooms}
 }

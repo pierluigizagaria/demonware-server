@@ -14,12 +14,12 @@ type EconomyHandler struct {
 type StatsHandler struct {
 	*lobby.ReplyCounter
 	Stats    LeaderboardStore
-	Presence *presence.PresenceStore
+	Presence *presence.Store
 }
 
 type NewsHandler struct {
 	*lobby.ReplyCounter
-	News config.CtrNewsConfig
+	News config.News
 }
 
 type PlatformHandler struct{ *lobby.ReplyCounter }

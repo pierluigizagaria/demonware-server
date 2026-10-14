@@ -19,9 +19,9 @@ import (
 
 const testTrustID = "test-trust"
 
-func openTestCTR(t *testing.T, path string, unlockAll bool) *store.CtrSQLite {
+func openTestCTR(t *testing.T, path string, unlockAll bool) *store.SQLite {
 	t.Helper()
-	db, err := store.OpenCTRSQLite(path, unlockAll, testTrustID)
+	db, err := store.OpenSQLite(path, unlockAll, testTrustID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,34 +30,34 @@ func openTestCTR(t *testing.T, path string, unlockAll bool) *store.CtrSQLite {
 	return db
 }
 
-func newTestEconomy(t *testing.T, unlockAll bool) (*ctr.EconomyStore, *store.CtrSQLite) {
+func newTestEconomy(t *testing.T, unlockAll bool) (*ctr.EconomyStore, *store.SQLite) {
 	t.Helper()
 	dir := t.TempDir()
-	db := openTestCTR(t, filepath.Join(dir, store.CtrDB), unlockAll)
+	db := openTestCTR(t, filepath.Join(dir, store.DBFile), unlockAll)
 	return &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: dir, Backend: db, UnlockAll: unlockAll}, db
 }
 
-func sqliteCount(t *testing.T, db *store.CtrSQLite, table string) int {
+func sqliteCount(t *testing.T, db *store.SQLite, table string) int {
 	t.Helper()
 	var n int
-	if err := db.Db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
+	if err := db.DB.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
 }
 
-func sqliteChanges(t *testing.T, db *store.CtrSQLite) int {
+func sqliteChanges(t *testing.T, db *store.SQLite) int {
 	t.Helper()
 	var n int
-	if err := db.Db.QueryRow("SELECT total_changes()").Scan(&n); err != nil {
+	if err := db.DB.QueryRow("SELECT total_changes()").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
 }
 
-func sqliteExec(t *testing.T, db *store.CtrSQLite, query string, args ...any) {
+func sqliteExec(t *testing.T, db *store.SQLite, query string, args ...any) {
 	t.Helper()
-	if _, err := db.Db.Exec(query, args...); err != nil {
+	if _, err := db.DB.Exec(query, args...); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -175,7 +175,7 @@ func TestEconomyStoresAgree(t *testing.T) {
 			if err := db.Close(); err != nil {
 				t.Fatal(err)
 			}
-			db = openTestCTR(parent, filepath.Join(s.Dir, store.CtrDB), false)
+			db = openTestCTR(parent, filepath.Join(s.Dir, store.DBFile), false)
 			s.Backend = db
 			reference = &ctr.EconomyStore{InitialBalance: func() int64 { return testStartBalance }, Dir: reference.Dir}
 			if got := accountJSON(t, s, pid); !bytes.Equal(got, wantState) {
@@ -184,7 +184,7 @@ func TestEconomyStoresAgree(t *testing.T) {
 		})
 	}
 	var storedPID int64
-	if err := db.Db.QueryRow("SELECT pid FROM accounts").Scan(&storedPID); err != nil || storedPID != -1 {
+	if err := db.DB.QueryRow("SELECT pid FROM accounts").Scan(&storedPID); err != nil || storedPID != -1 {
 		t.Fatalf("uint64 PID not stored as int64 bits: %d, %v", storedPID, err)
 	}
 }
@@ -293,7 +293,7 @@ func TestSQLiteRewardAndRefreshAtomic(t *testing.T) {
 			}
 			rows := sqliteCount(t, db, "ledger")
 			db.Close()
-			db = openTestCTR(t, filepath.Join(s.Dir, store.CtrDB), false)
+			db = openTestCTR(t, filepath.Join(s.Dir, store.DBFile), false)
 			s.Backend = db
 			if err := tc.run(s); err != nil {
 				t.Fatal(err)
@@ -315,13 +315,13 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	item := ctr.EconomyCatalogSnapshot()[200085].Items[0]
 	var source string
 	var stamp int64
-	if err := db.Db.QueryRow("SELECT source, granted_at FROM inventory WHERE pid=? AND item=?", pid, item).Scan(&source, &stamp); err != nil || source != "purchase" || stamp <= 0 {
+	if err := db.DB.QueryRow("SELECT source, granted_at FROM inventory WHERE pid=? AND item=?", pid, item).Scan(&source, &stamp); err != nil || source != "purchase" || stamp <= 0 {
 		t.Fatalf("grant provenance = %s %d, %v", source, stamp, err)
 	}
 	var delta int64
 	var sku uint32
 	var skus string
-	if err := db.Db.QueryRow("SELECT delta, sku, skus FROM ledger WHERE source='purchase' AND currency=10").Scan(&delta, &sku, &skus); err != nil || delta != -ctr.EconomyCatalogSnapshot()[200085].Price || sku != 200085 || skus != "[200085]" {
+	if err := db.DB.QueryRow("SELECT delta, sku, skus FROM ledger WHERE source='purchase' AND currency=10").Scan(&delta, &sku, &skus); err != nil || delta != -ctr.EconomyCatalogSnapshot()[200085].Price || sku != 200085 || skus != "[200085]" {
 		t.Fatalf("purchase audit = %d %d %s, %v", delta, sku, skus, err)
 	}
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
@@ -344,7 +344,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	} {
 		var delta int64
 		var receipt sql.NullString
-		if err := db.Db.QueryRow("SELECT delta, receipt FROM ledger WHERE source=? AND currency=10", tc.source).Scan(&delta, &receipt); err != nil {
+		if err := db.DB.QueryRow("SELECT delta, receipt FROM ledger WHERE source=? AND currency=10", tc.source).Scan(&delta, &receipt); err != nil {
 			t.Fatal(err)
 		}
 		var refs []string
@@ -385,7 +385,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	var unlogged int
-	if err := db.Db.QueryRow(`SELECT count(*) FROM inventory i WHERE NOT EXISTS (
+	if err := db.DB.QueryRow(`SELECT count(*) FROM inventory i WHERE NOT EXISTS (
 		SELECT 1 FROM ledger l WHERE l.pid=i.pid AND l.item=i.item AND l.source=i.source AND l.timestamp=i.granted_at)`).Scan(&unlogged); err != nil || unlogged != 0 {
 		t.Fatalf("unlogged items: %d, %v", unlogged, err)
 	}
@@ -395,7 +395,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	}
 	for currency, amount := range a.Balances {
 		var sum int64
-		if err := db.Db.QueryRow("SELECT coalesce(sum(delta),0) FROM ledger WHERE pid=? AND currency=?", pid, currency).Scan(&sum); err != nil || sum != amount {
+		if err := db.DB.QueryRow("SELECT coalesce(sum(delta),0) FROM ledger WHERE pid=? AND currency=?", pid, currency).Scan(&sum); err != nil || sum != amount {
 			t.Fatalf("currency %d: ledger %d balance %d, %v", currency, sum, amount, err)
 		}
 	}
@@ -438,7 +438,7 @@ func TestSQLiteInventoryAndLedgerAreAppendOnly(t *testing.T) {
 		"UPDATE ledger SET delta=1", "DELETE FROM ledger",
 		"INSERT OR REPLACE INTO ledger SELECT * FROM ledger",
 	} {
-		if _, err := db.Db.Exec(query); err == nil {
+		if _, err := db.DB.Exec(query); err == nil {
 			t.Fatalf("accepted %s", query)
 		}
 	}
@@ -485,52 +485,52 @@ func TestSQLiteConcurrentPurchaseRetry(t *testing.T) {
 func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 	for _, unlockAll := range []bool{false, true} {
 		t.Run(map[bool]string{false: "off", true: "on"}[unlockAll], func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), store.CtrDB)
+			path := filepath.Join(t.TempDir(), store.DBFile)
 			db := openTestCTR(t, path, unlockAll)
 			var schema, mode, journal string
 			var version, synchronous, timeout int
-			if err := db.Db.QueryRow("SELECT sql FROM sqlite_master WHERE name='meta'").Scan(&schema); err != nil {
+			if err := db.DB.QueryRow("SELECT sql FROM sqlite_master WHERE name='meta'").Scan(&schema); err != nil {
 				t.Fatal(err)
 			}
 			if schema != "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)" {
 				t.Fatalf("meta schema: %s", schema)
 			}
-			if err := db.Db.QueryRow("SELECT value FROM meta WHERE key='unlock_all'").Scan(&mode); err != nil {
+			if err := db.DB.QueryRow("SELECT value FROM meta WHERE key='unlock_all'").Scan(&mode); err != nil {
 				t.Fatal(err)
 			}
 			var trust string
-			if err := db.Db.QueryRow("SELECT value FROM meta WHERE key='trust_id'").Scan(&trust); err != nil {
+			if err := db.DB.QueryRow("SELECT value FROM meta WHERE key='trust_id'").Scan(&trust); err != nil {
 				t.Fatal(err)
 			}
 			if mode != map[bool]string{false: "0", true: "1"}[unlockAll] || trust != testTrustID || sqliteCount(t, db, "meta") != 2 {
 				t.Fatalf("meta rows: %q %q", mode, trust)
 			}
-			if err := db.Db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+			if err := db.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.Db.QueryRow("PRAGMA journal_mode").Scan(&journal); err != nil {
+			if err := db.DB.QueryRow("PRAGMA journal_mode").Scan(&journal); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.Db.QueryRow("PRAGMA synchronous").Scan(&synchronous); err != nil {
+			if err := db.DB.QueryRow("PRAGMA synchronous").Scan(&synchronous); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.Db.QueryRow("PRAGMA busy_timeout").Scan(&timeout); err != nil {
+			if err := db.DB.QueryRow("PRAGMA busy_timeout").Scan(&timeout); err != nil {
 				t.Fatal(err)
 			}
-			if version != store.CtrSchemaVersion || journal != "wal" || synchronous != 2 || timeout != 5000 || db.Db.Stats().MaxOpenConnections != 1 {
+			if version != store.SchemaVersion || journal != "wal" || synchronous != 2 || timeout != 5000 || db.DB.Stats().MaxOpenConnections != 1 {
 				t.Fatalf("settings: %d %s %d %d", version, journal, synchronous, timeout)
 			}
 			db.Close()
 			db = openTestCTR(t, path, unlockAll)
 			db.Close()
-			if other, err := store.OpenCTRSQLite(path, !unlockAll, testTrustID); err == nil {
+			if other, err := store.OpenSQLite(path, !unlockAll, testTrustID); err == nil {
 				other.Close()
 				t.Fatal("mode mismatch accepted")
 			}
 			db = openTestCTR(t, path, unlockAll)
-			sqliteExec(t, db, fmt.Sprintf("PRAGMA user_version = %d", store.CtrSchemaVersion+1))
+			sqliteExec(t, db, fmt.Sprintf("PRAGMA user_version = %d", store.SchemaVersion+1))
 			db.Close()
-			if newer, err := store.OpenCTRSQLite(path, unlockAll, testTrustID); err == nil {
+			if newer, err := store.OpenSQLite(path, unlockAll, testTrustID); err == nil {
 				newer.Close()
 				t.Fatal("newer schema accepted")
 			}
@@ -538,11 +538,11 @@ func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 	}
 	for _, statement := range []string{"DELETE FROM meta", "UPDATE meta SET value='invalid'"} {
 		t.Run(statement, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), store.CtrDB)
+			path := filepath.Join(t.TempDir(), store.DBFile)
 			db := openTestCTR(t, path, false)
 			sqliteExec(t, db, statement)
 			db.Close()
-			if reopened, err := store.OpenCTRSQLite(path, false, testTrustID); err == nil {
+			if reopened, err := store.OpenSQLite(path, false, testTrustID); err == nil {
 				reopened.Close()
 				t.Fatal("missing/invalid mode accepted")
 			}
@@ -566,7 +566,7 @@ func TestSQLiteStartsFreshAndFixesStartingBalance(t *testing.T) {
 	}
 	setStartBalance(t, 999)
 	db.Close()
-	db = openTestCTR(t, filepath.Join(s.Dir, store.CtrDB), false)
+	db = openTestCTR(t, filepath.Join(s.Dir, store.DBFile), false)
 	s.Backend = db
 	a, err = s.Snapshot(42)
 	if err != nil || a.Balances[10] != 321 {
@@ -585,9 +585,9 @@ func TestSQLiteStartsFreshAndFixesStartingBalance(t *testing.T) {
 }
 
 func TestSQLiteRefusesSecondInstance(t *testing.T) {
-	path := filepath.Join(t.TempDir(), store.CtrDB)
+	path := filepath.Join(t.TempDir(), store.DBFile)
 	db := openTestCTR(t, path, false)
-	if other, err := store.OpenCTRSQLite(path, false, testTrustID); err == nil {
+	if other, err := store.OpenSQLite(path, false, testTrustID); err == nil {
 		other.Close()
 		t.Fatal("second instance opened the same database")
 	}

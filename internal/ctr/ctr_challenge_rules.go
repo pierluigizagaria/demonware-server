@@ -59,17 +59,17 @@ func ChallengeNameHash(s string) uint64 {
 	return uint64(v)
 }
 
-func (r ChallengeRule) Current(a *EconomyAccount, now time.Time) (ctrAchievementState, challengePeriod, bool) {
+func (r ChallengeRule) Current(a *EconomyAccount, now time.Time) (achievementState, challengePeriod, bool) {
 	delta := now.Unix() - challengeRules.CycleStart
 	if delta < 0 {
-		return ctrAchievementState{}, challengePeriod{}, false
+		return achievementState{}, challengePeriod{}, false
 	}
 	cycle := challengeRules.CycleStart + delta/challengeRules.CycleSeconds*challengeRules.CycleSeconds
 	for _, p := range r.Periods {
 		if now.Unix() < cycle+p.Start || now.Unix() >= cycle+p.End {
 			continue
 		}
-		state := ctrAchievementState{Name: r.Name, ID: r.ID, Kind: r.Kind, Target: p.Target, Status: 2, Start: uint64(cycle + p.Start), End: uint64(cycle + p.End)}
+		state := achievementState{Name: r.Name, ID: r.ID, Kind: r.Kind, Target: p.Target, Status: 2, Start: uint64(cycle + p.Start), End: uint64(cycle + p.End)}
 		c := a.Challenges[ChallengeKey(state)]
 		state.Progress = c.Progress
 		if c.Completed != 0 {
@@ -79,10 +79,10 @@ func (r ChallengeRule) Current(a *EconomyAccount, now time.Time) (ctrAchievement
 		}
 		return state, p, true
 	}
-	return ctrAchievementState{}, challengePeriod{}, false
+	return achievementState{}, challengePeriod{}, false
 }
 
-func ChallengeKey(s ctrAchievementState) string { return fmt.Sprintf("%s:%d", s.Name, s.Start) }
+func ChallengeKey(s achievementState) string { return fmt.Sprintf("%s:%d", s.Name, s.Start) }
 
 func (r ChallengeRule) Accepts(p challengePeriod, e AchievementEvent) bool {
 	if r.Name != e.Name {

@@ -15,9 +15,9 @@ import (
 const SvcRichPresence = 68
 
 const (
-	RpSet             = 3
-	RpGet             = 4
-	RpGetAndSubscribe = 5
+	RPSet             = 3
+	RPGet             = 4
+	RPGetAndSubscribe = 5
 	rpUnsubscribe     = 7
 )
 
@@ -51,7 +51,7 @@ func readAccountIDs(r *demonware.Reader) []accountID {
 }
 
 // onlinePIDSet returns the connected players, indexed for lookup.
-func (state *PresenceStore) onlinePIDSet() map[uint64]bool {
+func (state *Store) onlinePIDSet() map[uint64]bool {
 	out := map[uint64]bool{}
 	for _, pid := range state.OnlinePIDs() {
 		out[pid] = true
@@ -59,10 +59,10 @@ func (state *PresenceStore) onlinePIDSet() map[uint64]bool {
 	return out
 }
 
-func (h *PresenceHandler) OnRichPresence(peer presencePeer, task byte, r *demonware.Reader) []byte {
+func (h *Handler) OnRichPresence(peer presencePeer, task byte, r *demonware.Reader) []byte {
 	ctx, _ := r.String()
 	switch task {
-	case RpSet:
+	case RPSet:
 		id, err1 := r.Uint64()
 		plat, err2 := r.String()
 		flag, err3 := r.Uint8()
@@ -83,7 +83,7 @@ func (h *PresenceHandler) OnRichPresence(peer presencePeer, task byte, r *demonw
 		peer.Logf("[presence] richpresence SET pid=%d ctx=%q %d bytes", id, ctx, len(data))
 		return h.TaskReply(task, 0, nil)
 
-	case RpGet, RpGetAndSubscribe:
+	case RPGet, RPGetAndSubscribe:
 		ids := readAccountIDs(r)
 		me := peer.PID()
 		live := h.Presence.onlinePIDSet()

@@ -68,17 +68,17 @@ func TestOverallDrainLimitIncludesDatabaseClose(t *testing.T) {
 func TestStartupFailureReleasesOpenedDatabase(t *testing.T) {
 	// An invalid local port fails before any network listener is opened. This
 	// exercises real partial-startup cleanup with a temporary SQLite database.
-	cfg := config.ServerConfig{Admission: "guest", UnlockAll: true, DataDir: t.TempDir(), DashPort: -1, RedactLogs: true}
+	cfg := config.Config{Admission: "guest", UnlockAll: true, DataDir: t.TempDir(), DashPort: -1, RedactLogs: true}
 	if err := runServer(context.Background(), cfg); err == nil {
 		t.Fatal("expected dashboard startup failure")
 	}
-	db, err := store.OpenCTRSQLite(filepath.Join(cfg.DataDir, store.CtrDB), true, guest.GuestTrustID)
+	db, err := store.OpenSQLite(filepath.Join(cfg.DataDir, store.DBFile), true, guest.TrustID)
 	if err != nil {
 		t.Fatalf("startup retained database lock: %v", err)
 	}
 	defer db.Close()
 	var version int
-	if err := db.Db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 1 {
+	if err := db.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 1 {
 		t.Fatal("schema changed during failed startup")
 	}
 }

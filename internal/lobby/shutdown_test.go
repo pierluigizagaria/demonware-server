@@ -43,7 +43,7 @@ func TestShutdownInterruptsIdleAndPartialLobbyReads(t *testing.T) {
 			defer server.Close()
 			defer client.Close()
 			keys := demonware.DeriveKeys([]byte("synthetic transcript"), make([]byte, 24))
-			l := &LobbySession{C: server, Keys: &keys}
+			l := &Session{C: server, Keys: &keys}
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
@@ -87,8 +87,8 @@ func TestShutdownFinishesAdmittedReplyAndCallback(t *testing.T) {
 					}
 				}}
 			})
-			l := &LobbySession{C: server, Keys: &keys, Diagnostics: &diagnostics.Diagnostics{RedactLogs: true}, ReplyCounter: replies,
-				Presence: presence.NewPresenceStore(nil), Telemetry: &shutdownTelemetry{}, Table: &ServiceTable{Replies: replies, Handlers: map[byte]TaskHandler{1: handler}}}
+			l := &Session{C: server, Keys: &keys, Diagnostics: &diagnostics.Diagnostics{RedactLogs: true}, ReplyCounter: replies,
+				Presence: presence.NewStore(nil), Telemetry: &shutdownTelemetry{}, Table: &ServiceTable{Replies: replies, Handlers: map[byte]TaskHandler{1: handler}}}
 			go func() { defer close(done); l.ProcessTask([]byte{1, 3, 1}) }()
 			awaitShutdown(t, entered)
 			l.RequestStop()
@@ -142,8 +142,8 @@ func (*shutdownListener) Addr() net.Addr { return &net.TCPAddr{} }
 
 func TestLobbyShutdownJoinsRegisteredConnections(t *testing.T) {
 	monitor := &shutdownTelemetry{registered: make(chan struct{}), unregistered: make(chan struct{})}
-	s := &LobbyServer{Diag: &diagnostics.Diagnostics{RedactLogs: true}, Ids: &atomic.Uint64{}, Monitor: monitor,
-		Table: &ServiceTable{}, Presence: presence.NewPresenceStore(nil)}
+	s := &Server{Diag: &diagnostics.Diagnostics{RedactLogs: true}, IDs: &atomic.Uint64{}, Monitor: monitor,
+		Table: &ServiceTable{}, Presence: presence.NewStore(nil)}
 	ln := &shutdownListener{conns: make(chan net.Conn), done: make(chan struct{})}
 	if !s.startListener(ln, "") {
 		t.Fatal("listener not started")

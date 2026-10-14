@@ -48,21 +48,21 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
-type LobbyOptions struct {
+type Options struct {
 	serverIDs        atomic.Uint64
 	lobbyDocUpdateID atomic.Uint64
 	MigrateEnabled   bool
 	PublicHost       string
 }
 
-type LobbySession struct {
+type Session struct {
 	Table     *ServiceTable
 	Telemetry sessionTelemetry
 	*diagnostics.Diagnostics
-	Options *LobbyOptions
+	Options *Options
 
 	*ReplyCounter
-	Presence *presence.PresenceStore
+	Presence *presence.Store
 	Tickets  *auth.TicketStore
 	Clock    func() time.Time
 	Entropy  io.Reader
@@ -76,8 +76,8 @@ type LobbySession struct {
 
 	Keys     *demonware.SessionKeys
 	Player   *platform.PlayerID
-	S2cSeq   uint32
-	C2sSeq   uint32 // last accepted client frame number
+	S2CSeq   uint32
+	C2SSeq   uint32 // last accepted client frame number
 	sendMu   sync.Mutex
 	msgSeen  int
 	stateMu  sync.Mutex
@@ -88,25 +88,25 @@ type LobbySession struct {
 	ReplyErr         error // last attempted reply, retained for diagnostics
 }
 
-func (l *LobbySession) now() time.Time {
+func (l *Session) now() time.Time {
 	if l.Clock != nil {
 		return l.Clock()
 	}
 	return time.Now()
 }
 
-func (l *LobbySession) random(p []byte) (int, error) {
+func (l *Session) random(p []byte) (int, error) {
 	if l.Entropy != nil {
 		return io.ReadFull(l.Entropy, p)
 	}
 	return rand.Read(p)
 }
 
-func (l *LobbySession) logf(format string, a ...any) {
+func (l *Session) logf(format string, a ...any) {
 	l.DiagnosticLogf("[lobby] #%d "+format, append([]any{l.N}, a...)...)
 }
 
-func (l *LobbySession) readFull(n int) ([]byte, error) {
+func (l *Session) readFull(n int) ([]byte, error) {
 	b := make([]byte, n)
 	l.stateMu.Lock()
 	if l.stopping {
@@ -126,31 +126,31 @@ func (l *LobbySession) readFull(n int) ([]byte, error) {
 
 // Only operator shutdown sets stopping. Established sessions have no idle or
 // elapsed-time deadline; an active handler retains its write opportunity.
-func (l *LobbySession) RequestStop() {
+func (l *Session) RequestStop() {
 	l.stateMu.Lock()
 	defer l.stateMu.Unlock()
 	l.stopping = true
 	_ = l.C.SetReadDeadline(time.Now())
 }
 
-func (l *LobbySession) isStopping() bool {
+func (l *Session) isStopping() bool {
 	l.stateMu.Lock()
 	defer l.stateMu.Unlock()
 	return l.stopping
 }
 
 // readFrame returns the RAW frame (length included), nil for a keepalive.
-func (l *LobbySession) readFrame() ([]byte, error) {
+func (l *Session) readFrame() ([]byte, error) {
 	return demonware.ReadFrame(l.readFull, l.MaxLen)
 }
 
-func (l *LobbySession) send(b []byte) error {
+func (l *Session) send(b []byte) error {
 	_ = l.C.SetWriteDeadline(time.Now().Add(15 * time.Second))
 	_, err := l.C.Write(b)
 	return err
 }
 
-func (l *LobbySession) dump(tag string, b []byte) {
+func (l *Session) dump(tag string, b []byte) {
 	if l.RedactLogs || l.dumpDir == "" {
 		return
 	}
@@ -158,7 +158,7 @@ func (l *LobbySession) dump(tag string, b []byte) {
 	_ = os.WriteFile(filepath.Join(l.dumpDir, name), b, 0o644)
 }
 
-func (l *LobbySession) run() {
+func (l *Session) run() {
 	defer l.C.Close()
 	defer l.Table.CloseSession(l)
 	defer l.Presence.DropOnline(l.N)
@@ -231,7 +231,7 @@ func (l *LobbySession) run() {
 
 // onClientAuth checks the 0x82's tag against each candidate key, keeps the
 // one that matches, and replies with 0x83.
-func (l *LobbySession) OnClientAuth(raw []byte) bool {
+func (l *Session) OnClientAuth(raw []byte) bool {
 	if len(raw) < 5+1+8 {
 		l.logf("0x82 too short")
 		return false
@@ -287,7 +287,7 @@ type keyCand struct {
 
 // candidates gathers the plausible 24-byte keys. Only a fresh ticket issued
 // here may key the handshake: the one the 0x82 echoes.
-func (l *LobbySession) Candidates(raw []byte) []keyCand {
+func (l *Session) Candidates(raw []byte) []keyCand {
 	var out []keyCand
 	add := func(name string, t []byte) {
 		out = append(out,
@@ -305,7 +305,7 @@ func (l *LobbySession) Candidates(raw []byte) []keyCand {
 
 // onEncrypted applies the connection's admission and sequence rules before
 // dispatching the decoded protocol message to the application.
-func (l *LobbySession) OnEncrypted(raw []byte) {
+func (l *Session) OnEncrypted(raw []byte) {
 	encrypted, err := demonware.ParseEncryptedFrame(raw)
 	if err != nil {
 		l.logf("encrypted frame rejected: %v", err)
@@ -317,11 +317,11 @@ func (l *LobbySession) OnEncrypted(raw []byte) {
 	}
 	// Preserve the CTR-confirmed sequence policy, including consuming an
 	// authenticated malformed payload's sequence before attempting to decode it.
-	if encrypted.Sequence != l.C2sSeq+1 {
-		l.logf("msg 0x%02X seq=%d expected %d, ignored", encrypted.Type, encrypted.Sequence, l.C2sSeq+1)
+	if encrypted.Sequence != l.C2SSeq+1 {
+		l.logf("msg 0x%02X seq=%d expected %d, ignored", encrypted.Type, encrypted.Sequence, l.C2SSeq+1)
 		return
 	}
-	l.C2sSeq = encrypted.Sequence
+	l.C2SSeq = encrypted.Sequence
 	message, err := encrypted.Decrypt(l.Keys.C2SAES)
 	if err != nil {
 		l.logf("msg 0x%02X seq=%d decrypt: %v", encrypted.Type, encrypted.Sequence, err)
@@ -357,7 +357,7 @@ func (l *LobbySession) OnEncrypted(raw []byte) {
 // sent back to the usual listening port.
 const migratePort uint16 = 3074
 
-func (options *LobbyOptions) migrateIP() net.IP {
+func (options *Options) migrateIP() net.IP {
 	ip := net.ParseIP(options.PublicHost).To4()
 	if ip == nil {
 		ip = net.IPv4(127, 0, 0, 1).To4()
@@ -372,7 +372,7 @@ const migrateAddrLen = 6
 
 const migrateDelayMS uint32 = 1000
 
-func (options *LobbyOptions) migrateGoPayload() []byte {
+func (options *Options) migrateGoPayload() []byte {
 	p := []byte{1, 2, migrateAddrLen}
 	p = append(p, options.migrateIP()...)
 	p = append(p, byte(migratePort&0xFF), byte(migratePort>>8))
@@ -382,17 +382,17 @@ func (options *LobbyOptions) migrateGoPayload() []byte {
 }
 
 // sendEncrypted emits a 0x85: u32 seq | iv | AES-CBC(u32 N | type | payload | padding) | tag.
-func (l *LobbySession) sendEncrypted(innerType byte, payload []byte) error {
+func (l *Session) sendEncrypted(innerType byte, payload []byte) error {
 	l.sendMu.Lock()
 	defer l.sendMu.Unlock()
 	iv := make([]byte, 16)
 	if _, err := rand.Read(iv); err != nil {
 		return err
 	}
-	out, err := demonware.EncodeEncrypted(l.S2cSeq+1, innerType, payload, iv, l.Keys.S2CAES, l.Keys.S2CMAC)
+	out, err := demonware.EncodeEncrypted(l.S2CSeq+1, innerType, payload, iv, l.Keys.S2CAES, l.Keys.S2CMAC)
 	if err != nil {
 		return err
 	}
-	l.S2cSeq++
+	l.S2CSeq++
 	return l.send(out)
 }

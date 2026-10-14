@@ -27,7 +27,7 @@ func (p *failedPacket) SetReadDeadline(time.Time) error       { return nil }
 func (p *failedPacket) SetWriteDeadline(time.Time) error      { return nil }
 func TestNATReadErrorStopsWorker(t *testing.T) {
 	p := &failedPacket{}
-	s := &NatServer{Diagnostics: &diagnostics.Diagnostics{RedactLogs: true}, NextendoHost: "127.0.0.1"}
+	s := &Server{Diagnostics: &diagnostics.Diagnostics{RedactLogs: true}, NextendoHost: "127.0.0.1"}
 	if err := s.startPacket(p, 3074); err != nil {
 		t.Fatal(err)
 	}

@@ -32,7 +32,7 @@ func (v *jsonUint32) UnmarshalJSON(b []byte) error {
 
 // Umbrella is a separate API from /auth/. CTR's bdUmbrellaUserAccount
 // parser expects umbrellaID, accessToken, expires and accounts.
-func HandleCTRUmbrella(diag *diagnostics.Diagnostics, tickets *auth.TicketStore, w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
+func HandleUmbrella(diag *diagnostics.Diagnostics, tickets *auth.TicketStore, w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
 	deny := func(code int, reason string) {
 		preview := body
 		if len(preview) > 300 {
@@ -90,6 +90,6 @@ func HandleCTRUmbrella(diag *diagnostics.Diagnostics, tickets *auth.TicketStore,
 
 func NewUmbrellaHandler(diag *diagnostics.Diagnostics, tickets *auth.TicketStore) auth.AuxiliaryAuthHandler {
 	return func(w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
-		HandleCTRUmbrella(diag, tickets, w, r, body, n, dumps)
+		HandleUmbrella(diag, tickets, w, r, body, n, dumps)
 	}
 }

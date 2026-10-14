@@ -13,23 +13,23 @@ import (
 )
 
 func TestCTRStatsPersistenceBestAndWire(t *testing.T) {
-	s := &ctr.CtrStatsStore{Dir: t.TempDir()}
-	row := ctr.CtrStatWrite{CtrStat: ctr.CtrStat{Board: 1001, PID: 12, Score: 4000000000, Driver: 123, Name: "Racer", Updated: 100}, Operation: 4}
-	if err := s.Write([]ctr.CtrStatWrite{row}); err != nil {
+	s := &ctr.StatsStore{Dir: t.TempDir()}
+	row := ctr.StatWrite{Stat: ctr.Stat{Board: 1001, PID: 12, Score: 4000000000, Driver: 123, Name: "Racer", Updated: 100}, Operation: 4}
+	if err := s.Write([]ctr.StatWrite{row}); err != nil {
 		t.Fatal(err)
 	}
 	row.Score--
 	row.Driver = 999
-	if err := s.Write([]ctr.CtrStatWrite{row}); err != nil {
+	if err := s.Write([]ctr.StatWrite{row}); err != nil {
 		t.Fatal(err)
 	}
 	other := row
 	other.PID = 13
 	other.Score = 4100000000
-	if err := s.Write([]ctr.CtrStatWrite{other}); err != nil {
+	if err := s.Write([]ctr.StatWrite{other}); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := (&ctr.CtrStatsStore{Dir: s.Dir}).Read(1001)
+	rows, err := (&ctr.StatsStore{Dir: s.Dir}).Read(1001)
 	if err != nil || len(rows) != 2 || rows[0].PID != 13 || rows[1].Driver != 123 || rows[1].Rank != 2 {
 		t.Fatalf("bad persistent ranks: %+v %v", rows, err)
 	}
@@ -51,7 +51,7 @@ func TestCTRStatsPersistenceBestAndWire(t *testing.T) {
 	}
 	before, _ := os.ReadFile(s.Path())
 	row.Score = 4200000000
-	if err := s.Write([]ctr.CtrStatWrite{row}); err != nil {
+	if err := s.Write([]ctr.StatWrite{row}); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(s.Path())
@@ -61,7 +61,7 @@ func TestCTRStatsPersistenceBestAndWire(t *testing.T) {
 	if err := os.WriteFile(s.Path(), []byte("broken"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Write([]ctr.CtrStatWrite{row}); err == nil {
+	if err := s.Write([]ctr.StatWrite{row}); err == nil {
 		t.Fatal("corrupt data overwritten")
 	}
 }
@@ -94,9 +94,9 @@ func TestCTRStatsRankAndFriendsRequests(t *testing.T) {
 	oldOnline, oldStore := testPresence.Online, testCTR.Stats
 	defer func() { testPresence.Online = oldOnline; testCTR.Stats = oldStore }()
 	testPresence.Online = map[uint64]*platform.PlayerID{9: {PID: 12, Username: "test", Title: 5760}}
-	testCTR.Stats = &ctr.CtrStatsStore{Dir: t.TempDir()}
-	l := newTestLobby(&lobby.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 9, Player: testPresence.Online[9]}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-	if err := testCTR.Stats.Write([]ctr.CtrStatWrite{{CtrStat: ctr.CtrStat{Board: 1001, PID: 12, Score: 400, Name: "A"}, Operation: 4}, {CtrStat: ctr.CtrStat{Board: 1001, PID: 13, Score: 500, Name: "B"}, Operation: 4}}); err != nil {
+	testCTR.Stats = &ctr.StatsStore{Dir: t.TempDir()}
+	l := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 9, Player: testPresence.Online[9]}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	if err := testCTR.Stats.Write([]ctr.StatWrite{{Stat: ctr.Stat{Board: 1001, PID: 12, Score: 400, Name: "A"}, Operation: 4}, {Stat: ctr.Stat{Board: 1001, PID: 13, Score: 500, Name: "B"}, Operation: 4}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, task := range []byte{4, 13} {
@@ -142,7 +142,7 @@ func TestRingRallyScoresAndDriverWire(t *testing.T) {
 		if err != nil || len(writes) != 2 || writes[0].Driver != 77 || writes[1].Board != 150 {
 			t.Fatalf("board %d: %+v %v", board, writes, err)
 		}
-		s := &ctr.CtrStatsStore{Dir: t.TempDir()}
+		s := &ctr.StatsStore{Dir: t.TempDir()}
 		if err = s.Write(writes); err != nil {
 			t.Fatal(err)
 		}
@@ -151,7 +151,7 @@ func TestRingRallyScoresAndDriverWire(t *testing.T) {
 		if err = s.Write(writes[:1]); err != nil {
 			t.Fatal(err)
 		}
-		rows, err := (&ctr.CtrStatsStore{Dir: s.Dir}).Read(board)
+		rows, err := (&ctr.StatsStore{Dir: s.Dir}).Read(board)
 		if err != nil || len(rows) != 1 || rows[0].Score != 123456 || rows[0].Driver != 77 {
 			t.Fatalf("bad saved score: %+v %v", rows, err)
 		}
