@@ -60,7 +60,7 @@ func TestCTRTableDoesNotReachDiablo(t *testing.T) {
 		t.Fatal("Diablo adapter wired")
 	}
 	p := architectureReply(t, architectureCall(t, l, w, []byte{21, 3, 19}), 19, 0)
-	if len(p) != 21 || len(l.registry.Sessions) != 0 {
+	if len(p) != 21 || len(l.registry.Snapshot()) != 0 {
 		t.Fatal("Diablo reservation reached from CTR")
 	}
 }

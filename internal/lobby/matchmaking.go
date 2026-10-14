@@ -78,8 +78,8 @@ func (handler *ContextHandler) Owns(peer TaskSession, s *MatchSession) bool {
 func (registry *SessionRegistry) ReapSessions() { registry.StartReaper(); registry.WaitReaper() }
 
 func (registry *SessionRegistry) StartReaper() {
-	registry.Mu.Lock()
-	defer registry.Mu.Unlock()
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
 	if registry.reaperStopped || registry.reaperStarted {
 		return
 	}
@@ -95,14 +95,14 @@ func (registry *SessionRegistry) StartReaper() {
 			case <-registry.reaperStop:
 				return
 			case <-ticker.C:
-				registry.ReapSessionsOnce()
+				registry.ReapSessionsOnce(time.Now())
 			}
 		}
 	}()
 }
 func (registry *SessionRegistry) StopReaper() {
-	registry.Mu.Lock()
-	defer registry.Mu.Unlock()
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
 	if registry.reaperStopped {
 		return
 	}
@@ -113,12 +113,13 @@ func (registry *SessionRegistry) StopReaper() {
 }
 func (registry *SessionRegistry) WaitReaper() { registry.reaperWorkers.Wait() }
 
-func (registry *SessionRegistry) ReapSessionsOnce() {
-	registry.Mu.Lock()
-	defer registry.Mu.Unlock()
-	for id, s := range registry.Sessions {
-		if s.Owner == 0 && time.Since(s.Orphaned) > OrphanGrace {
-			delete(registry.Sessions, id)
+// ReapSessionsOnce runs orphan maintenance at the supplied observation time.
+func (registry *SessionRegistry) ReapSessionsOnce(now time.Time) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	for id, s := range registry.sessions {
+		if s.Owner == 0 && now.Sub(s.Orphaned) > OrphanGrace {
+			delete(registry.sessions, id)
 		}
 	}
 }
@@ -127,25 +128,25 @@ type SessionRegistry struct {
 	reaperStop                   chan struct{}
 	reaperWorkers                sync.WaitGroup
 	reaperStarted, reaperStopped bool
-	Mu                           sync.Mutex
-	Sessions                     map[[8]byte]*MatchSession
+	mu                           sync.Mutex
+	sessions                     map[[8]byte]*MatchSession
 }
 
 func NewSessionRegistry() *SessionRegistry {
-	return &SessionRegistry{Sessions: map[[8]byte]*MatchSession{}}
+	return &SessionRegistry{sessions: map[[8]byte]*MatchSession{}}
 }
 
 // DropSessionsOf detaches the games of a closed connection; reapSessions removes
 // them if the host does not come back.
 func (registry *SessionRegistry) DropSessionsOf(conn uint64) {
-	registry.Mu.Lock()
-	defer registry.Mu.Unlock()
-	for id, s := range registry.Sessions {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	for id, s := range registry.sessions {
 		if s.Owner != conn {
 			continue
 		}
 		if s.OwnerPID == 0 {
-			delete(registry.Sessions, id)
+			delete(registry.sessions, id)
 			continue
 		}
 		s.Owner, s.Orphaned = 0, time.Now()
@@ -173,15 +174,15 @@ func (handler *ContextHandler) OnFriendSessions(peer TaskSession, task byte, r *
 		if pid == me {
 			continue
 		}
-		handler.Registry.Mu.Lock()
-		for _, s := range handler.Registry.Sessions {
+		handler.Registry.mu.Lock()
+		for _, s := range handler.Registry.sessions {
 			if s.OwnerPID == pid && s.Context == context && !s.Reserved && !seen[s.ID] {
 				seen[s.ID] = true
 				copy := *s
 				found = append(found, hit{id, &copy})
 			}
 		}
-		handler.Registry.Mu.Unlock()
+		handler.Registry.mu.Unlock()
 	}
 	peer.Logf("matchmaking FRIENDS context=%q %d asked -> %d game(s)", context, len(ids), len(found))
 	// The game ties each result to a friend by the online ID carried BY the game
@@ -207,14 +208,14 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		if _, err := peer.Random(s.ID[:]); err != nil {
 			return handler.TaskReply(task, ErrUnhandled, nil)
 		}
-		handler.Registry.Mu.Lock()
-		for id, old := range handler.Registry.Sessions {
+		handler.Registry.mu.Lock()
+		for id, old := range handler.Registry.sessions {
 			if old.Reserved && old.Context == context && handler.Owns(peer, old) {
-				delete(handler.Registry.Sessions, id)
+				delete(handler.Registry.sessions, id)
 			}
 		}
-		handler.Registry.Sessions[s.ID] = s
-		handler.Registry.Mu.Unlock()
+		handler.Registry.sessions[s.ID] = s
+		handler.Registry.mu.Unlock()
 		peer.Logf("matchmaking RESERVE session=%X", s.ID)
 		return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.ID[:]); return 1 })
 	case MMCreateSession:
@@ -226,18 +227,18 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		s := &MatchSession{Owner: peer.ConnID(), OwnerPID: peer.PID(), hostAddr: host, gameType: gt, MaxPlayers: maxp, NumPlayers: 1, Attrs: attrs, Updated: peer.Now()}
 		_, _ = peer.Random(s.ID[:])
 		s.Context = context
-		handler.Registry.Mu.Lock()
+		handler.Registry.mu.Lock()
 		// A host recreating its game after reconnecting replaces the old one.
 		if s.OwnerPID != 0 {
-			for old, prev := range handler.Registry.Sessions {
+			for old, prev := range handler.Registry.sessions {
 				if prev.OwnerPID == s.OwnerPID && prev.Context == context {
-					delete(handler.Registry.Sessions, old)
+					delete(handler.Registry.sessions, old)
 				}
 			}
 		}
-		handler.Registry.Sessions[s.ID] = s
-		n := len(handler.Registry.Sessions)
-		handler.Registry.Mu.Unlock()
+		handler.Registry.sessions[s.ID] = s
+		n := len(handler.Registry.sessions)
+		handler.Registry.mu.Unlock()
 		peer.Logf("matchmaking CREATE session=%X gameType=%d max=%d host=%s (%d open games)",
 			s.ID, gt, maxp, hex.EncodeToString(host[:min(6, len(host))]), n)
 		return handler.TaskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.ID[:]); return 1 })
@@ -255,8 +256,8 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		}
 		var id [8]byte
 		copy(id[:], sid)
-		handler.Registry.Mu.Lock()
-		s, ok := handler.Registry.Sessions[id]
+		handler.Registry.mu.Lock()
+		s, ok := handler.Registry.sessions[id]
 		if ok && s.Context == context && handler.Owns(peer, s) {
 			s.Owner, s.OwnerPID = peer.ConnID(), peer.PID()
 			s.hostAddr, s.gameType, s.MaxPlayers, s.Attrs, s.Updated = host, gt, maxp, attrs, peer.Now()
@@ -265,10 +266,10 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 				s.NumPlayers = 1
 			}
 		} else {
-			handler.Registry.Mu.Unlock()
+			handler.Registry.mu.Unlock()
 			return handler.TaskReply(task, ErrUnhandled, nil)
 		}
-		handler.Registry.Mu.Unlock()
+		handler.Registry.mu.Unlock()
 		peer.Logf("matchmaking UPDATE session=%X known=%v", id, ok)
 		return handler.TaskReply(task, 0, nil)
 
@@ -284,8 +285,8 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		host, gt, maxp, attrs, err := handler.ReadInfo(r)
 		var id [8]byte
 		copy(id[:], sid)
-		handler.Registry.Mu.Lock()
-		s, ok := handler.Registry.Sessions[id]
+		handler.Registry.mu.Lock()
+		s, ok := handler.Registry.sessions[id]
 		if ok && s.Context == context && handler.Owns(peer, s) {
 			s.Owner, s.OwnerPID = peer.ConnID(), peer.PID()
 			s.NumPlayers = players
@@ -294,7 +295,7 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 			}
 			s.Updated = peer.Now()
 		}
-		handler.Registry.Mu.Unlock()
+		handler.Registry.mu.Unlock()
 		peer.Logf("matchmaking PLAYERS session=%X players=%d/%d known=%v", id, players, maxp, ok)
 		return handler.TaskReply(task, 0, nil)
 
@@ -303,11 +304,11 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		if err == nil && len(sid) == 8 {
 			var id [8]byte
 			copy(id[:], sid)
-			handler.Registry.Mu.Lock()
-			if s := handler.Registry.Sessions[id]; s != nil && s.Context == context && handler.Owns(peer, s) {
-				delete(handler.Registry.Sessions, id)
+			handler.Registry.mu.Lock()
+			if s := handler.Registry.sessions[id]; s != nil && s.Context == context && handler.Owns(peer, s) {
+				delete(handler.Registry.sessions, id)
 			}
-			handler.Registry.Mu.Unlock()
+			handler.Registry.mu.Unlock()
 			peer.Logf("matchmaking DELETE session=%X", id)
 		}
 		return handler.TaskReply(task, 0, nil)
@@ -319,14 +320,14 @@ func (handler *ContextHandler) OnMatchMakingContext(peer TaskSession, task byte,
 		if maxr == 0 || maxr > 50 {
 			maxr = 50
 		}
-		handler.Registry.Mu.Lock()
-		found := make([]*MatchSession, 0, len(handler.Registry.Sessions))
-		for _, s := range handler.Registry.Sessions {
+		handler.Registry.mu.Lock()
+		found := make([]*MatchSession, 0, len(handler.Registry.sessions))
+		for _, s := range handler.Registry.sessions {
 			if !handler.Owns(peer, s) && s.Context == context && !s.Reserved {
 				found = append(found, s)
 			}
 		}
-		handler.Registry.Mu.Unlock()
+		handler.Registry.mu.Unlock()
 		if int(start) < len(found) {
 			found = found[start:]
 		} else {

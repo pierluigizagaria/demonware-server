@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pierluigizagaria/demonware-server/internal/dashboard"
 	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 	"github.com/pierluigizagaria/demonware-server/internal/lobby"
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
@@ -12,6 +13,7 @@ import (
 
 // A friend stays joinable while their host reconnects.
 func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
+	withTestRegistry(t)
 	host := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 5551, Player: &platform.PlayerID{Username: "Mars", PID: 1800000119}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	defer testRegistry.DropSessionsOf(host.N)
 	info := &demonware.Writer{}
@@ -30,14 +32,7 @@ func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
 		t.Fatalf("orphaned host session not offered to friend: %d results", n)
 	}
 
-	testRegistry.Mu.Lock()
-	for _, s := range testRegistry.Sessions {
-		if s.OwnerPID == 1800000119 {
-			s.Orphaned = time.Now().Add(-2 * lobby.OrphanGrace)
-		}
-	}
-	testRegistry.Mu.Unlock()
-	testRegistry.ReapSessionsOnce()
+	testRegistry.ReapSessionsOnce(time.Now().Add(2 * lobby.OrphanGrace))
 	reply = friend.onFriendSessions(14, demonware.NewReader(ask.Bytes()), "ctr:Delta")
 	if n := binary.LittleEndian.Uint32(reply[17:21]); n != 0 {
 		t.Fatalf("abandoned session still offered: %d results", n)
@@ -45,6 +40,7 @@ func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
 }
 
 func TestCTRSessionCreateDelete(t *testing.T) {
+	withTestRegistry(t)
 	l := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 987654}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	defer testRegistry.DropSessionsOf(l.N)
 	info := &demonware.Writer{}
@@ -56,15 +52,15 @@ func TestCTRSessionCreateDelete(t *testing.T) {
 	if len(response) < 26 || binary.LittleEndian.Uint32(response[17:21]) != 1 {
 		t.Fatalf("create must return one session ID: %x", response)
 	}
-	var session *lobby.MatchSession
-	testRegistry.Mu.Lock()
-	for _, s := range testRegistry.Sessions {
+	var session *dashboard.SessionSnapshot
+
+	for _, s := range testRegistry.Snapshot() {
 		if s.Owner == l.N {
-			session = s
+			session = &s
 			break
 		}
 	}
-	testRegistry.Mu.Unlock()
+
 	if session == nil || session.Context != "ctr:Delta" {
 		t.Fatal("missing stored CTR session")
 	}
@@ -72,16 +68,16 @@ func TestCTRSessionCreateDelete(t *testing.T) {
 	args.Blob(session.ID[:])
 	other := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 987655}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	other.onMatchMakingContext(3, demonware.NewReader(args.Bytes()), "ctr:Delta")
-	testRegistry.Mu.Lock()
-	_, exists := testRegistry.Sessions[session.ID]
-	testRegistry.Mu.Unlock()
+
+	exists := observedSession(testRegistry, session.ID) != nil
+
 	if !exists {
 		t.Fatal("another connection deleted the session")
 	}
 	l.onMatchMakingContext(3, demonware.NewReader(args.Bytes()), "ctr:Delta")
-	testRegistry.Mu.Lock()
-	_, exists = testRegistry.Sessions[session.ID]
-	testRegistry.Mu.Unlock()
+
+	exists = observedSession(testRegistry, session.ID) != nil
+
 	if exists {
 		t.Fatal("owner deletion did not remove the session")
 	}

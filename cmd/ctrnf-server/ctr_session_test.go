@@ -11,17 +11,9 @@ import (
 )
 
 func TestCTRFriendBeyondFirstTwenty(t *testing.T) {
+	withTestRegistry(t)
 	host := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 90343, Player: &platform.PlayerID{PID: 90343}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	guest := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 99000, Player: &platform.PlayerID{PID: 99000}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-	defer func() {
-		testRegistry.Mu.Lock()
-		defer testRegistry.Mu.Unlock()
-		for id, s := range testRegistry.Sessions {
-			if s.OwnerPID == host.PID() {
-				delete(testRegistry.Sessions, id)
-			}
-		}
-	}()
 	info := &demonware.Writer{}
 	info.Blob(make([]byte, 67))
 	info.Uint32(8)
@@ -44,17 +36,9 @@ func TestCTRFriendBeyondFirstTwenty(t *testing.T) {
 }
 
 func TestCTRFriendResultUnpacksUploadedAttributes(t *testing.T) {
+	withTestRegistry(t)
 	host := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 89011, Player: &platform.PlayerID{PID: 89011}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	guest := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 89012, Player: &platform.PlayerID{PID: 89012}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-	defer func() {
-		testRegistry.Mu.Lock()
-		defer testRegistry.Mu.Unlock()
-		for id, s := range testRegistry.Sessions {
-			if s.OwnerPID == host.PID() {
-				delete(testRegistry.Sessions, id)
-			}
-		}
-	}()
 	attrs := &demonware.Writer{}
 	attrs.Blob(make([]byte, 8))
 	attrs.Blob(make([]byte, 16))
@@ -91,17 +75,9 @@ func TestCTRFriendResultUnpacksUploadedAttributes(t *testing.T) {
 }
 
 func TestCTRReservedSessionLifecycle(t *testing.T) {
+	withTestRegistry(t)
 	host := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 89001, Player: &platform.PlayerID{PID: 89001}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	guest := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 89002, Player: &platform.PlayerID{PID: 89002}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
-	defer func() {
-		testRegistry.Mu.Lock()
-		defer testRegistry.Mu.Unlock()
-		for id, s := range testRegistry.Sessions {
-			if s.OwnerPID == host.PID() {
-				delete(testRegistry.Sessions, id)
-			}
-		}
-	}()
 	reply := host.onMatchMakingContext(lobby.MMRequestSessionID, demonware.NewReader(nil), "ctr:reserve-test")
 	r := demonware.NewReader(reply[26:])
 	sid, err := r.Blob()

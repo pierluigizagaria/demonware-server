@@ -190,24 +190,41 @@ func TestArchitectureContextRegistryLifecycle(t *testing.T) {
 				}
 				info(q)
 				architectureReply(t, architectureCall(t, l, w, q.Bytes()), task, 0)
-				s := testRegistry.Sessions[key]
-				if s == nil || s.Reserved || s.Owner != l.N || s.OwnerPID != l.PID() || s.Updated != now || !bytes.Equal(s.Attrs, []byte{8, 9, 0, 0, 0}) {
+				s := observedSession(testRegistry, key)
+				if s == nil || s.Reserved || s.Owner != l.N || s.OwnerPID != l.PID() || s.Updated != now {
 					t.Fatal("registry state changed")
 				}
+				lookup := &demonware.Writer{}
+				lookup.Uint64(l.PID())
+				// A peer cannot find itself; observe through a distinct fixture identity.
+				observer, _ := sharedPS4Lobby()
+				observer.Player.PID = 999
+				observer.registry = testRegistry
+				reply := observer.onFriendSessions(14, demonware.NewReader(lookup.Bytes()), s.Context)
+				result := demonware.NewReader(reply[26:])
+				result.Blob()
+				result.Blob()
+				result.Uint32()
+				result.Uint32()
+				result.Uint32()
+				if !bytes.Equal(result.Remaining(), []byte{8, 9, 0, 0, 0}) {
+					t.Fatal("stored attributes changed")
+				}
+
 			}
-			if testRegistry.Sessions[key].NumPlayers != 2 {
+			if observedSession(testRegistry, key).NumPlayers != 2 {
 				t.Fatal("player count update changed")
 			}
 			q := request(3)
 			q.Blob(sid)
 			architectureReply(t, architectureCall(t, l, w, q.Bytes()), 3, 0)
-			if len(testRegistry.Sessions) != 0 {
+			if len(testRegistry.Snapshot()) != 0 {
 				t.Fatal("session not removed")
 			}
 			q = request(1)
 			info(q)
 			architectureReply(t, architectureCall(t, l, w, q.Bytes()), 1, 0)
-			if len(testRegistry.Sessions) != 1 {
+			if len(testRegistry.Snapshot()) != 1 {
 				t.Fatal("session not created")
 			}
 			// Find through a second connection with a distinct publisher identity.

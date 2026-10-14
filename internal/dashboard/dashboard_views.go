@@ -3,11 +3,18 @@
 package dashboard
 
 import (
+	"time"
+
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 )
 
 // The monitoring consumer receives snapshots and never locks its providers.
+// SessionSnapshot is a copied observation, without addresses or key-bearing attributes.
 type SessionSnapshot struct {
+	Context                          string
+	OwnerPID                         uint64
+	Reserved                         bool
+	Updated                          time.Time
 	ID                               [8]byte
 	Owner                            uint64
 	GameType, MaxPlayers, NumPlayers uint32

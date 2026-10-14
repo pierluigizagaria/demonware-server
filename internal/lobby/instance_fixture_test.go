@@ -38,10 +38,10 @@ func TestInstanceReplyCountersAreIsolated(t *testing.T) {
 func TestInstanceContextRegistriesAreIsolated(t *testing.T) {
 	a, b := NewSessionRegistry(), NewSessionRegistry()
 	id := [8]byte{1}
-	a.Sessions[id] = &MatchSession{ID: id, Owner: 17, OwnerPID: 17}
-	b.Sessions[id] = &MatchSession{ID: id, Owner: 17, OwnerPID: 17}
+	a.sessions[id] = &MatchSession{ID: id, Owner: 17, OwnerPID: 17}
+	b.sessions[id] = &MatchSession{ID: id, Owner: 17, OwnerPID: 17}
 	a.DropSessionsOf(17)
-	if a.Sessions[id].Owner != 0 || b.Sessions[id].Owner != 17 {
+	if a.sessions[id].Owner != 0 || b.sessions[id].Owner != 17 {
 		t.Fatal("registry disconnect crossed instances")
 	}
 }

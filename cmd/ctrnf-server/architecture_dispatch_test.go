@@ -93,11 +93,11 @@ type architectureSnapshot struct {
 // replaced registries; the instance refactor must retain these observations.
 func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *store.SQLite) {
 	t.Helper()
-	oldSessions, oldPresence := testRegistry.Sessions, testPresence
+	oldRegistry, oldPresence := testRegistry, testPresence
 	oldEconomy, oldStats, oldNews := testCTR.Economy, testCTR.Stats, testCTR.News
 	oldWaiting, oldPending, oldRooms := testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms
 	oldTx, oldIDs := testReplies.Transactions.Load(), testMatchmaker.IDs.Load()
-	testRegistry.Sessions = map[[8]byte]*lobby.MatchSession{}
+	testRegistry = lobby.NewSessionRegistry()
 	testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms = nil, nil, map[uint64]*ctr.Room{}
 	testReplies.Transactions.Store(0)
 	testMatchmaker.IDs.Store(0)
@@ -111,7 +111,7 @@ func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *store.S
 	l.pubDir = t.TempDir()
 	testPresence.RegisterOnline(l.N, l.Player)
 	t.Cleanup(func() {
-		testRegistry.Sessions, testPresence = oldSessions, oldPresence
+		testRegistry, testPresence = oldRegistry, oldPresence
 		testCTR.Economy, testCTR.Stats, testCTR.News = oldEconomy, oldStats, oldNews
 		testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms = oldWaiting, oldPending, oldRooms
 		testReplies.Transactions.Store(oldTx)
@@ -142,7 +142,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *stor
 	}
 	// A reservation returns the same random eight-byte ID used by the registry.
 	// Verify that relationship before normalizing this one entropy field.
-	if len(request) >= 3 && request[1] == 3 && request[2] == 19 && (request[0] == 21 || request[0] == 138) && len(testRegistry.Sessions) == 1 {
+	if len(request) >= 3 && request[1] == 3 && request[2] == 19 && (request[0] == 21 || request[0] == 138) && len(testRegistry.Snapshot()) == 1 {
 		for i := range frames {
 			p, _ := hex.DecodeString(frames[i].Payload)
 			if len(p) != 40 {
@@ -150,7 +150,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *stor
 			}
 			var id [8]byte
 			copy(id[:], p[32:40])
-			s := testRegistry.Sessions[id]
+			s := observedSession(testRegistry, id)
 			if s == nil || !s.Reserved || s.Owner != l.N || s.OwnerPID != l.PID() || s.Updated.Before(before) || s.Updated.After(after) {
 				t.Fatal("reservation state does not match reply")
 			}
@@ -158,7 +158,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *stor
 			frames[i].Payload = hex.EncodeToString(p)
 		}
 	}
-	return architectureSnapshot{frames, testReplies.Transactions.Load(), len(testRegistry.Sessions), testPresence.Counts().UserData, testPresence.Counts().RichPresence, len(testMatchmaker.Waiting), len(testMatchmaker.Pending), len(testMatchmaker.Rooms), l.lobbyDoc,
+	return architectureSnapshot{frames, testReplies.Transactions.Load(), len(testRegistry.Snapshot()), testPresence.Counts().UserData, testPresence.Counts().RichPresence, len(testMatchmaker.Waiting), len(testMatchmaker.Pending), len(testMatchmaker.Rooms), l.lobbyDoc,
 		sqliteCount(t, db, "accounts"), sqliteCount(t, db, "inventory"), sqliteCount(t, db, "ledger"), l.AfterReplyActive, l.ReplyErr != nil}
 }
 
