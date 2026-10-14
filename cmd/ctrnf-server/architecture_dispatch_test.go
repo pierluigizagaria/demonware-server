@@ -95,15 +95,16 @@ func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *store.S
 	t.Helper()
 	oldRegistry, oldPresence := testRegistry, testPresence
 	oldEconomy, oldStats, oldNews := testCTR.Economy, testCTR.Stats, testCTR.News
-	oldWaiting, oldPending, oldRooms := testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms
-	oldTx, oldIDs := testReplies.Transactions.Load(), testMatchmaker.IDs.Load()
+	oldMatchmaker := testMatchmaker
+	oldTx := testReplies.Transactions.Load()
 	testRegistry = lobby.NewSessionRegistry()
-	testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms = nil, nil, map[uint64]*ctr.Room{}
+
 	testReplies.Transactions.Store(0)
-	testMatchmaker.IDs.Store(0)
+
 	e, db := newTestEconomy(t, false)
 	testCTR.Economy, testCTR.Stats, testCTR.News = e, db, config.News{}
 	testPresence = presence.NewStore(db)
+	testMatchmaker = ctr.NewMatchmaker(testPresence.OnlinePIDs)
 	setStartBalance(t, 10000)
 	l, _ := sharedPS4Lobby()
 	w := &architectureWire{}
@@ -113,9 +114,9 @@ func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *store.S
 	t.Cleanup(func() {
 		testRegistry, testPresence = oldRegistry, oldPresence
 		testCTR.Economy, testCTR.Stats, testCTR.News = oldEconomy, oldStats, oldNews
-		testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms = oldWaiting, oldPending, oldRooms
+		testMatchmaker = oldMatchmaker
 		testReplies.Transactions.Store(oldTx)
-		testMatchmaker.IDs.Store(oldIDs)
+
 	})
 	return l, w, db
 }
@@ -158,7 +159,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *stor
 			frames[i].Payload = hex.EncodeToString(p)
 		}
 	}
-	return architectureSnapshot{frames, testReplies.Transactions.Load(), len(testRegistry.Snapshot()), testPresence.Counts().UserData, testPresence.Counts().RichPresence, len(testMatchmaker.Waiting), len(testMatchmaker.Pending), len(testMatchmaker.Rooms), l.lobbyDoc,
+	return architectureSnapshot{frames, testReplies.Transactions.Load(), len(testRegistry.Snapshot()), testPresence.Counts().UserData, testPresence.Counts().RichPresence, len(testMatchmaker.Snapshot().WaitingIDs), testMatchmaker.Snapshot().Pending, testMatchmaker.Snapshot().Rooms, l.lobbyDoc,
 		sqliteCount(t, db, "accounts"), sqliteCount(t, db, "inventory"), sqliteCount(t, db, "ledger"), l.AfterReplyActive, l.ReplyErr != nil}
 }
 

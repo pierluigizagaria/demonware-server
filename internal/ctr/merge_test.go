@@ -11,7 +11,7 @@ import (
 func mergeTestRooms(t *testing.T) (*matchFixture, *Room, *Room) {
 	testPresence := presence.NewStore(nil)
 
-	m := &matchFixture{Matchmaker: Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*Room{}}}
+	m := &matchFixture{Matchmaker: Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, rooms: map[uint64]*Room{}}}
 	a := fillTestRoom(t, m, 10000, 3)
 	a.HostDoc["lobby_open"] = false
 	b := fillTestRoom(t, m, 20000, 3)
@@ -26,7 +26,7 @@ func TestCTRMergeThreePlusThreeAfterDestinationAck(t *testing.T) {
 	if !ok || len(out) != 1 || out[0].Event != EventUpdateLobby {
 		t.Fatal("merge did not reserve destination first")
 	}
-	if len(m.Rooms) != 2 || a.Occupancy() != 6 || len(a.Players) != 3 || b.MergeTarget != a.ID {
+	if len(m.rooms) != 2 || a.Occupancy() != 6 || len(a.Players) != 3 || b.MergeTarget != a.ID {
 		t.Fatal("invalid reserved merge state")
 	}
 	w := &demonware.Writer{}
@@ -43,7 +43,7 @@ func TestCTRMergeThreePlusThreeAfterDestinationAck(t *testing.T) {
 	}
 	h, _ = a.Documents()
 	ok, out = m.SyncDoc(a.Host.Conn, a.ID, a.Version, h)
-	if !ok || len(out) != 3 || len(m.Rooms) != 1 || a.Occupancy() != 6 {
+	if !ok || len(out) != 3 || len(m.rooms) != 1 || a.Occupancy() != 6 {
 		t.Fatal("merge not committed")
 	}
 	for _, n := range out {
@@ -183,8 +183,8 @@ func TestCTRBothMergePartnersClosing(t *testing.T) {
 		t.Fatal("no reservation")
 	}
 	b.Host.Conn = a.Host.Conn // one connection hosts both rooms
-	if out := m.Leave(a.Host.Conn, 0); len(out) != 0 || len(m.Rooms) != 0 {
-		t.Fatalf("closing both partners sent %d notices, %d rooms left", len(out), len(m.Rooms))
+	if out := m.Leave(a.Host.Conn, 0); len(out) != 0 || len(m.rooms) != 0 {
+		t.Fatalf("closing both partners sent %d notices, %d rooms left", len(out), len(m.rooms))
 	}
 	if a.MergeSource != nil || b.MergeTarget != 0 {
 		t.Fatal("closed rooms still linked")
@@ -204,7 +204,7 @@ func TestCTRDestinationHostLeavingReleasesSource(t *testing.T) {
 			t.Fatal("notice sent for a closed room")
 		}
 	}
-	if m.Rooms[a.ID] != nil || b.MergeTarget != 0 {
+	if m.rooms[a.ID] != nil || b.MergeTarget != 0 {
 		t.Fatal("source still reserved for a closed destination")
 	}
 }

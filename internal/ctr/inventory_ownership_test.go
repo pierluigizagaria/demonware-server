@@ -1,6 +1,8 @@
 package ctr
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestUnlockAllInventoryDoesNotExposeCatalog(t *testing.T) {
 	store := &EconomyStore{UnlockAll: true}

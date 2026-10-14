@@ -15,12 +15,12 @@ import (
 func TestDashboardCTRMembershipAndTitleSplit(t *testing.T) {
 	oldPresence := testPresence
 	oldTelemetry := testTelemetry
-	oldRooms := testMatchmaker.Rooms
+	oldMatchmaker := testMatchmaker
 	oldRegistry := testRegistry
 	defer func() {
 		testPresence = oldPresence
 		testTelemetry = oldTelemetry
-		testMatchmaker.Rooms = oldRooms
+		testMatchmaker = oldMatchmaker
 		testRegistry = oldRegistry
 	}()
 	players := map[uint64]*platform.PlayerID{1: {PID: 101, Username: "host", Title: 5760}, 2: {PID: 102, Username: "joined", Title: 5760}, 3: {PID: 103, Username: "pending", Title: 5760}, 4: {PID: 104, Username: "diablo"}}
@@ -30,9 +30,29 @@ func TestDashboardCTRMembershipAndTitleSplit(t *testing.T) {
 		testPresence.RegisterOnline(id, player)
 		testTelemetry.RegisterConn(id, "")
 	}
-	host := &ctr.Search{PID: 101, Doc: ctr.SearchDoc{Members: []uint64{101}}}
-	guest := &ctr.Search{PID: 102, Doc: ctr.SearchDoc{Members: []uint64{102, 103}}}
-	testMatchmaker.Rooms = map[uint64]*ctr.Room{88: {ID: 88, Host: host, Players: []*ctr.Search{host, guest}, Capacity: 8, HostDoc: map[string]any{"player_state": map[string]any{"101": json.Number("2"), "102": json.Number("2"), "103": json.Number("1")}}}}
+	testMatchmaker = ctr.NewMatchmaker(testPresence.OnlinePIDs)
+	host := testCTRSearchFor(testMatchmaker, t, 101, 0)
+	guest := testCTRSearchFor(testMatchmaker, t, 102, 0)
+	guest.Doc.Members, guest.Seats = []uint64{102, 103}, 2
+	testMatchmaker.Enqueue(host)
+	notices := testMatchmaker.Enqueue(guest)
+	if len(notices) != 1 {
+		t.Fatal("dashboard room was not formed")
+	}
+	roomID := notices[0].IDs[1]
+	raw, _, ok := testMatchmaker.Documents(host.Conn, roomID)
+	if !ok {
+		t.Fatal("missing room document")
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["player_state"] = map[string]uint32{"101": 2, "102": 2, "103": 1}
+	rawDoc, _ := json.Marshal(doc)
+	if ok, _ := testMatchmaker.SyncDoc(host.Conn, roomID, 1, string(rawDoc)); !ok {
+		t.Fatal("host document refused")
+	}
 	testRegistry = lobby.NewSessionRegistry()
 	for _, id := range []uint64{1, 2} {
 		peer := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: id, Player: players[id]}, lobbyDependencies{registry: testRegistry, relay: testRelay})
@@ -58,7 +78,7 @@ func TestDashboardCTRMembershipAndTitleSplit(t *testing.T) {
 		t.Fatalf("wrong counters: %+v", s)
 	}
 	for _, p := range s.Players {
-		if p.PID == 102 && (p.IsHost || p.Gathering != 88) {
+		if p.PID == 102 && (p.IsHost || p.Gathering != uint32(roomID)) {
 			t.Fatalf("guest misclassified %+v", p)
 		}
 		if p.PID == 103 && p.Gathering != 0 {

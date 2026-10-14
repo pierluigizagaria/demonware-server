@@ -145,13 +145,13 @@ func TestInstanceEconomyAndLeaderboardAreIsolated(t *testing.T) {
 	}
 }
 
-var testMatchmaker = &ctr.Matchmaker{Rooms: map[uint64]*ctr.Room{}}
+var testMatchmaker = ctr.NewMatchmaker(nil)
 
 var testRegistry = lobby.NewSessionRegistry()
 
 func TestInstanceMatchmakingAndPushesAreIsolated(t *testing.T) {
-	a := &ctr.Matchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, Rooms: map[uint64]*ctr.Room{}}
-	b := &ctr.Matchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, Rooms: map[uint64]*ctr.Room{}}
+	a := ctr.NewMatchmaker(func() []uint64 { return []uint64{17, 18} })
+	b := ctr.NewMatchmaker(func() []uint64 { return []uint64{17, 18} })
 	prepare := func(m *ctr.Matchmaker, pid uint64) (*ctr.Search, *architectureWire) {
 		s := testCTRSearchFor(m, t, pid, 0)
 		l, _ := sharedPS4Lobby()
@@ -171,18 +171,18 @@ func TestInstanceMatchmakingAndPushesAreIsolated(t *testing.T) {
 	b.Enqueue(ba)
 	notices := a.Enqueue(ab)
 	ctr.SendNotices(notices)
-	if len(aw.writes) != 1 || len(bw.writes) != 0 || len(a.Rooms) != 1 || len(b.Rooms) != 0 {
+	if len(aw.writes) != 1 || len(bw.writes) != 0 || a.Snapshot().Rooms != 1 || b.Snapshot().Rooms != 0 {
 		t.Fatal("match or push crossed instances")
 	}
 	architectureFrames(t, aa.Conn.(*lobbyConn), aw, 0)
 	notices = b.Enqueue(bb)
 	ctr.SendNotices(notices)
-	if len(aw.writes) != 1 || len(bw.writes) != 1 || len(b.Rooms) != 1 {
+	if len(aw.writes) != 1 || len(bw.writes) != 1 || b.Snapshot().Rooms != 1 {
 		t.Fatal("second instance failed to form its own room")
 	}
 	architectureFrames(t, ba.Conn.(*lobbyConn), bw, 0)
 	a.Leave(aa.Conn, 0)
-	if len(a.Rooms) != 0 || len(b.Rooms) != 1 {
+	if a.Snapshot().Rooms != 0 || b.Snapshot().Rooms != 1 {
 		t.Fatal("disconnect crossed instances")
 	}
 }

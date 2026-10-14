@@ -43,7 +43,7 @@ func (m *Matchmaker) cancelRoomMerge(r *Room) []notice {
 	if r.MergeSource != nil {
 		return m.cancelMerge(r)
 	}
-	if dst := m.Rooms[r.MergeTarget]; dst != nil && dst.MergeSource == r {
+	if dst := m.rooms[r.MergeTarget]; dst != nil && dst.MergeSource == r {
 		return m.cancelMerge(dst)
 	}
 	return nil
@@ -67,14 +67,14 @@ func disjointRooms(a, b *Room) bool {
 }
 
 func (m *Matchmaker) StartMerge(dst *Room) []notice {
-	if dst.MergeTarget != 0 && m.Rooms[dst.MergeTarget] == nil {
+	if dst.MergeTarget != 0 && m.rooms[dst.MergeTarget] == nil {
 		dst.MergeTarget = 0
 	}
 	if dst.MergeTarget != 0 || dst.MergeSource != nil || !mergeOpen(dst) || !mergeEligible(dst, "is_merge_dst") {
 		return nil
 	}
 	candidates := []*Room{}
-	for _, src := range m.Rooms {
+	for _, src := range m.rooms {
 		if src == dst || src.MergeTarget != 0 || src.MergeSource != nil || !mergeOpen(src) || !mergeEligible(src, "is_merge_src") || src.Host.Filter != dst.Host.Filter {
 			continue
 		}
@@ -123,7 +123,7 @@ func (m *Matchmaker) finishMerge(dst *Room) []notice {
 	for _, p := range dst.Players {
 		seats += len(p.Doc.Members)
 	}
-	valid := m.Rooms[src.ID] == src && src.MergeTarget == dst.ID && open &&
+	valid := m.rooms[src.ID] == src && src.MergeTarget == dst.ID && open &&
 		dst.connected() == seats && mergeOpen(src) && disjointRooms(dst, src) &&
 		mergeEligible(dst, "is_merge_dst") && mergeEligible(src, "is_merge_src") &&
 		dst.Occupancy() <= min(dst.Capacity, src.Capacity)
@@ -140,7 +140,7 @@ func (m *Matchmaker) finishMerge(dst *Room) []notice {
 	dst.MergeSource = nil
 	dst.Capacity = min(dst.Capacity, src.Capacity)
 	dst.Players = append(dst.Players, src.Players...)
-	delete(m.Rooms, src.ID)
+	delete(m.rooms, src.ID)
 	h, b := dst.Documents()
 	out := make([]notice, 0, len(src.Players))
 	for _, p := range src.Players {

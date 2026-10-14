@@ -55,7 +55,7 @@ func TestCTRFollowerLeaveKeepsPartyAndNotifiesHost(t *testing.T) {
 	testPresence := presence.NewStore(nil)
 	testCTR := &Services{Economy: &EconomyStore{Dir: t.TempDir()}, Stats: &StatsStore{Dir: t.TempDir()}}
 
-	m := &matchFixture{Matchmaker: Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*Room{}}}
+	m := &matchFixture{Matchmaker: Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, rooms: map[uint64]*Room{}}}
 	r := fillTestRoom(t, m, 30000, 2)
 	leader := r.Players[1]
 	leader.Doc.Members = []uint64{leader.PID, 30009}

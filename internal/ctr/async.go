@@ -95,16 +95,21 @@ type Room struct {
 }
 
 type Matchmaker struct {
-	IDs        atomic.Uint64
+	ids        atomic.Uint64
 	OnlinePIDs func() []uint64
 	Clock      func() time.Time
 	mu         sync.Mutex
-	Waiting    []*Search
-	Rooms      map[uint64]*Room
+	waiting    []*Search
+	rooms      map[uint64]*Room
 	// Searches accepted but not yet matched, by search ID: their reply is
 	// still being sent. They hold their members' seats but are not offered to
 	// anyone. A follower's own search may shrink one before it is activated.
-	Pending map[uint64]*Search
+	pending map[uint64]*Search
+}
+
+// NewMatchmaker initializes an instance owner without starting workers.
+func NewMatchmaker(onlinePIDs func() []uint64) *Matchmaker {
+	return &Matchmaker{OnlinePIDs: onlinePIDs, rooms: map[uint64]*Room{}}
 }
 
 func (m *Matchmaker) ParseSearch(l Peer, raw, playerInfo string) (*Search, error) {
@@ -148,7 +153,7 @@ func (m *Matchmaker) ParseSearch(l Peer, raw, playerInfo string) (*Search, error
 	// The fingerprint makes that visible without logging the payload itself.
 	sum := sha256.Sum256(filter)
 	s.filterID = hex.EncodeToString(sum[:4])
-	s.ID = m.IDs.Add(1)
+	s.ID = m.ids.Add(1)
 	return s, nil
 }
 
@@ -275,15 +280,15 @@ func (m *Matchmaker) claimConflict(s *Search) bool {
 		}
 		return false
 	}
-	if slices.ContainsFunc(m.Waiting, claimed) {
+	if slices.ContainsFunc(m.waiting, claimed) {
 		return true
 	}
-	for _, p := range m.Pending {
+	for _, p := range m.pending {
 		if claimed(p) {
 			return true
 		}
 	}
-	for _, r := range m.Rooms {
+	for _, r := range m.rooms {
 		if claimed(r.Host) || slices.ContainsFunc(r.Players, claimed) {
 			return true
 		}
@@ -291,7 +296,8 @@ func (m *Matchmaker) claimConflict(s *Search) bool {
 	return false
 }
 
-// Reserve accepts a search before its success reply is sent: the conflict
+// Reserve takes ownership of the search; callers must not mutate it after acceptance.
+// It accepts a search before its success reply is sent: the conflict
 // check and the seat reservation happen together, so two parties cannot both
 // be told they claimed the same player. Activate matches it after the reply;
 // Release drops it if the reply could not be sent.
@@ -301,17 +307,17 @@ func (m *Matchmaker) Reserve(s *Search) error {
 	if m.claimConflict(s) {
 		return errors.New("a claimed party member already holds a seat")
 	}
-	if m.Pending == nil {
-		m.Pending = map[uint64]*Search{}
+	if m.pending == nil {
+		m.pending = map[uint64]*Search{}
 	}
-	m.Pending[s.ID] = s
+	m.pending[s.ID] = s
 	return nil
 }
 
 func (m *Matchmaker) Release(s *Search) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.Pending, s.ID)
+	delete(m.pending, s.ID)
 }
 
 // Enqueue reserves and activates a search in one go.
@@ -328,12 +334,12 @@ func (m *Matchmaker) Enqueue(s *Search) []notice {
 func (m *Matchmaker) Activate(reserved *Search) []notice {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s := m.Pending[reserved.ID]
+	s := m.pending[reserved.ID]
 	if s == nil {
 		reserved.Conn.Logf("[ctr] search id=%d withdrawn before activation", reserved.ID)
 		return nil
 	}
-	delete(m.Pending, s.ID)
+	delete(m.pending, s.ID)
 	// Retries must not match an account with itself or create duplicate searches.
 	// A player who searches again is NOT in a lobby any more, whatever this side
 	// still believes. Returning nil here left them stuck forever: they matched
@@ -343,8 +349,8 @@ func (m *Matchmaker) Activate(reserved *Search) []notice {
 	// The leader's own seat elsewhere (as another party's follower) is released
 	// too; the other members' seats were checked free by reserve.
 	evicted := m.detach(0, func(p *Search) bool { return p.PID == s.PID }, map[uint64]bool{s.PID: true})
-	rooms := make([]*Room, 0, len(m.Rooms))
-	for _, r := range m.Rooms {
+	rooms := make([]*Room, 0, len(m.rooms))
+	for _, r := range m.rooms {
 		rooms = append(rooms, r)
 	}
 	sort.Slice(rooms, func(i, j int) bool {
@@ -355,7 +361,7 @@ func (m *Matchmaker) Activate(reserved *Search) []notice {
 		return a.ID < b.ID
 	})
 	for _, r := range rooms {
-		if r.MergeTarget != 0 && m.Rooms[r.MergeTarget] == nil {
+		if r.MergeTarget != 0 && m.rooms[r.MergeTarget] == nil {
 			r.MergeTarget = 0
 		}
 		open, _ := r.HostDoc["lobby_open"].(bool)
@@ -388,11 +394,11 @@ func (m *Matchmaker) Activate(reserved *Search) []notice {
 			return append(evicted, r.notice(r.Host, EventUpdateLobby))
 		}
 	}
-	m.Waiting = append(m.Waiting, s)
+	m.waiting = append(m.waiting, s)
 	group := []*Search{}
 	seats := 0
 	minimum, maximum := 2, 8
-	for _, p := range m.Waiting {
+	for _, p := range m.waiting {
 		if p.Filter != s.Filter {
 			continue
 		}
@@ -408,36 +414,36 @@ func (m *Matchmaker) Activate(reserved *Search) []notice {
 		return evicted
 	}
 	h := group[0]
-	r := &Room{clock: m.now, ID: m.IDs.Add(1), Version: 1, created: m.now().Unix(), Host: h, Players: group, Capacity: maximum, notified: map[uint64]bool{h.Conn.ConnID(): true}}
+	r := &Room{clock: m.now, ID: m.ids.Add(1), Version: 1, created: m.now().Unix(), Host: h, Players: group, Capacity: maximum, notified: map[uint64]bool{h.Conn.ConnID(): true}}
 	r.HostDoc = map[string]any{
 		"update_id": r.Version, "update_time": r.created, "game_id": r.ID, "lobby_open": true, "lobby_open_for_pres_join": true,
 		"player_state":  map[string]uint32{strconv.FormatUint(h.PID, 10): 1},
 		"listen_server": lobbyListenServer{HostAddress: h.info.Listen.Address, HostPlayerID: h.PID},
 		"team_balance":  lobbyTeamBalance{CanChangeTeams: true}, "ruleset_payload": map[string]any{}, "attachment": nil,
 	}
-	m.Rooms[r.ID] = r
+	m.rooms[r.ID] = r
 	selected := map[*Search]bool{}
 	out := []notice{r.notice(h, EventCreateLobby)}
 	for _, p := range group {
 		selected[p] = true
 
 	}
-	remaining := m.Waiting[:0]
-	for _, p := range m.Waiting {
+	remaining := m.waiting[:0]
+	for _, p := range m.waiting {
 		if !selected[p] {
 			remaining = append(remaining, p)
 		}
 	}
-	m.Waiting = remaining
+	m.waiting = remaining
 	return append(evicted, out...)
 }
 
 func (m *Matchmaker) Cancel(conn Peer, id uint64) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for i, p := range m.Waiting {
+	for i, p := range m.waiting {
 		if p.Conn.ConnID() == conn.ConnID() && p.ID == id {
-			m.Waiting = append(m.Waiting[:i], m.Waiting[i+1:]...)
+			m.waiting = append(m.waiting[:i], m.waiting[i+1:]...)
 			return true
 		}
 	}
@@ -480,8 +486,8 @@ func (m *Matchmaker) detach(id uint64, lead func(*Search) bool, seats map[uint64
 		return p.removeMembers(func(pid uint64) bool { return removable(p, pid) })
 	}
 	if id == 0 {
-		kept := m.Waiting[:0]
-		for _, p := range m.Waiting {
+		kept := m.waiting[:0]
+		for _, p := range m.waiting {
 			switch {
 			case lead(p):
 			case member(p):
@@ -490,19 +496,19 @@ func (m *Matchmaker) detach(id uint64, lead func(*Search) bool, seats map[uint64
 				kept = append(kept, p)
 			}
 		}
-		m.Waiting = kept
-		for searchID, p := range m.Pending {
+		m.waiting = kept
+		for searchID, p := range m.pending {
 			switch {
 			case lead(p):
-				delete(m.Pending, searchID)
+				delete(m.pending, searchID)
 			case member(p):
-				m.Pending[searchID] = without(p)
+				m.pending[searchID] = without(p)
 			}
 		}
 	}
 	var notices []notice
 	closing := map[*Room]bool{}
-	for roomID, r := range m.Rooms {
+	for roomID, r := range m.rooms {
 		if (id == 0 || roomID == id) && lead(r.Host) {
 			closing[r] = true
 		}
@@ -513,16 +519,16 @@ func (m *Matchmaker) detach(id uint64, lead func(*Search) bool, seats map[uint64
 		if src := r.MergeSource; src != nil {
 			src.MergeTarget = 0
 			r.MergeSource = nil
-		} else if dst := m.Rooms[r.MergeTarget]; dst != nil && dst.MergeSource == r {
+		} else if dst := m.rooms[r.MergeTarget]; dst != nil && dst.MergeSource == r {
 			if closing[dst] {
 				dst.MergeSource, r.MergeTarget = nil, 0
 			} else {
 				notices = append(notices, m.cancelMerge(dst)...)
 			}
 		}
-		delete(m.Rooms, r.ID)
+		delete(m.rooms, r.ID)
 	}
-	for roomID, r := range m.Rooms {
+	for roomID, r := range m.rooms {
 		if id != 0 && roomID != id {
 			continue
 		}
@@ -576,7 +582,7 @@ func (m *Matchmaker) detach(id uint64, lead func(*Search) bool, seats map[uint64
 func (m *Matchmaker) Documents(conn Peer, id uint64) (string, string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if r := m.Rooms[id]; r != nil {
+	if r := m.rooms[id]; r != nil {
 		for _, p := range r.Players {
 			if p.Conn.ConnID() == conn.ConnID() {
 				h, b := r.Documents()
@@ -596,7 +602,7 @@ func (m *Matchmaker) SyncDoc(conn Peer, id, version uint64, raw string) (bool, [
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	r := m.Rooms[id]
+	r := m.rooms[id]
 	if r == nil || r.Host.Conn.ConnID() != conn.ConnID() || r.Version != version {
 		return false, nil
 	}
@@ -621,7 +627,7 @@ func (m *Matchmaker) SyncDoc(conn Peer, id, version uint64, raw string) (bool, [
 	mergeNotices := m.finishMerge(r)
 	// A source may close or withdraw eligibility while the destination is
 	// preparing its acknowledgement. Release its reservation immediately.
-	if dst := m.Rooms[r.MergeTarget]; dst != nil && dst.MergeSource == r &&
+	if dst := m.rooms[r.MergeTarget]; dst != nil && dst.MergeSource == r &&
 		(!mergeOpen(r) || !mergeEligible(r, "is_merge_src")) {
 		mergeNotices = append(mergeNotices, m.cancelMerge(dst)...)
 	}
@@ -662,9 +668,9 @@ func (m *Matchmaker) SyncDoc(conn Peer, id, version uint64, raw string) (bool, [
 	// Do not advance the destination version in the same operation as 2008:
 	// its handoff documents must remain current when the adapter delivers them.
 	if open, _ := doc["lobby_open"].(bool); len(mergeNotices) == 0 && open && r.MergeTarget == 0 && r.MergeSource == nil {
-		remaining := m.Waiting[:0]
+		remaining := m.waiting[:0]
 		added := 0
-		for _, p := range m.Waiting {
+		for _, p := range m.waiting {
 			if p.Filter != r.Host.Filter || r.Occupancy()+p.Seats > min(r.Capacity, p.Doc.Slots.Max) {
 				remaining = append(remaining, p)
 				continue
@@ -679,7 +685,7 @@ func (m *Matchmaker) SyncDoc(conn Peer, id, version uint64, raw string) (bool, [
 			added++
 			conn.Logf("[ctr] backfill waiting search=%d seats=%d room=%d", p.ID, p.Seats, r.ID)
 		}
-		m.Waiting = remaining
+		m.waiting = remaining
 		if added > 0 {
 			r.Version++
 			doc["update_id"] = r.Version

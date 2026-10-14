@@ -11,7 +11,7 @@ import (
 func TestCTRPublicPairingAndDocuments(t *testing.T) {
 	testPresence := presence.NewStore(nil)
 
-	m := matchFixture{Matchmaker: Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*Room{}}}
+	m := matchFixture{Matchmaker: Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, rooms: map[uint64]*Room{}}}
 	a, b, c := testCTRSearchFor(&m, t, 101, 0), testCTRSearchFor(&m, t, 102, 0), testCTRSearchFor(&m, t, 103, 1)
 	if len(m.Enqueue(a)) != 0 || len(m.Enqueue(c)) != 0 {
 		t.Fatal("matched incompatible searches")
@@ -27,7 +27,7 @@ func TestCTRPublicPairingAndDocuments(t *testing.T) {
 	}
 	out = append(out, notifications[0])
 
-	if len(m.Waiting) != 1 || m.Waiting[0] != c {
+	if len(m.waiting) != 1 || m.waiting[0] != c {
 		t.Fatal("lost incompatible search")
 	}
 	for _, n := range out {
@@ -88,10 +88,10 @@ func TestCTRPublicPairingAndDocuments(t *testing.T) {
 		t.Fatal("wrong version accepted")
 	}
 	m.Leave(a.Conn, 0)
-	if len(m.Rooms) != 0 {
+	if len(m.rooms) != 0 {
 		t.Fatal("disconnected host room retained")
 	}
-	if !m.Cancel(c.Conn, c.ID) || len(m.Waiting) != 0 {
+	if !m.Cancel(c.Conn, c.ID) || len(m.waiting) != 0 {
 		t.Fatal("search cancellation failed")
 	}
 }
@@ -99,15 +99,15 @@ func TestCTRPublicPairingAndDocuments(t *testing.T) {
 func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
 	testPresence := presence.NewStore(nil)
 
-	m := matchFixture{Matchmaker: Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*Room{}}}
+	m := matchFixture{Matchmaker: Matchmaker{OnlinePIDs: testPresence.OnlinePIDs, rooms: map[uint64]*Room{}}}
 	a := testCTRSearchFor(&m, t, 201, 0)
 	m.Enqueue(a)
 	retry := testCTRSearchFor(&m, t, 201, 0)
-	if len(m.Enqueue(retry)) != 0 || len(m.Waiting) != 1 {
+	if len(m.Enqueue(retry)) != 0 || len(m.waiting) != 1 {
 		t.Fatal("duplicate account matched")
 	}
 	m.Leave(retry.Conn, 0)
-	if len(m.Waiting) != 0 {
+	if len(m.waiting) != 0 {
 		t.Fatal("disconnected search retained")
 	}
 }
@@ -116,7 +116,7 @@ func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
 type peerView struct{ Peer }
 
 func TestCTRPeerOwnershipUsesConnectionID(t *testing.T) {
-	m := &matchFixture{Matchmaker: Matchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, Rooms: map[uint64]*Room{}}}
+	m := &matchFixture{Matchmaker: Matchmaker{OnlinePIDs: func() []uint64 { return []uint64{17, 18} }, rooms: map[uint64]*Room{}}}
 	a, b := testCTRSearchFor(m, t, 17, 0), testCTRSearchFor(m, t, 18, 0)
 	m.Enqueue(a)
 	notices := m.Enqueue(b)
@@ -129,11 +129,11 @@ func TestCTRPeerOwnershipUsesConnectionID(t *testing.T) {
 		t.Fatal("same PID on another connection became the owner")
 	}
 	m.Leave(replacement.Conn, 0)
-	if len(m.Rooms) != 1 {
+	if len(m.rooms) != 1 {
 		t.Fatal("different connection released the room")
 	}
 	m.Leave(&peerView{a.Conn}, 0)
-	if len(m.Rooms) != 0 {
+	if len(m.rooms) != 0 {
 		t.Fatal("owner view did not release the room")
 	}
 }

@@ -52,7 +52,7 @@ func newInstance(cfg config.Config, database *store.SQLite) *serverInstance {
 	i.presence = presence.NewStore(database)
 	database.InitialBalance = func() int64 { return cfg.StartBalance }
 	i.ctr = &ctr.Services{Economy: &ctr.EconomyStore{Dir: cfg.DataDir, UnlockAll: cfg.UnlockAll, Backend: database, InitialBalance: database.InitialBalance}, Stats: database, News: cfg.News}
-	i.matchmaker = &ctr.Matchmaker{OnlinePIDs: i.presence.OnlinePIDs, Rooms: map[uint64]*ctr.Room{}}
+	i.matchmaker = ctr.NewMatchmaker(i.presence.OnlinePIDs)
 	i.registry = lobby.NewSessionRegistry()
 	i.relay = relay.NewTable(diag, cfg.BindAddr, cfg.RelayPIDs)
 	ids := &atomic.Uint64{}

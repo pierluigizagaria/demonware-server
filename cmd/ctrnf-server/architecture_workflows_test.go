@@ -117,7 +117,7 @@ func TestArchitectureSearchReplyFailureReleasesReservation(t *testing.T) {
 			w.fail = fail
 			frames := architectureCall(t, l, w, request.Bytes())
 			p := architectureReply(t, frames, 18, 0)
-			if len(frames) != 1 || len(testMatchmaker.Pending) != 0 {
+			if len(frames) != 1 || testMatchmaker.Snapshot().Pending != 0 {
 				t.Fatal("reservation callback did not run exactly once")
 			}
 			r := demonware.NewReader(p[26:])
@@ -129,18 +129,18 @@ func TestArchitectureSearchReplyFailureReleasesReservation(t *testing.T) {
 				t.Fatal("search counter increment moved")
 			}
 			if fail == 1 {
-				if len(testMatchmaker.Waiting) != 0 {
+				if len(testMatchmaker.Snapshot().WaitingIDs) != 0 {
 					t.Fatal("failed search reply retained seats")
 				}
 				return
 			}
-			if len(testMatchmaker.Waiting) != 1 || testMatchmaker.Waiting[0].ID != id.ID {
+			if len(testMatchmaker.Snapshot().WaitingIDs) != 1 || testMatchmaker.Snapshot().WaitingIDs[0] != id.ID {
 				t.Fatal("successful search not activated")
 			}
 			cancel := demonware.NewWriter([]byte{145, 3, 8})
 			cancel.Uint64(id.ID)
 			p = architectureReply(t, architectureCall(t, l, w, cancel.Bytes()), 8, 0)
-			if !bytes.Equal(p[26:], []byte{1, 1}) || len(testMatchmaker.Waiting) != 0 {
+			if !bytes.Equal(p[26:], []byte{1, 1}) || len(testMatchmaker.Snapshot().WaitingIDs) != 0 {
 				t.Fatal("search cancellation changed")
 			}
 		})
@@ -373,7 +373,7 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	q.Uint64(roomID)
 	aw.fail = 1
 	architectureReply(t, architectureCall(t, a, aw, q.Bytes()), 10, 0)
-	if len(testMatchmaker.Rooms) != 0 {
+	if testMatchmaker.Snapshot().Rooms != 0 {
 		t.Fatal("failed disband reply retained the room")
 	}
 }

@@ -8,7 +8,7 @@ func (matchmaker *Matchmaker) DashboardRooms(names map[uint64]string) ([]dashboa
 	gs := []dashboard.APIGathering{}
 	ctrMembership := map[uint64]dashboard.APIGathering{}
 	matchmaker.mu.Lock()
-	for _, room := range matchmaker.Rooms {
+	for _, room := range matchmaker.rooms {
 		if room.Host == nil || names[room.Host.PID] == "" {
 			continue
 		}
@@ -37,4 +37,21 @@ func (matchmaker *Matchmaker) DashboardRooms(names map[uint64]string) ([]dashboa
 	}
 	matchmaker.mu.Unlock()
 	return gs, ctrMembership
+}
+
+// MatchmakingSnapshot observes queue order and live counts without exposing
+// searches, peers, rooms, keys or maps owned by the matchmaking engine.
+type MatchmakingSnapshot struct {
+	WaitingIDs     []uint64
+	Pending, Rooms int
+}
+
+func (m *Matchmaker) Snapshot() MatchmakingSnapshot {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	snapshot := MatchmakingSnapshot{Pending: len(m.pending), Rooms: len(m.rooms)}
+	for _, search := range m.waiting {
+		snapshot.WaitingIDs = append(snapshot.WaitingIDs, search.ID)
+	}
+	return snapshot
 }
