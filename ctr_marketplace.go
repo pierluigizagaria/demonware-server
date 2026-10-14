@@ -68,73 +68,87 @@ func getPlayerBalancesResponse(w map[uint64]int64, max int) []byte {
 // ---- dispatch -------------------------------------------------------------
 
 // onMarketplace handles Pit Stop requests; nil means an unsupported task.
-func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
+func (l *lobbyConn) onMarketplace(task byte, payload []byte) (result taskResult) {
 	switch task {
 	case taskGetBalancesV3:
 		ctx, max := parseBalancesRequest(payload)
 		if ctx != marketplaceContext || !validPS4BalancesRequest(payload, ctx, max) {
-			return l.taskReply(task, errUnhandled, nil)
+			result.Reply = l.taskReply(task, errUnhandled, nil)
+			return result
 		}
 		a, err := l.ctr.economy.snapshot(l.pid())
 		if err != nil {
 			l.logf("CTR economy read failed: %v", err)
-			return l.taskReply(task, errUnhandled, nil)
+			result.Reply = l.taskReply(task, errUnhandled, nil)
+			return result
 		}
 		w := a.Balances
 		sb := getPlayerBalancesResponse(w, max)
 		l.logf("CTR pitstop balances ctx=%q max=%d -> %d currencies", ctx, max, len(currencyIDs()))
-		return l.structTaskReply(task, sb)
+		result.Reply = l.structTaskReply(task, sb)
+		return result
 
 	case taskSwitchReconciliation:
 		// Switch only (an eShop receipt): the PS4 build never sends it.
-		return l.taskReply(task, errUnhandled, nil)
+		result.Reply = l.taskReply(task, errUnhandled, nil)
+		return result
 
 	case taskGetInventoryPaginated:
 		if len(payload) < 3 {
-			return l.taskReply(task, errUnhandled, nil)
+			result.Reply = l.taskReply(task, errUnhandled, nil)
+			return result
 		}
 		r := demonware.NewReader(payload[3:])
 		ctx, err := r.String()
 		if err != nil || ctx != marketplaceContext {
-			return l.taskReply(task, errUnhandled, nil)
+			result.Reply = l.taskReply(task, errUnhandled, nil)
+			return result
 		}
 		page, err := r.Uint32()
 		if err != nil {
-			return l.taskReply(task, errUnhandled, nil)
+			result.Reply = l.taskReply(task, errUnhandled, nil)
+			return result
 		}
 		size, err := r.Uint32()
 		if err != nil || size == 0 || size > 4096 {
-			return l.taskReply(task, errUnhandled, nil)
+			result.Reply = l.taskReply(task, errUnhandled, nil)
+			return result
 		}
 		a, err := l.ctr.economy.inventory(l.pid())
 		if err != nil {
 			l.logf("CTR economy inventory failed: %v", err)
-			return l.taskReply(task, errUnhandled, nil)
+			result.Reply = l.taskReply(task, errUnhandled, nil)
+			return result
 		}
 		items := inventoryPage(a, page, size)
 		l.logf("CTR pitstop inventory page=%d size=%d -> %d items", page, size, len(items))
-		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
+		result.Reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, item := range items {
 				writeInventoryItem(w, l.pid(), item)
 			}
 			return uint32(len(items))
 		})
+		return result
 	case taskPurchaseSkus:
 		skus, ok := parsePurchaseSkus(payload)
 		if !ok {
-			return l.taskReply(task, errUnhandled, nil)
+			result.Reply = l.taskReply(task, errUnhandled, nil)
+			return result
 		}
 		debit, err := l.ctr.economy.purchase(l.pid(), skus)
 		if err != nil {
 			l.logf("CTR pitstop purchase rejected: %v", err)
-			return l.taskReply(task, errUnhandled, nil)
+			result.Reply = l.taskReply(task, errUnhandled, nil)
+			return result
 		}
 		l.logf("CTR pitstop purchase skus=%v debit=%d currency=10", skus, debit)
-		l.afterReply = l.pushCurrentBalance
-		return l.taskReply(task, 0, nil)
+		result.AfterReply = func(_ error) { l.pushCurrentBalance() }
+		result.Reply = l.taskReply(task, 0, nil)
+		return result
 
 	}
-	return nil
+	result.Reply = nil
+	return result
 }
 
 // CUSA13795 01.21: game 0xac10f0 -> SDK 0x920d0 (80/245), request

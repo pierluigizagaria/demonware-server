@@ -152,7 +152,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *ctrS
 		}
 	}
 	return architectureSnapshot{frames, testReplies.transactions.Load(), len(testRegistry.sessions), len(testPresence.userData), len(testPresence.rich), len(testMatchmaker.waiting), len(testMatchmaker.pending), len(testMatchmaker.rooms), l.lobbyDoc,
-		sqliteCount(t, db, "accounts"), sqliteCount(t, db, "inventory"), sqliteCount(t, db, "ledger"), l.afterReply != nil, l.replyErr != nil}
+		sqliteCount(t, db, "accounts"), sqliteCount(t, db, "inventory"), sqliteCount(t, db, "ledger"), l.afterReplyActive, l.replyErr != nil}
 }
 
 func TestArchitectureDispatcherBaseline(t *testing.T) {

@@ -133,7 +133,7 @@ func TestPS4MarketplaceRejectsUnsupportedTasksWithoutWrite(t *testing.T) {
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("unsupported task changed an existing ledger")
 	}
-	if l.afterReply != nil {
+	if l.afterReplyActive {
 		t.Fatal("unsupported task scheduled a push")
 	}
 }

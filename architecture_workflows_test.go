@@ -20,7 +20,7 @@ func architectureCall(t *testing.T, l *lobbyConn, w *architectureWire, payload [
 	before := l.s2cSeq
 	l.onTask(payload)
 	frames := architectureFrames(t, l, w, before)
-	if l.afterReply != nil {
+	if l.afterReplyActive {
 		t.Fatal("callback retained after reply attempt")
 	}
 	return frames
@@ -403,5 +403,26 @@ func TestArchitectureSharedLookupAndUserData(t *testing.T) {
 	p = architectureReply(t, architectureCall(t, l, w, q.Bytes()), 21, 0)
 	if len(p) != 21 {
 		t.Fatal("missing publisher file is not empty success")
+	}
+}
+
+func TestArchitectureResultCallbackRunsOnceAfterSendAttempt(t *testing.T) {
+	for _, fail := range []int{0, 1} {
+		t.Run(fmt.Sprintf("fail-%d", fail), func(t *testing.T) {
+			l, _ := sharedPS4Lobby()
+			w := &architectureWire{fail: fail}
+			l.c = w
+			calls := 0
+			l.deliverResult(taskResult{Reply: l.taskReply(1, 0, nil), AfterReply: func(err error) {
+				calls++
+				if len(w.writes) != 1 || (err != nil) != (fail == 1) {
+					t.Fatal("callback ran before send or received another send outcome")
+				}
+			}})
+			if calls != 1 || l.afterReplyActive {
+				t.Fatal("callback was not completed exactly once")
+			}
+			architectureFrames(t, l, w, 0)
+		})
 	}
 }

@@ -84,8 +84,8 @@ type lobbyConn struct {
 	lobbyDoc string
 
 	// Sent after the in-flight task reply (pushed messages).
-	afterReply func()
-	replyErr   error // outcome of the last task reply, for afterReply
+	afterReplyActive bool
+	replyErr         error // last attempted reply, retained for diagnostics
 }
 
 func (l *lobbyConn) now() time.Time {

@@ -104,6 +104,33 @@ func (l *lobbyConn) onTask(payload []byte) {
 	}
 	l.telemetry.noteTask(l, service, task)
 
+	l.deliverResult(l.handleTask(service, task, r, payload))
+}
+
+func (l *lobbyConn) deliverResult(result taskResult) {
+	var sendErr error
+	if result.AfterReply != nil {
+		defer func() {
+			l.afterReplyActive = true
+			defer func() { l.afterReplyActive = false }()
+			result.AfterReply(sendErr)
+		}()
+	}
+	sendErr = l.sendEncrypted(demonware.InnerTaskReply, result.Reply)
+	l.replyErr = sendErr
+	if sendErr != nil {
+		l.logf("send reply: %v", sendErr)
+	}
+}
+
+// taskResult is owned by one request; the router invokes AfterReply exactly
+// once, passing the error from that request's send attempt.
+type taskResult struct {
+	Reply      []byte
+	AfterReply func(sendErr error)
+}
+
+func (l *lobbyConn) handleTask(service, task byte, r *demonware.Reader, payload []byte) (result taskResult) {
 	var reply []byte
 	switch {
 	case service == 38 && task == 6:
@@ -181,7 +208,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 		if e1 == nil && e2 == nil && e3 == nil {
 			var notices []ctrNotice
 			ok, notices = l.matchmaker.syncDoc(l, id, version, raw)
-			l.afterReply = func() { sendCTRNotices(notices) }
+			result.AfterReply = func(sendErr error) { sendCTRNotices(notices) }
 		}
 		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
 		l.logf("CTR sync lobby=%d version=%d accepted=%v", id, version, ok)
@@ -210,8 +237,8 @@ func (l *lobbyConn) onTask(payload []byte) {
 		}
 		doc := "{\"mm_id\":" + strconv.FormatUint(search.id, 10) + "}"
 		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(doc); return 1 })
-		l.afterReply = func() {
-			if l.replyErr != nil {
+		result.AfterReply = func(sendErr error) {
+			if sendErr != nil {
 				l.matchmaker.release(search) // the client never learned of this search
 				return
 			}
@@ -229,7 +256,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 		id, err := r.Uint64()
 		if err == nil {
 			notices := l.matchmaker.leave(l, id)
-			l.afterReply = func() { sendCTRNotices(notices) }
+			result.AfterReply = func(sendErr error) { sendCTRNotices(notices) }
 		}
 		reply = l.taskReply(task, 0, nil)
 
@@ -270,10 +297,13 @@ func (l *lobbyConn) onTask(payload []byte) {
 		reply = l.onMarketingComms(task, r)
 
 	case service == svcAchievements:
-		reply = l.onAchievements(task, payload)
+		result = l.onAchievements(task, payload)
+		reply = result.Reply
 
 	case service == svcMarketplace:
-		if reply = l.onMarketplace(task, payload); reply == nil {
+		result = l.onMarketplace(task, payload)
+		reply = result.Reply
+		if reply == nil {
 			reply = l.taskReply(task, errUnhandled, nil)
 			l.logf("task marketplace UNHANDLED task=%d args:\n%s", task, hex.Dump(payload))
 		}
@@ -291,14 +321,8 @@ func (l *lobbyConn) onTask(payload []byte) {
 		l.logf("task UNHANDLED service=%d task=%d (empty success) args:\n%s", service, task, hex.Dump(payload))
 	}
 
-	if pending := l.afterReply; pending != nil {
-		l.afterReply = nil
-		defer pending()
-	}
-	l.replyErr = l.sendEncrypted(demonware.InnerTaskReply, reply)
-	if l.replyErr != nil {
-		l.logf("send reply: %v", l.replyErr)
-	}
+	result.Reply = reply
+	return result
 }
 
 // publisherFile looks the file up in the pubfiles folder, ignoring case (the

@@ -138,7 +138,7 @@ func TestCTRNewsGameRequestAndReply(t *testing.T) {
 		t.Fatal("view report changed the message")
 	}
 	newsEnd(t, r)
-	if l.afterReply != nil {
+	if l.afterReplyActive {
 		t.Fatal("news scheduled a push")
 	}
 }

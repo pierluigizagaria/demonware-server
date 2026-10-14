@@ -14,7 +14,7 @@ func TestMarketplaceRejectsShortTaskHeaders(t *testing.T) {
 	for _, task := range []byte{taskGetInventoryPaginated, taskPurchaseSkus} {
 		request := []byte{80, 3, task}
 		for n := 0; n <= len(request); n++ {
-			reply := l.onMarketplace(task, request[:n])
+			reply := l.onMarketplace(task, request[:n]).Reply
 			if len(reply) != 14 || binary.LittleEndian.Uint32(reply[10:14]) != errUnhandled {
 				t.Fatalf("task %d accepted %d-byte request", task, n)
 			}
@@ -163,12 +163,12 @@ func TestAmountSurvivesZigzagRoundTrip(t *testing.T) {
 func TestAchievementsRepliesCarryTheirStringField(t *testing.T) {
 	l := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets}
 
-	states := l.onAchievements(taskGetAchievementStates, nil)
+	states := l.onAchievements(taskGetAchievementStates, nil).Reply
 	if !hasField(structBodyOf(t, states), 2) {
 		t.Fatal("getAchievementStates reply lacks field 2, deserialize would return false")
 	}
 
-	user := l.onAchievements(taskGetUserState, nil)
+	user := l.onAchievements(taskGetUserState, nil).Reply
 	if !hasField(structBodyOf(t, user), 1) {
 		t.Fatal("getUserState reply lacks field 1, CAEUserStateRefreshed never fires")
 	}
