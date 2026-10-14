@@ -90,10 +90,10 @@ func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *ctrSQLi
 	oldSessions, oldOnline, oldUserData, oldRich := sessions, testPresence.online, testPresence.userData, testPresence.rich
 	oldEconomy, oldStats, oldNames, oldNews := economy, ctrStats, testPresence.playerNames, ctrNews
 	oldWaiting, oldPending, oldRooms := ctrMM.waiting, ctrMM.pending, ctrMM.rooms
-	oldTx, oldIDs := transactions.Load(), ctrIDs.Load()
+	oldTx, oldIDs := testReplies.transactions.Load(), ctrIDs.Load()
 	sessions, testPresence.online, testPresence.userData, testPresence.rich = map[[8]byte]*mmSession{}, map[uint64]*playerID{}, map[string][]byte{}, map[uint64]richPresence{}
 	ctrMM.waiting, ctrMM.pending, ctrMM.rooms = nil, nil, map[uint64]*ctrRoom{}
-	transactions.Store(0)
+	testReplies.transactions.Store(0)
 	ctrIDs.Store(0)
 	e, db := newTestEconomy(t, false)
 	economy, ctrStats, testPresence.playerNames, ctrNews = e, db, db, ctrNewsConfig{}
@@ -107,7 +107,7 @@ func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *ctrSQLi
 		sessions, testPresence.online, testPresence.userData, testPresence.rich = oldSessions, oldOnline, oldUserData, oldRich
 		economy, ctrStats, testPresence.playerNames, ctrNews = oldEconomy, oldStats, oldNames, oldNews
 		ctrMM.waiting, ctrMM.pending, ctrMM.rooms = oldWaiting, oldPending, oldRooms
-		transactions.Store(oldTx)
+		testReplies.transactions.Store(oldTx)
 		ctrIDs.Store(oldIDs)
 	})
 	return l, w, db
@@ -151,7 +151,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *ctrS
 			frames[i].Payload = hex.EncodeToString(p)
 		}
 	}
-	return architectureSnapshot{frames, transactions.Load(), len(sessions), len(testPresence.userData), len(testPresence.rich), len(ctrMM.waiting), len(ctrMM.pending), len(ctrMM.rooms), l.lobbyDoc,
+	return architectureSnapshot{frames, testReplies.transactions.Load(), len(sessions), len(testPresence.userData), len(testPresence.rich), len(ctrMM.waiting), len(ctrMM.pending), len(ctrMM.rooms), l.lobbyDoc,
 		sqliteCount(t, db, "accounts"), sqliteCount(t, db, "inventory"), sqliteCount(t, db, "ledger"), l.afterReply != nil, l.replyErr != nil}
 }
 

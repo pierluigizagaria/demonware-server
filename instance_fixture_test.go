@@ -99,3 +99,27 @@ func TestInstancePresenceAndPersistentNamesAreIsolated(t *testing.T) {
 		t.Fatal("persistent name lost on disconnect")
 	}
 }
+
+var testReplies = &replyCounter{}
+
+func TestInstanceReplyCountersAreIsolated(t *testing.T) {
+	first, _ := sharedPS4Lobby()
+	second, _ := sharedPS4Lobby()
+	first.replyCounter, second.replyCounter = &replyCounter{}, &replyCounter{}
+	for _, l := range []*lobbyConn{first, second, first} {
+		w := &architectureWire{}
+		l.c = w
+		frames := architectureCall(t, l, w, []byte{255, 3, 1})
+		payload, err := hex.DecodeString(frames[0].Payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		transaction, err := demonware.NewReader(payload).Uint64()
+		if err != nil || transaction != l.transactions.Load() {
+			t.Fatal("unexpected transaction counter")
+		}
+	}
+	if first.transactions.Load() != 2 || second.transactions.Load() != 1 {
+		t.Fatal("transaction counters crossed instance boundary")
+	}
+}

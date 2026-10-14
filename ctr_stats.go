@@ -176,7 +176,7 @@ func (s *ctrStatsStore) read(board uint32) ([]ctrStat, error) {
 	}
 	return rows, nil
 }
-func statsReply(task byte, rows []ctrStat, total uint32) []byte {
+func (replies *replyCounter) statsReply(task byte, rows []ctrStat, total uint32) []byte {
 	w := &demonware.Writer{}
 	for _, r := range rows {
 		w.Uint64(r.PID)
@@ -192,7 +192,7 @@ func statsReply(task byte, rows []ctrStat, total uint32) []byte {
 			w.Uint32(r.Driver)
 		}
 	}
-	return demonware.ListReply(transactions.Add(1), task, 0, uint32(len(rows)), total, w.Bytes())
+	return demonware.ListReply(replies.transactions.Add(1), task, 0, uint32(len(rows)), total, w.Bytes())
 }
 func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
 	pid := l.pid()
@@ -206,7 +206,7 @@ func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
 	l.presence.onlineMu.Unlock()
 	fail := func(err error) []byte {
 		l.logf("CTR stats task=%d failed: %v", task, err)
-		return taskReply(task, errUnhandled, nil)
+		return l.taskReply(task, errUnhandled, nil)
 	}
 	if !allowed {
 		return fail(fmt.Errorf("CTR identity required"))
@@ -223,7 +223,7 @@ func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
 		for _, row := range writes {
 			l.logf("CTR stats upload board=%d score=%d operation=%d", row.Board, row.Score, row.Operation)
 		}
-		return taskReply(task, 0, nil)
+		return l.taskReply(task, 0, nil)
 	}
 	if task != 4 && task != 13 {
 		return fail(fmt.Errorf("unsupported stats task"))
@@ -269,5 +269,5 @@ func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
 		return fail(err)
 	}
 	l.logf("CTR stats read task=%d board=%d rows=%d total=%d", task, board, len(rows), total)
-	return statsReply(task, rows, total)
+	return l.statsReply(task, rows, total)
 }

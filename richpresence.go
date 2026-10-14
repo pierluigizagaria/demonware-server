@@ -69,19 +69,19 @@ func (l *lobbyConn) onRichPresence(task byte, r *demonware.Reader) []byte {
 		data, err4 := r.Blob()
 		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
 			l.logf("richpresence SET illisible ctx=%q", ctx)
-			return taskReply(task, 0, nil)
+			return l.taskReply(task, 0, nil)
 		}
 		if id == 0 {
 			id = l.pid()
 		}
 		if id == 0 {
-			return taskReply(task, 0, nil)
+			return l.taskReply(task, 0, nil)
 		}
 		l.presence.richMu.Lock()
 		l.presence.rich[id] = richPresence{plat, flag, data}
 		l.presence.richMu.Unlock()
 		l.logf("richpresence SET pid=%d ctx=%q %d bytes", id, ctx, len(data))
-		return taskReply(task, 0, nil)
+		return l.taskReply(task, 0, nil)
 
 	case rpGet, rpGetAndSubscribe:
 		ids := readAccountIDs(r)
@@ -112,7 +112,7 @@ func (l *lobbyConn) onRichPresence(task byte, r *demonware.Reader) []byte {
 		}
 		l.presence.richMu.Unlock()
 		l.logf("richpresence GET ctx=%q %d demande(s) -> %d presence(s)", ctx, len(ids), len(hits))
-		return taskReply(task, 0, func(w *demonware.Writer) uint32 {
+		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, h := range hits {
 				w.Uint64(h.id)
 				w.String(h.p.platform)
@@ -122,5 +122,5 @@ func (l *lobbyConn) onRichPresence(task byte, r *demonware.Reader) []byte {
 			return uint32(len(hits))
 		})
 	}
-	return taskReply(task, 0, nil)
+	return l.taskReply(task, 0, nil)
 }

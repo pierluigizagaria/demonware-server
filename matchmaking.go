@@ -186,7 +186,7 @@ func (l *lobbyConn) onFriendSessions(task byte, r *demonware.Reader, context str
 	// The game ties each result to a friend by the online id carried BY the game
 	// (Net::MatchMakingInfo +0x170, inside attrs): nothing prefixes the record,
 	// which is a raw bdMatchMakingInfo.
-	return taskReply(task, 0, func(w *demonware.Writer) uint32 {
+	return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, h := range found {
 			w.Blob(withRelay(h.s.hostAddr, h.s.ownerPID, l.pid()))
 			w.Blob(h.s.id[:])
@@ -209,7 +209,7 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 	case mmRequestSessionID:
 		s := &mmSession{context: context, owner: l.n, ownerPID: l.pid(), reserved: true, updated: l.now()}
 		if _, err := l.random(s.id[:]); err != nil {
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		sessionsMu.Lock()
 		for id, old := range sessions {
@@ -220,12 +220,12 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		sessions[s.id] = s
 		sessionsMu.Unlock()
 		l.logf("matchmaking RESERVE session=%X", s.id)
-		return taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
+		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
 	case mmCreateSession:
 		host, gt, maxp, attrs, err := readContextInfo(r, context)
 		if err != nil {
 			l.logf("createSession unreadable: %v", err)
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		s := &mmSession{owner: l.n, ownerPID: l.pid(), hostAddr: host, gameType: gt, maxPlayers: maxp, numPlayers: 1, attrs: attrs, updated: l.now()}
 		_, _ = l.random(s.id[:])
@@ -244,18 +244,18 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		sessionsMu.Unlock()
 		l.logf("matchmaking CREATE session=%X gameType=%d max=%d host=%s (%d open games)",
 			s.id, gt, maxp, hex.EncodeToString(host[:min(6, len(host))]), n)
-		return taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
+		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(s.id[:]); return 1 })
 
 	case mmUpdateSession, mmInitializeSession:
 		sid, err := r.Blob()
 		if err != nil || len(sid) != 8 {
 			l.logf("updateSession: id unreadable (%v)", err)
-			return taskReply(task, 0, nil)
+			return l.taskReply(task, 0, nil)
 		}
 		host, gt, maxp, attrs, err := readContextInfo(r, context)
 		if err != nil {
 			l.logf("updateSession %X: info unreadable: %v", sid, err)
-			return taskReply(task, 0, nil)
+			return l.taskReply(task, 0, nil)
 		}
 		var id [8]byte
 		copy(id[:], sid)
@@ -270,11 +270,11 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 			}
 		} else {
 			sessionsMu.Unlock()
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		sessionsMu.Unlock()
 		l.logf("matchmaking UPDATE session=%X known=%v", id, ok)
-		return taskReply(task, 0, nil)
+		return l.taskReply(task, 0, nil)
 
 	case mmUpdatePlayers:
 		// Seen live when the console joined Citron's game:
@@ -282,7 +282,7 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		sid, err := r.Blob()
 		if err != nil || len(sid) != 8 {
 			l.logf("updateSessionPlayers: id unreadable (%v)", err)
-			return taskReply(task, 0, nil)
+			return l.taskReply(task, 0, nil)
 		}
 		players, _ := r.Uint32()
 		host, gt, maxp, attrs, err := readContextInfo(r, context)
@@ -300,7 +300,7 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		}
 		sessionsMu.Unlock()
 		l.logf("matchmaking PLAYERS session=%X players=%d/%d known=%v", id, players, maxp, ok)
-		return taskReply(task, 0, nil)
+		return l.taskReply(task, 0, nil)
 
 	case mmDeleteSession:
 		sid, err := r.Blob()
@@ -314,7 +314,7 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 			sessionsMu.Unlock()
 			l.logf("matchmaking DELETE session=%X", id)
 		}
-		return taskReply(task, 0, nil)
+		return l.taskReply(task, 0, nil)
 
 	case mmFindSessions:
 		query, _ := r.Uint32()
@@ -340,7 +340,7 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 			found = found[:maxr]
 		}
 		l.logf("matchmaking FIND query=%d start=%d max=%d -> %d game(s)", query, start, maxr, len(found))
-		return taskReply(task, 0, func(w *demonware.Writer) uint32 {
+		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, s := range found {
 				w.Blob(withRelay(s.hostAddr, s.ownerPID, l.pid()))
 				w.Blob(s.id[:])

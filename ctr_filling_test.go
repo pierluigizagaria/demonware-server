@@ -248,7 +248,7 @@ func TestCTRFollowerDisbandReleasesSeat(t *testing.T) {
 	m := &ctrMatchmaker{onlinePIDs: testPresence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
 	r := fillTestRoom(t, m, 7800, 2)
 	m.enqueue(partySearch(t, 7810, 7811))
-	follower := &lobbyConn{presence: testPresence, tickets: testTickets, n: 7811, player: &playerID{PID: 7811}}
+	follower := &lobbyConn{replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7811, player: &playerID{PID: 7811}}
 	testPresence.onlineMu.Lock()
 	testPresence.online[follower.n] = follower.player
 	testPresence.onlineMu.Unlock()
@@ -283,7 +283,7 @@ func TestCTRStaleDisconnectKeepsReplacementSeats(t *testing.T) {
 	party := partySearch(t, 7600, 7601)
 	party.doc.Slots.Min = 8
 	m.enqueue(party)
-	old := &lobbyConn{presence: testPresence, tickets: testTickets, n: 7699, player: &playerID{PID: 7601}}
+	old := &lobbyConn{replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7699, player: &playerID{PID: 7601}}
 	testPresence.onlineMu.Lock()
 	testPresence.online[7698] = &playerID{PID: 7601} // the replacement connection
 	testPresence.onlineMu.Unlock()

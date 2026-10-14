@@ -59,7 +59,7 @@ const (
 // the task fails instead of timing out (a timeout drops the lobby).
 const errUnhandled = 1
 
-var transactions atomic.Uint64
+type replyCounter struct{ transactions atomic.Uint64 }
 
 // sendPush sends a pushed message (inner type 0x02). bdLobbyService::handlePushMessage reads a
 // tagged u32: the bdEventType, resolved in the table of registered handlers.
@@ -75,7 +75,7 @@ func (l *lobbyConn) sendPush(event uint32, build func(w *demonware.Writer)) erro
 // onTask handles a decrypted request. payload = bytes after the inner type.
 func (l *lobbyConn) onTask(payload []byte) {
 	if len(payload) == 18 && payload[0] == 18 && payload[1] == 1 && payload[2] == 0 && payload[3] == 1 {
-		_ = l.sendEncrypted(demonware.InnerTaskReply, taskReply(1, errUnhandled, nil))
+		_ = l.sendEncrypted(demonware.InnerTaskReply, l.taskReply(1, errUnhandled, nil))
 		return
 	}
 	if len(payload) < 3 {
@@ -92,12 +92,12 @@ func (l *lobbyConn) onTask(payload []byte) {
 			task = payload[2]
 		}
 		if service == svcMarketplace || service == svcMarketingComms {
-			_ = l.sendEncrypted(demonware.InnerTaskReply, taskReply(task, errUnhandled, nil))
+			_ = l.sendEncrypted(demonware.InnerTaskReply, l.taskReply(task, errUnhandled, nil))
 			return
 		}
 		l.logf("task: service %d task id unreadable (%v), empty success task=%d: %X",
 			service, err, task, payload)
-		if err := l.sendEncrypted(demonware.InnerTaskReply, taskReply(task, 0, nil)); err != nil {
+		if err := l.sendEncrypted(demonware.InnerTaskReply, l.taskReply(task, 0, nil)); err != nil {
 			l.logf("send reply: %v", err)
 		}
 		return
@@ -112,7 +112,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 		reply = l.onCTRStats(task, r)
 	case service == svcTitleUtilities && task == taskGetServerTime:
 		now := uint32(l.now().Unix())
-		reply = taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Uint32(now); return 1 })
+		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Uint32(now); return 1 })
 		l.logf("task bdTitleUtilities.getServerTime -> %d", now)
 
 	case service == svcStorage && task == taskGetPublisherFile:
@@ -120,18 +120,18 @@ func (l *lobbyConn) onTask(payload []byte) {
 		name, err2 := r.String()
 		if err1 != nil || err2 != nil {
 			l.logf("getPublisherFile: unreadable arguments: %X", payload)
-			reply = taskReply(task, errUnhandled, nil)
+			reply = l.taskReply(task, errUnhandled, nil)
 			break
 		}
 		data, path := l.publisherFile(name)
 		if data == nil {
 			// No result rather than an error: the game treats a "missing
 			// file" as a normal case.
-			reply = taskReply(task, 0, nil)
+			reply = l.taskReply(task, 0, nil)
 			l.logf("task bdStorage.getPublisherFile ctx=%q file=%q -> MISSING", ctx, name)
 			break
 		}
-		reply = taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(data); return 1 })
+		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Blob(data); return 1 })
 		l.logf("task bdStorage.getPublisherFile ctx=%q file=%q -> %s (%d bytes)", ctx, name, path, len(data))
 
 	case service == svcTitleUtilities && task == 9:
@@ -142,13 +142,13 @@ func (l *lobbyConn) onTask(payload []byte) {
 
 	case service == 29 && (task == 1 || task == 4):
 		if reply = l.onUserData(task, r); reply == nil {
-			reply = taskReply(task, 0, nil)
+			reply = l.taskReply(task, 0, nil)
 		}
 
 	case service == 138:
 		ctx, err := r.String()
 		if err != nil || ctx == "" {
-			reply = taskReply(task, errUnhandled, nil)
+			reply = l.taskReply(task, errUnhandled, nil)
 			break
 		}
 		if task == mmCreateSession || task == mmUpdateSession || task == mmDeleteSession || task == mmUpdatePlayers || task == mmRequestSessionID || task == mmInitializeSession {
@@ -157,7 +157,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 			reply = l.onFriendSessions(task, r, "ctr:"+ctx)
 		} else {
 			l.logf("CTR matchmaking unimplemented task=%d context=%q", task, ctx)
-			reply = taskReply(task, errUnhandled, nil)
+			reply = l.taskReply(task, errUnhandled, nil)
 		}
 	case service == svcRichPresence:
 		reply = l.onRichPresence(task, r)
@@ -170,7 +170,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 		if doc, err := r.String(); err == nil && doc != "" {
 			l.lobbyDoc = doc
 		}
-		reply = taskReply(task, 0, nil)
+		reply = l.taskReply(task, 0, nil)
 		l.logf("task bdAsyncMatchMaking.setPlayerInfo -> success (%d bytes)", len(l.lobbyDoc))
 
 	case service == svcAsyncMatchMaking && task == taskSyncLobbyDocuments:
@@ -183,20 +183,20 @@ func (l *lobbyConn) onTask(payload []byte) {
 			ok, notices = ctrMM.syncDoc(l, id, version, raw)
 			l.afterReply = func() { sendCTRNotices(notices) }
 		}
-		reply = taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
+		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
 		l.logf("CTR sync lobby=%d version=%d accepted=%v", id, version, ok)
 
 	case service == svcAsyncMatchMaking && task == taskGetPlayerToken:
 		// getMatchMakingPlayerToken -> bdUInt64Result (readUInt64). This is the
 		// requestPlayerToken step of CNetworkTaskAsyncMatchMakingRegistration: without a token the
 		// registration state machine cannot advance.
-		reply = taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Uint64(l.pid()); return 1 })
+		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Uint64(l.pid()); return 1 })
 		l.logf("task bdAsyncMatchMaking.getMatchMakingPlayerToken -> %d", l.pid())
 
 	case service == svcAsyncMatchMaking && task == taskStartSearch:
 		raw, err := r.String()
 		if err != nil {
-			reply = taskReply(task, errUnhandled, nil)
+			reply = l.taskReply(task, errUnhandled, nil)
 			break
 		}
 		search, err := parseCTRSearch(l, raw)
@@ -205,11 +205,11 @@ func (l *lobbyConn) onTask(payload []byte) {
 		}
 		if err != nil {
 			l.logf("CTR search rejected: %v", err)
-			reply = taskReply(task, errUnhandled, nil)
+			reply = l.taskReply(task, errUnhandled, nil)
 			break
 		}
 		doc := "{\"mm_id\":" + strconv.FormatUint(search.id, 10) + "}"
-		reply = taskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(doc); return 1 })
+		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(doc); return 1 })
 		l.afterReply = func() {
 			if l.replyErr != nil {
 				ctrMM.release(search) // the client never learned of this search
@@ -224,37 +224,37 @@ func (l *lobbyConn) onTask(payload []byte) {
 	case service == svcAsyncMatchMaking && task == 8:
 		id, err := r.Uint64()
 		ok := err == nil && ctrMM.cancel(l, id)
-		reply = taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
+		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Bool(ok); return 1 })
 	case service == svcAsyncMatchMaking && task == taskLobbyDisbanded:
 		id, err := r.Uint64()
 		if err == nil {
 			notices := ctrMM.leave(l, id)
 			l.afterReply = func() { sendCTRNotices(notices) }
 		}
-		reply = taskReply(task, 0, nil)
+		reply = l.taskReply(task, 0, nil)
 
 	case service == svcAsyncMatchMaking &&
 		(task == taskInitMatchMaking || task == taskStartMatchMaking ||
 			task == taskGetMMStatus || task == taskInitiateDCQoS):
 		// All of these return a bdStringResult (readString).
 		id := strconv.FormatUint(l.pid(), 10)
-		reply = taskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(id); return 1 })
+		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(id); return 1 })
 		l.logf("task bdAsyncMatchMaking task=%d -> string %q", task, id)
 
 	case service == svcAsyncMatchMaking &&
 		(task == taskQoSHostsReply || task == taskAckExpectGame):
 		// No result.
-		reply = taskReply(task, 0, nil)
+		reply = l.taskReply(task, 0, nil)
 		l.logf("task bdAsyncMatchMaking task=%d -> empty success", task)
 
 	case service == svcAsyncMatchMaking && task == taskGetLobbyDocuments:
 		id, err := r.Uint64()
 		h, b, ok := ctrMM.documents(l, id)
 		if err != nil || !ok {
-			reply = taskReply(task, errUnhandled, nil)
+			reply = l.taskReply(task, errUnhandled, nil)
 			break
 		}
-		reply = taskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(h); w.String(b); return 1 })
+		reply = l.taskReply(task, 0, func(w *demonware.Writer) uint32 { w.String(h); w.String(b); return 1 })
 
 	case service == svcHTTPProxy && task == 1:
 		// bdABTesting::enroll. The body is parsed as JSON: expiresIn, ABToken,
@@ -263,7 +263,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 		// ABToken NON-EMPTY: bdABTestingEnrollResponse reads it with getString, and an empty string
 		// fails deserialization -> bdRemoteTask error 4 -> the login sequence fails.
 		body := []byte(`{"expiresIn":3600,"ABToken":"nextendo","enrollments":[]}`)
-		reply = httpProxyReply(task, 200, body)
+		reply = l.httpProxyReply(task, 200, body)
 		l.logf("task bdABTesting.enroll -> 200 (%d bytes)", len(body))
 
 	case service == svcMarketingComms:
@@ -274,20 +274,20 @@ func (l *lobbyConn) onTask(payload []byte) {
 
 	case service == svcMarketplace:
 		if reply = l.onMarketplace(task, payload); reply == nil {
-			reply = taskReply(task, errUnhandled, nil)
+			reply = l.taskReply(task, errUnhandled, nil)
 			l.logf("task marketplace UNHANDLED task=%d args:\n%s", task, hex.Dump(payload))
 		}
 
 	case service == svcMatchMaking:
 		if reply = l.onMatchMaking(task, r); reply == nil {
-			reply = taskReply(task, 0, nil)
+			reply = l.taskReply(task, 0, nil)
 			l.logf("task matchmaking UNHANDLED task=%d args:\n%s", task, hex.Dump(payload))
 		}
 
 	default:
 		// Success with no result: harmless for list requests, whereas an
 		// error may mark the service unavailable on the game side.
-		reply = taskReply(task, 0, nil)
+		reply = l.taskReply(task, 0, nil)
 		l.logf("task UNHANDLED service=%d task=%d (empty success) args:\n%s", service, task, hex.Dump(payload))
 	}
 
@@ -339,12 +339,12 @@ var pubFileAliases = map[string]string{
 	"blacklist.txt": "blacklist_config.txt",
 }
 
-func taskReply(task byte, code uint32, results func(w *demonware.Writer) uint32) []byte {
-	return demonware.TaskReply(transactions.Add(1), task, code, results)
+func (replies *replyCounter) taskReply(task byte, code uint32, results func(w *demonware.Writer) uint32) []byte {
+	return demonware.TaskReply(replies.transactions.Add(1), task, code, results)
 }
-func httpProxyReply(task byte, status uint32, body []byte) []byte {
-	return demonware.HTTPProxyReply(transactions.Add(1), task, status, body)
+func (replies *replyCounter) httpProxyReply(task byte, status uint32, body []byte) []byte {
+	return demonware.HTTPProxyReply(replies.transactions.Add(1), task, status, body)
 }
-func structTaskReply(task byte, body []byte) []byte {
-	return demonware.StructReply(transactions.Add(1), task, body)
+func (replies *replyCounter) structTaskReply(task byte, body []byte) []byte {
+	return demonware.StructReply(replies.transactions.Add(1), task, body)
 }

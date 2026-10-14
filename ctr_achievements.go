@@ -27,7 +27,7 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) []byte {
 			events, err := parseRewardEvents(payload)
 			if err != nil {
 				l.logf("CTR reward event rejected: %v", err)
-				return taskReply(task, errUnhandled, nil)
+				return l.taskReply(task, errUnhandled, nil)
 			}
 			for _, e := range events {
 				l.logf("CTR reward event=%s timestamp=%d values=%v", e.Name, e.Timestamp, e.Values)
@@ -35,17 +35,17 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) []byte {
 			credit, err = economy.awardRaces(l.pid(), events, l.now())
 			if err != nil {
 				l.logf("CTR reward persistence failed: %v", err)
-				return taskReply(task, errUnhandled, nil)
+				return l.taskReply(task, errUnhandled, nil)
 			}
 			updates, err = economy.reportPitStopRefresh(l.pid(), events, l.now())
 			if err != nil {
 				l.logf("CTR refresh persistence failed: %v", err)
-				return taskReply(task, errUnhandled, nil)
+				return l.taskReply(task, errUnhandled, nil)
 			}
 			challengeCredit, challengeUpdates, err := economy.awardChallenges(l.pid(), events, l.now())
 			if err != nil {
 				l.logf("CTR challenge persistence failed: %v", err)
-				return taskReply(task, errUnhandled, nil)
+				return l.taskReply(task, errUnhandled, nil)
 			}
 			credit += challengeCredit
 			updates = append(updates, challengeUpdates...)
@@ -70,12 +70,12 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) []byte {
 			}
 			l.logf("CTR achievements -> push %d achievements-updated", pushAchievementsUpdated)
 		}
-		return structTaskReply(task, nil)
+		return l.structTaskReply(task, nil)
 
 	case taskGetAchievementStates:
 		a, err := economy.snapshot(l.pid())
 		if err != nil {
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		state := currentPitStopRefresh(a, l.now())
 		var states []byte
@@ -87,16 +87,16 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) []byte {
 				states = demonware.AppendBytesField(states, 1, challenge.encode())
 			}
 		}
-		return structTaskReply(task, demonware.AppendBytesField(states, 2, nil))
+		return l.structTaskReply(task, demonware.AppendBytesField(states, 2, nil))
 
 	case taskGetUserState:
 		// field 1 is the engine's user-state blob. Empty JSON keeps it valid and lets
 		// handleGetUserState fire CAEUserStateRefreshed, which is the refresh confirmation.
 		l.logf("CTR achievements getUserState -> empty state")
-		return structTaskReply(task, demonware.AppendBytesField(nil, 1, []byte("{}")))
+		return l.structTaskReply(task, demonware.AppendBytesField(nil, 1, []byte("{}")))
 	}
 	// reportEvents and the activate/claim tasks take a request and return no body.
-	return structTaskReply(task, nil)
+	return l.structTaskReply(task, nil)
 }
 
 // eventNames pulls the printable strings out of a reportEvents struct buffer so the race

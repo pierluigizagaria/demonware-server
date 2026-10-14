@@ -9,7 +9,7 @@ import (
 // bdStructBufferTask::deserializeTaskReply, rather than ordinary result lists.
 func TestCTRHTTPProxyStructuredEnvelope(t *testing.T) {
 	body := []byte(`{"expiresIn":3600,"ABToken":"nextendo","enrollments":[]}`)
-	reply := httpProxyReply(1, 200, body)
+	reply := testReplies.httpProxyReply(1, 200, body)
 	if len(reply) < 22 || reply[0] != 0x0a || reply[9] != 0x08 || binary.LittleEndian.Uint32(reply[10:14]) != 0 || reply[14] != 3 || reply[15] != 1 {
 		t.Fatal("invalid task header")
 	}

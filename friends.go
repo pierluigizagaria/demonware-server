@@ -133,7 +133,7 @@ func (l *lobbyConn) onGetUserNames(task byte, r *demonware.Reader) []byte {
 		}
 	}
 	l.logf("friends getUserNames %d request(s) -> %d online %v", len(ids), len(hits), hits)
-	return taskReply(task, 0, func(w *demonware.Writer) uint32 {
+	return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, h := range hits {
 			w.Uint64(h.id)
 			w.String(h.name)
@@ -150,13 +150,13 @@ func (l *lobbyConn) onUserData(task byte, r *demonware.Reader) []byte {
 		data, err := r.Blob()
 		if err != nil || l.player == nil {
 			l.logf("userdata SET ctx=%q ignored (%v, player=%v)", ctx, err, l.player != nil)
-			return taskReply(task, 0, nil)
+			return l.taskReply(task, 0, nil)
 		}
 		l.presence.userDataMu.Lock()
 		l.presence.userData[strings.ToLower(l.player.Username)+"|"+ctx] = data
 		l.presence.userDataMu.Unlock()
 		l.logf("userdata SET %s ctx=%q %d bytes", l.player.Username, ctx, len(data))
-		return taskReply(task, 0, nil)
+		return l.taskReply(task, 0, nil)
 	case 4:
 		if len(r.Remaining()) > 0 && r.Remaining()[0] == demonware.TagBool {
 			_, _ = r.Bool()
@@ -180,7 +180,7 @@ func (l *lobbyConn) onUserData(task byte, r *demonware.Reader) []byte {
 			}
 		}
 		l.logf("userdata GET ctx=%q %d request(s) -> %d", ctx, len(ids), len(hits))
-		return taskReply(task, 0, func(w *demonware.Writer) uint32 {
+		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, h := range hits {
 				w.Uint64(h.id)
 				w.Blob(h.data)
@@ -208,13 +208,13 @@ func (state *presenceStore) pidOnline(id uint64) uint64 {
 func (l *lobbyConn) onGetUserIDs(task byte, r *demonware.Reader) []byte {
 	count, err := r.Uint32()
 	if err != nil || count == 0 || count > 500 {
-		return taskReply(task, errUnhandled, nil)
+		return l.taskReply(task, errUnhandled, nil)
 	}
 	names := make([]string, 0, count)
 	for i := uint32(0); i < count; i++ {
 		name, err := r.String()
 		if err != nil || name == "" || len(name) > 63 {
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		names = append(names, name)
 	}
@@ -239,7 +239,7 @@ func (l *lobbyConn) onGetUserIDs(task byte, r *demonware.Reader) []byte {
 		}
 	}
 	l.logf("friends getUserIDs %d request(s) -> %d resolved", len(names), len(found))
-	return taskReply(task, 0, func(w *demonware.Writer) uint32 {
+	return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 		for _, p := range found {
 			w.Uint64(p.PID)
 			w.String(p.Username)

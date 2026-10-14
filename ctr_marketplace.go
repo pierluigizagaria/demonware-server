@@ -75,47 +75,47 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 	case taskGetBalancesV3:
 		ctx, max := parseBalancesRequest(payload)
 		if ctx != marketplaceContext || !validPS4BalancesRequest(payload, ctx, max) {
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		a, err := economy.snapshot(l.pid())
 		if err != nil {
 			l.logf("CTR economy read failed: %v", err)
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		w := a.Balances
 		sb := getPlayerBalancesResponse(w, max)
 		l.logf("CTR pitstop balances ctx=%q max=%d -> %d currencies", ctx, max, len(currencyIDs()))
-		return structTaskReply(task, sb)
+		return l.structTaskReply(task, sb)
 
 	case taskSwitchReconciliation:
 		// Switch only (an eShop receipt): the PS4 build never sends it.
-		return taskReply(task, errUnhandled, nil)
+		return l.taskReply(task, errUnhandled, nil)
 
 	case taskGetInventoryPaginated:
 		if len(payload) < 3 {
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		r := demonware.NewReader(payload[3:])
 		ctx, err := r.String()
 		if err != nil || ctx != marketplaceContext {
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		page, err := r.Uint32()
 		if err != nil {
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		size, err := r.Uint32()
 		if err != nil || size == 0 || size > 4096 {
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		a, err := economy.inventory(l.pid())
 		if err != nil {
 			l.logf("CTR economy inventory failed: %v", err)
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		items := inventoryPage(a, page, size)
 		l.logf("CTR pitstop inventory page=%d size=%d -> %d items", page, size, len(items))
-		return taskReply(task, 0, func(w *demonware.Writer) uint32 {
+		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, item := range items {
 				writeInventoryItem(w, l.pid(), item)
 			}
@@ -124,16 +124,16 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 	case taskPurchaseSkus:
 		skus, ok := parsePurchaseSkus(payload)
 		if !ok {
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		debit, err := economy.purchase(l.pid(), skus)
 		if err != nil {
 			l.logf("CTR pitstop purchase rejected: %v", err)
-			return taskReply(task, errUnhandled, nil)
+			return l.taskReply(task, errUnhandled, nil)
 		}
 		l.logf("CTR pitstop purchase skus=%v debit=%d currency=10", skus, debit)
 		l.afterReply = l.pushCurrentBalance
-		return taskReply(task, 0, nil)
+		return l.taskReply(task, 0, nil)
 
 	}
 	return nil

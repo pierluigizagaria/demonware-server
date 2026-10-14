@@ -129,7 +129,7 @@ func main() {
 	go serveNAT(natPort)
 	startCTRRelay(cfg.relayLow, cfg.relayHigh, nextendoHost, presence.onlinePIDs)
 	go reapSessions()
-	startLobby(tickets, presence)
+	startLobby(tickets, presence, &replyCounter{})
 
 	if err := serveAuth(platform, tickets, presence); err != nil {
 		log.Fatalf("[D3 Auth] stopped: %v", err)

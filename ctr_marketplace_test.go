@@ -10,7 +10,7 @@ import (
 )
 
 func TestMarketplaceRejectsShortTaskHeaders(t *testing.T) {
-	l := &lobbyConn{presence: testPresence, tickets: testTickets}
+	l := &lobbyConn{replyCounter: testReplies, presence: testPresence, tickets: testTickets}
 	for _, task := range []byte{taskGetInventoryPaginated, taskPurchaseSkus} {
 		request := []byte{80, 3, task}
 		for n := 0; n <= len(request); n++ {
@@ -100,7 +100,7 @@ func TestBalancesResponseShape(t *testing.T) {
 // bdStructBufferTask::deserializeTaskReply reads the struct straight after the task byte:
 // a result count in between makes the task fail with error 4.
 func TestStructTaskReplyLayout(t *testing.T) {
-	reply := structTaskReply(taskGetBalancesV3, []byte{0x0A, 0x02, 0x08, 0x01})
+	reply := testReplies.structTaskReply(taskGetBalancesV3, []byte{0x0A, 0x02, 0x08, 0x01})
 
 	if reply[0] != demonware.TagUint64 {
 		t.Fatalf("reply[0] = %#x, want transaction tag %#x", reply[0], demonware.TagUint64)
@@ -161,7 +161,7 @@ func TestAmountSurvivesZigzagRoundTrip(t *testing.T) {
 // Both achievements responses end on a string read and return its result, so a missing
 // string field fails the whole deserialize. That is what broke the Pit Stop refresh.
 func TestAchievementsRepliesCarryTheirStringField(t *testing.T) {
-	l := &lobbyConn{presence: testPresence, tickets: testTickets}
+	l := &lobbyConn{replyCounter: testReplies, presence: testPresence, tickets: testTickets}
 
 	states := l.onAchievements(taskGetAchievementStates, nil)
 	if !hasField(structBodyOf(t, states), 2) {
