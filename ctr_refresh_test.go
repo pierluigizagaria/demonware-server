@@ -24,14 +24,14 @@ func TestInventoryCompleteClientWireLayout(t *testing.T) {
 }
 
 func TestPitStopRefreshRetryRestartLimitAndReset(t *testing.T) {
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	now := time.Date(2026, 9, 23, 3, 0, 0, 0, time.UTC)
 	e := achievementEvent{Name: "pitstop_daily_refresh", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
 	b, err := s.reportPitStopRefresh(42, []achievementEvent{e, e}, now)
 	if err != nil || len(b) == 0 {
 		t.Fatalf("%x %v", b, err)
 	}
-	s = &economyStore{dir: s.dir}
+	s = &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: s.dir}
 	s.reportPitStopRefresh(42, []achievementEvent{e}, now)
 	a, _ := s.snapshot(42)
 	if got := currentPitStopRefresh(a, now); got.Progress != 1 || got.Status != 2 {

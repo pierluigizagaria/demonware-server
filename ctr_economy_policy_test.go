@@ -61,10 +61,10 @@ func TestSQLiteNormalInventoryIsPersisted(t *testing.T) {
 
 func TestPlatformMarketplaceUnlockAllInventory(t *testing.T) {
 	// Exercise the PS4 wire path using the same backend installed at startup.
-	old := economy
-	t.Cleanup(func() { economy = old })
+	old := testCTR.economy
+	t.Cleanup(func() { testCTR.economy = old })
 	s, db := newTestEconomy(t, true)
-	economy = s
+	testCTR.economy = s
 	setStartBalance(t, 10000)
 	before := sqliteChanges(t, db)
 	l, wire := sharedPS4Lobby()
@@ -97,19 +97,19 @@ func TestPlatformMarketplaceUnlockAllInventory(t *testing.T) {
 }
 
 func TestSQLiteUsesDataDir(t *testing.T) {
-	old, oldDir := economy, dataDir
-	t.Cleanup(func() { economy, dataDir = old, oldDir })
+	old, oldDir := testCTR.economy, dataDir
+	t.Cleanup(func() { testCTR.economy, dataDir = old, oldDir })
 	for _, ns := range []string{"", "nested"} {
 		t.Run(ns, func(t *testing.T) {
 			root := t.TempDir()
-			economy, dataDir = &economyStore{}, filepath.Join(root, ns)
-			loadWallets()
-			if economy.dir != filepath.Join(root, ns) {
-				t.Fatalf("wallet dir = %s", economy.dir)
+			testCTR.economy, dataDir = &economyStore{initialBalance: func() int64 { return testStartBalance }}, filepath.Join(root, ns)
+			testLoadWallets()
+			if testCTR.economy.dir != filepath.Join(root, ns) {
+				t.Fatalf("wallet dir = %s", testCTR.economy.dir)
 			}
-			db := openTestCTR(t, filepath.Join(economy.dir, ctrDB), false)
-			economy.backend = db
-			if _, err := economy.snapshot(7); err != nil {
+			db := openTestCTR(t, filepath.Join(testCTR.economy.dir, ctrDB), false)
+			testCTR.economy.backend = db
+			if _, err := testCTR.economy.snapshot(7); err != nil {
 				t.Fatal(err)
 			}
 			if err := db.write([]ctrStatWrite{{ctrStat: ctrStat{Board: 89, PID: 7, Score: 2}}}); err != nil {

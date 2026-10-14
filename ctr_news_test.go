@@ -17,9 +17,9 @@ func setNews(t *testing.T, env map[string]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := ctrNews
-	ctrNews = c.news
-	t.Cleanup(func() { ctrNews = old })
+	old := testCTR.news
+	testCTR.news = c.news
+	t.Cleanup(func() { testCTR.news = old })
 }
 
 func newsFetch(key, language string, locations ...[2]uint32) []byte {

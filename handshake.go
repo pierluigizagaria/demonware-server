@@ -46,6 +46,7 @@ import (
 var serverIDs atomic.Uint64
 
 type lobbyConn struct {
+	ctr *ctrServices
 	*replyCounter
 	presence *presenceStore
 	tickets  *ticketStore

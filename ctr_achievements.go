@@ -32,17 +32,17 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) []byte {
 			for _, e := range events {
 				l.logf("CTR reward event=%s timestamp=%d values=%v", e.Name, e.Timestamp, e.Values)
 			}
-			credit, err = economy.awardRaces(l.pid(), events, l.now())
+			credit, err = l.ctr.economy.awardRaces(l.pid(), events, l.now())
 			if err != nil {
 				l.logf("CTR reward persistence failed: %v", err)
 				return l.taskReply(task, errUnhandled, nil)
 			}
-			updates, err = economy.reportPitStopRefresh(l.pid(), events, l.now())
+			updates, err = l.ctr.economy.reportPitStopRefresh(l.pid(), events, l.now())
 			if err != nil {
 				l.logf("CTR refresh persistence failed: %v", err)
 				return l.taskReply(task, errUnhandled, nil)
 			}
-			challengeCredit, challengeUpdates, err := economy.awardChallenges(l.pid(), events, l.now())
+			challengeCredit, challengeUpdates, err := l.ctr.economy.awardChallenges(l.pid(), events, l.now())
 			if err != nil {
 				l.logf("CTR challenge persistence failed: %v", err)
 				return l.taskReply(task, errUnhandled, nil)
@@ -73,7 +73,7 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) []byte {
 		return l.structTaskReply(task, nil)
 
 	case taskGetAchievementStates:
-		a, err := economy.snapshot(l.pid())
+		a, err := l.ctr.economy.snapshot(l.pid())
 		if err != nil {
 			return l.taskReply(task, errUnhandled, nil)
 		}

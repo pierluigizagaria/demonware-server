@@ -108,14 +108,16 @@ func main() {
 	if err := writePubfiles(pubConfigPath, pubDir); err != nil {
 		diagnosticLogf("[D3 Pubfiles] %v", err)
 	}
-	loadWallets()
+	economy := &economyStore{initialBalance: func() int64 { return cfg.startBalance }}
+	economy.loadWallets(cfg.dataDir)
 	store, err := openCTRSQLite(filepath.Join(dataDir, ctrDB), cfg.unlockAll, trustID)
 	if err != nil {
 		log.Fatalf("[D3] CTR database: %v", err)
 	}
 	defer store.Close()
 	economy.backend, economy.unlockAll = store, cfg.unlockAll
-	ctrStats = store
+	store.initialBalance = func() int64 { return cfg.startBalance }
+	ctr := &ctrServices{economy: economy, stats: store, news: cfg.news}
 	presence := newPresenceStore(store)
 	ctrMM.onlinePIDs = presence.onlinePIDs
 	if cfg.unlockAll {
@@ -129,7 +131,7 @@ func main() {
 	go serveNAT(natPort)
 	startCTRRelay(cfg.relayLow, cfg.relayHigh, nextendoHost, presence.onlinePIDs)
 	go reapSessions()
-	startLobby(tickets, presence, &replyCounter{})
+	startLobby(tickets, presence, &replyCounter{}, ctr)
 
 	if err := serveAuth(platform, tickets, presence); err != nil {
 		log.Fatalf("[D3 Auth] stopped: %v", err)

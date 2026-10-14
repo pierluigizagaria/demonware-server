@@ -12,14 +12,14 @@ func capturedRace(at time.Time) achievementEvent {
 }
 func TestOriginalRaceRewardAndRestartRetry(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	e := capturedRace(now)
 	amount, err := s.awardRaces(42, []achievementEvent{e}, now)
 	if err != nil || amount != 27 {
 		t.Fatalf("original Jungle Boogie 2nd payout: %d %v", amount, err)
 	}
-	s = &economyStore{dir: s.dir}
+	s = &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: s.dir}
 	amount, err = s.awardRaces(42, []achievementEvent{e}, now)
 	if err != nil || amount != 0 {
 		t.Fatal("retry awarded twice")
@@ -30,7 +30,7 @@ func TestOriginalRaceRewardAndRestartRetry(t *testing.T) {
 	}
 }
 func TestOriginalDailyBonusExpiresByRaceTime(t *testing.T) {
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	for i, want := range []int64{135, 135, 27} {
 		e := capturedRace(now.Add(time.Duration(i) * time.Second))
@@ -47,7 +47,7 @@ func TestOriginalWeekendBoundaryAndGoldenBonus(t *testing.T) {
 		day, hour int
 		want      int64
 	}{{25, 16, 227}, {25, 17, 254}, {28, 7, 254}, {28, 8, 227}} {
-		s := &economyStore{dir: t.TempDir()}
+		s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 		now := time.Date(2026, 9, tc.day, tc.hour, 0, 0, 0, time.UTC)
 		e := capturedRace(now)
 		e.Values["RewardGoldenWumpa"] = 1
@@ -58,7 +58,7 @@ func TestOriginalWeekendBoundaryAndGoldenBonus(t *testing.T) {
 	}
 }
 func TestRewardRejectsUnknownTrackAndDuplicateEvents(t *testing.T) {
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	e := capturedRace(now)
 	e.Values["Track"] = 123
@@ -95,7 +95,7 @@ func TestRewardEventWireRoundTrip(t *testing.T) {
 
 func TestRaceReceiptIgnoresFieldsOutsideThePayout(t *testing.T) {
 	setStartBalance(t, 0)
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	e := capturedRace(now)
 	if amount, err := s.awardRaces(42, []achievementEvent{e}, now); err != nil || amount != 27 {

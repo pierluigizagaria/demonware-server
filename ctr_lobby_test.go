@@ -49,7 +49,7 @@ func TestCTRUmbrellaIssuedTicket(t *testing.T) {
 
 // A friend stays joinable while their host reconnects.
 func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
-	host := &lobbyConn{replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5551, player: &playerID{Username: "Mars", PID: 1800000119}}
+	host := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5551, player: &playerID{Username: "Mars", PID: 1800000119}}
 	defer dropSessionsOf(host.n)
 	info := &demonware.Writer{}
 	info.Blob(make([]byte, 67))
@@ -59,7 +59,7 @@ func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
 
 	dropSessionsOf(host.n) // the host loses its connection
 
-	friend := &lobbyConn{replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5552, player: &playerID{Username: "Collecting", PID: 1800003406}}
+	friend := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5552, player: &playerID{Username: "Collecting", PID: 1800003406}}
 	ask := &demonware.Writer{}
 	ask.Uint64(1800000119)
 	reply := friend.onFriendSessions(14, demonware.NewReader(ask.Bytes()), "ctr:Delta")
@@ -99,7 +99,7 @@ func TestCTRHTTPProxyReplyEncoding(t *testing.T) {
 
 // A connected friend's presence comes back; a departed player's does not.
 func TestCTRRichPresenceRoundTrip(t *testing.T) {
-	host := &lobbyConn{replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7771, player: &playerID{Username: "Mars", PID: 1800000119}}
+	host := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7771, player: &playerID{Username: "Mars", PID: 1800000119}}
 	testPresence.onlineMu.Lock()
 	testPresence.online[host.n] = host.player
 	testPresence.onlineMu.Unlock()
@@ -119,7 +119,7 @@ func TestCTRRichPresenceRoundTrip(t *testing.T) {
 		q.Uint32(1)
 		q.Uint64(id)
 		q.String("nintendo")
-		peer := &lobbyConn{replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7772, player: &playerID{Username: "Collecting", PID: 1800003406}}
+		peer := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7772, player: &playerID{Username: "Collecting", PID: 1800003406}}
 		return peer.onRichPresence(rpGetAndSubscribe, demonware.NewReader(q.Bytes()))
 	}
 	if n := binary.LittleEndian.Uint32(ask(1800000119)[17:21]); n != 1 {
@@ -131,7 +131,7 @@ func TestCTRRichPresenceRoundTrip(t *testing.T) {
 }
 
 func TestCTRSessionCreateDelete(t *testing.T) {
-	l := &lobbyConn{replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987654}
+	l := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987654}
 	defer dropSessionsOf(l.n)
 	info := &demonware.Writer{}
 	info.Blob(make([]byte, 67))
@@ -156,7 +156,7 @@ func TestCTRSessionCreateDelete(t *testing.T) {
 	}
 	args := &demonware.Writer{}
 	args.Blob(session.id[:])
-	other := &lobbyConn{replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987655}
+	other := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987655}
 	other.onMatchMakingContext(3, demonware.NewReader(args.Bytes()), "ctr:Delta")
 	sessionsMu.Lock()
 	_, exists := sessions[session.id]

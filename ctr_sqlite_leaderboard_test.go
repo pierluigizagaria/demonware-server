@@ -77,12 +77,12 @@ func TestSQLiteLeaderboardBatchIsAtomicAndDurable(t *testing.T) {
 }
 
 func TestSQLiteLeaderboardServesStatsTasks(t *testing.T) {
-	oldOnline, oldStore := testPresence.online, ctrStats
-	defer func() { testPresence.online = oldOnline; ctrStats = oldStore }()
+	oldOnline, oldStore := testPresence.online, testCTR.stats
+	defer func() { testPresence.online = oldOnline; testCTR.stats = oldStore }()
 	testPresence.online = map[uint64]*playerID{9: {PID: 12, Username: "test", Title: 5760}}
-	ctrStats = openTestLeaderboard(t, filepath.Join(t.TempDir(), ctrDB))
-	l := &lobbyConn{replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 9, player: testPresence.online[9]}
-	if err := ctrStats.write([]ctrStatWrite{{ctrStat: ctrStat{Board: 1001, PID: 12, Score: 400, Name: "A"}, Operation: 4}, {ctrStat: ctrStat{Board: 1001, PID: 13, Score: 500, Name: "B"}, Operation: 4}}); err != nil {
+	testCTR.stats = openTestLeaderboard(t, filepath.Join(t.TempDir(), ctrDB))
+	l := &lobbyConn{ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 9, player: testPresence.online[9]}
+	if err := testCTR.stats.write([]ctrStatWrite{{ctrStat: ctrStat{Board: 1001, PID: 12, Score: 400, Name: "A"}, Operation: 4}, {ctrStat: ctrStat{Board: 1001, PID: 13, Score: 500, Name: "B"}, Operation: 4}}); err != nil {
 		t.Fatal(err)
 	}
 	w := &demonware.Writer{}

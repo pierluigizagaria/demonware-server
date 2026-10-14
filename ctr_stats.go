@@ -29,11 +29,10 @@ type ctrStatWrite struct {
 	Operation byte
 }
 type ctrStatsStore struct {
-	mu  sync.Mutex
-	dir string
+	fallbackDir func() string
+	mu          sync.Mutex
+	dir         string
 }
-
-var ctrStats leaderboardStore = &ctrStatsStore{}
 
 func timeBoard(board uint32) bool { return board > 1000 && board < 1159 }
 
@@ -81,8 +80,8 @@ func parseStatWrites(r *demonware.Reader, pid uint64, name string) ([]ctrStatWri
 }
 func (s *ctrStatsStore) path() string {
 	d := s.dir
-	if d == "" {
-		d = economy.dir
+	if d == "" && s.fallbackDir != nil {
+		d = s.fallbackDir()
 	}
 	return filepath.Join(d, "ctr-leaderboards-v1.json")
 }
@@ -216,7 +215,7 @@ func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
 		if err != nil {
 			return fail(err)
 		}
-		if err = ctrStats.write(writes); err != nil {
+		if err = l.ctr.stats.write(writes); err != nil {
 			return fail(err)
 		}
 		l.logf("CTR stats saved pid=%d records=%d", pid, len(writes))
@@ -264,7 +263,7 @@ func (l *lobbyConn) onCTRStats(task byte, r *demonware.Reader) []byte {
 	if e != nil || cols != 0 || !statsEnd(r) {
 		return fail(fmt.Errorf("unsupported column selection"))
 	}
-	rows, total, err := readLeaderboard(ctrStats, task, board, start, limit, ids)
+	rows, total, err := readLeaderboard(l.ctr.stats, task, board, start, limit, ids)
 	if err != nil {
 		return fail(err)
 	}

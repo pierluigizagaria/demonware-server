@@ -26,7 +26,6 @@ import (
 var (
 	proxyProtocol  bool   // NEXTENDO_PROXY_PROTOCOL
 	signingKeyFile string // CTR_AUTH_SIGNING_KEY
-	startBalance   int64  // CTR_START_BALANCE
 	relayPIDs      string // CTR_RELAY_PIDS
 	dashPort       = 8093
 	dashToken      string
@@ -170,9 +169,8 @@ func applyConfig(c serverConfig) {
 	proxyProtocol, certFile, keyFile = c.proxyProtocol, c.certFile, c.keyFile
 	dashPort, dashToken, sniHost = c.dashPort, c.dashToken, c.sniHost
 	pubConfigPath, pubDir, dumpRoot, verbose, riftDir = c.pubfilesConfig, c.pubfilesDir, c.dumps, c.verbose, c.riftData
-	signingKeyFile, dataDir, startBalance, migrateEnabled = c.signingKey, c.dataDir, c.startBalance, c.migrate
+	signingKeyFile, dataDir, migrateEnabled = c.signingKey, c.dataDir, c.migrate
 	relayPIDs, redactLogs = c.relayPIDs, c.redactLogs
-	ctrNews = c.news
 }
 
 type envReader struct {

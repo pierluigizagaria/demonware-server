@@ -17,11 +17,11 @@ const ps4BalancesRequest = "5003f517080e0000000a0a6f6374616e655f70736e100300"
 
 func marketplaceTestStore(t *testing.T) *economyStore {
 	t.Helper()
-	old := economy
-	economy = &economyStore{dir: t.TempDir()}
-	t.Cleanup(func() { economy = old })
+	old := testCTR.economy
+	testCTR.economy = &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
+	t.Cleanup(func() { testCTR.economy = old })
 	setStartBalance(t, 10000)
-	return economy
+	return testCTR.economy
 }
 
 func marketplaceHex(t *testing.T, s string) []byte {
@@ -247,7 +247,7 @@ func TestPlatformMarketplacePurchaseInventoryAndBalancePush(t *testing.T) {
 				t.Fatal("wrong balance push owner or amount")
 			}
 			// Reload through a fresh store to prove the shared purchase was persisted.
-			a, err := (&economyStore{dir: s.dir}).snapshot(l.pid())
+			a, err := (&economyStore{initialBalance: func() int64 { return testStartBalance }, dir: s.dir}).snapshot(l.pid())
 			if err != nil || a.Balances[10] != wantBalance || !ownsSKU(a, economyCatalog[200597]) {
 				t.Fatal("purchase debit/grant not persisted")
 			}

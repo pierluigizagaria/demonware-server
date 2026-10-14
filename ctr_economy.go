@@ -44,13 +44,18 @@ type economyAccount struct {
 }
 
 type economyStore struct {
-	mu        sync.Mutex
-	dir       string
-	unlockAll bool
-	backend   economyBackend
+	initialBalance func() int64
+	mu             sync.Mutex
+	dir            string
+	unlockAll      bool
+	backend        economyBackend
 }
 
-var economy = &economyStore{}
+type ctrServices struct {
+	economy *economyStore
+	stats   leaderboardStore
+	news    ctrNewsConfig
+}
 
 func readEconomyJSON(path string, value any) error {
 	b, err := os.ReadFile(path)
@@ -88,7 +93,7 @@ func (s *economyStore) load(pid uint64) (*economyAccount, error) {
 		return nil, fmt.Errorf("null legacy wallet")
 	}
 	if _, ok := a.Balances[wumpaCurrency]; !ok {
-		a.Balances[wumpaCurrency] = startingBalance()
+		a.Balances[wumpaCurrency] = s.startingBalance()
 	}
 	var skus []uint32
 	if err := readEconomyJSON(base+".items.json", &skus); err != nil && !os.IsNotExist(err) {
@@ -238,4 +243,11 @@ func inventoryPage(a *economyAccount, page, size uint32) []uint32 {
 		end = uint64(len(items))
 	}
 	return items[start:end]
+}
+
+func (s *economyStore) startingBalance() int64 {
+	if s.initialBalance != nil {
+		return s.initialBalance()
+	}
+	return 0
 }

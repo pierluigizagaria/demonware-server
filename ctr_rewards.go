@@ -49,7 +49,7 @@ func balanceUpdatePayload(pid uint64, amount int64) []byte {
 	return demonware.AppendBytesField(nil, 1, entry)
 }
 func (l *lobbyConn) pushCurrentBalance() {
-	a, err := economy.snapshot(l.pid())
+	a, err := l.ctr.economy.snapshot(l.pid())
 	if err != nil {
 		l.logf("CTR balance push read: %v", err)
 		return

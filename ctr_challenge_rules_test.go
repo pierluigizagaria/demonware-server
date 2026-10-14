@@ -44,7 +44,7 @@ func TestOriginalChallengeCatalog(t *testing.T) {
 }
 func TestDriftThresholdRewardAndRestart(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	r := ruleForTest(t, "drift_for_X_seconds_consecutively")
 	now := ruleTime(r)
 	e := ruleEvent(r, now)
@@ -56,7 +56,7 @@ func TestDriftThresholdRewardAndRestart(t *testing.T) {
 	if c, u, err := s.awardChallenges(42, []achievementEvent{e}, now); err != nil || c != 25 || len(u) == 0 {
 		t.Fatalf("drift not rewarded %d %v", c, err)
 	}
-	s = &economyStore{dir: s.dir}
+	s = &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: s.dir}
 	if c, u, err := s.awardChallenges(42, []achievementEvent{e}, now); err != nil || c != 0 || len(u) != 0 {
 		t.Fatalf("duplicate completion %d %v", c, err)
 	}
@@ -67,7 +67,7 @@ func TestDriftThresholdRewardAndRestart(t *testing.T) {
 	}
 }
 func TestWeeklyProgressCountsOccurrencesAndDeduplicatesReplay(t *testing.T) {
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	r := ruleForTest(t, "use_juiced_up_powerups_T_times")
 	now := ruleTime(r)
 	e := ruleEvent(r, now)
@@ -76,7 +76,7 @@ func TestWeeklyProgressCountsOccurrencesAndDeduplicatesReplay(t *testing.T) {
 	if err != nil || c != 0 || len(u) == 0 {
 		t.Fatalf("partial progress %d %v", c, err)
 	}
-	s = &economyStore{dir: s.dir}
+	s = &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: s.dir}
 	c, u, err = s.awardChallenges(42, batch, now)
 	if err != nil || c != 0 || len(u) != 0 {
 		t.Fatal("replay advanced")
@@ -127,7 +127,7 @@ func TestChallengeFiltersAndProTimeDirection(t *testing.T) {
 	}
 }
 func TestBattleChallengeRequiresDistinctModes(t *testing.T) {
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	r := ruleForTest(t, "win_game_in_T_different_battles_TRACKNAME")
 	now := ruleTime(r)
 	e := ruleEvent(r, now)
@@ -141,7 +141,7 @@ func TestBattleChallengeRequiresDistinctModes(t *testing.T) {
 	}
 }
 func TestChallengePeriodAndExistingCompletion(t *testing.T) {
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	r := ruleForTest(t, "visit_pit_stop")
 	now := ruleTime(r)
 	e := ruleEvent(r, now)
@@ -159,7 +159,7 @@ func TestChallengePeriodAndExistingCompletion(t *testing.T) {
 }
 
 func TestChallengeReceiptIgnoresFieldsOutsideTheRule(t *testing.T) {
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	r := ruleForTest(t, "use_juiced_up_powerups_T_times")
 	now := ruleTime(r)
 	if _, u, err := s.awardChallenges(42, []achievementEvent{ruleEvent(r, now)}, now); err != nil || len(u) == 0 {
@@ -174,7 +174,7 @@ func TestChallengeReceiptIgnoresFieldsOutsideTheRule(t *testing.T) {
 }
 
 func TestInvalidBattleModeRecordsNothing(t *testing.T) {
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	r := ruleForTest(t, battleChallenge)
 	now := ruleTime(r)
 	e := ruleEvent(r, now)

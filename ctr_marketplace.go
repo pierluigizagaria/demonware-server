@@ -42,11 +42,9 @@ const (
 // Wumpa Coins, Nitro Boost, Free Nitro Boost, in the original catalog order.
 func currencyIDs() []uint64 { return []uint64{10, 11, 12} }
 
-func startingBalance() int64 { return startBalance }
-
-func loadWallets() {
-	economy.dir = dataDir
-	if err := os.MkdirAll(economy.dir, 0755); err != nil {
+func (s *economyStore) loadWallets(dir string) {
+	s.dir = dir
+	if err := os.MkdirAll(s.dir, 0755); err != nil {
 		panic(err)
 	}
 }
@@ -77,7 +75,7 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 		if ctx != marketplaceContext || !validPS4BalancesRequest(payload, ctx, max) {
 			return l.taskReply(task, errUnhandled, nil)
 		}
-		a, err := economy.snapshot(l.pid())
+		a, err := l.ctr.economy.snapshot(l.pid())
 		if err != nil {
 			l.logf("CTR economy read failed: %v", err)
 			return l.taskReply(task, errUnhandled, nil)
@@ -108,7 +106,7 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 		if err != nil || size == 0 || size > 4096 {
 			return l.taskReply(task, errUnhandled, nil)
 		}
-		a, err := economy.inventory(l.pid())
+		a, err := l.ctr.economy.inventory(l.pid())
 		if err != nil {
 			l.logf("CTR economy inventory failed: %v", err)
 			return l.taskReply(task, errUnhandled, nil)
@@ -126,7 +124,7 @@ func (l *lobbyConn) onMarketplace(task byte, payload []byte) []byte {
 		if !ok {
 			return l.taskReply(task, errUnhandled, nil)
 		}
-		debit, err := economy.purchase(l.pid(), skus)
+		debit, err := l.ctr.economy.purchase(l.pid(), skus)
 		if err != nil {
 			l.logf("CTR pitstop purchase rejected: %v", err)
 			return l.taskReply(task, errUnhandled, nil)

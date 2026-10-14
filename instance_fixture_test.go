@@ -123,3 +123,46 @@ func TestInstanceReplyCountersAreIsolated(t *testing.T) {
 		t.Fatal("transaction counters crossed instance boundary")
 	}
 }
+
+var testStartBalance int64
+var testCTR = &ctrServices{economy: &economyStore{initialBalance: func() int64 { return testStartBalance }}, stats: &ctrStatsStore{}}
+
+func testLoadWallets() { testCTR.economy.loadWallets(dataDir) }
+
+func init() {
+	testCTR.stats.(*ctrStatsStore).fallbackDir = func() string { return testCTR.economy.dir }
+}
+
+func TestInstanceEconomyAndLeaderboardAreIsolated(t *testing.T) {
+	a, aDB := newTestEconomy(t, false)
+	b, bDB := newTestEconomy(t, false)
+	aDB.initialBalance = func() int64 { return 10000 }
+	bDB.initialBalance = func() int64 { return 20000 }
+	first, _ := sharedPS4Lobby()
+	second, _ := sharedPS4Lobby()
+	first.ctr = &ctrServices{economy: a, stats: aDB}
+	second.ctr = &ctrServices{economy: b, stats: bDB}
+	first.c = &architectureWire{}
+	second.c = &architectureWire{}
+	for _, l := range []*lobbyConn{first, second} {
+		frames := architectureCall(t, l, l.c.(*architectureWire), marketplaceHex(t, ps4BalancesRequest))
+		payload, _ := hex.DecodeString(frames[0].Payload)
+		want := getPlayerBalancesResponse(map[uint64]int64{10: l.ctr.economy.backend.(*ctrSQLite).startingBalance()}, 3)
+		if !bytes.Equal(structBodyOf(t, payload), want) {
+			t.Fatal("balance crossed instance boundary")
+		}
+	}
+	architectureCall(t, first, first.c.(*architectureWire), marketplaceHex(t, ps4PurchaseRequest))
+	aa, errA := a.snapshot(first.pid())
+	bb, errB := b.snapshot(second.pid())
+	if errA != nil || errB != nil || aa.Balances[10] >= 10000 || bb.Balances[10] != 20000 || len(bb.Items) != 0 {
+		t.Fatal("purchase crossed instance boundary")
+	}
+	if err := aDB.write([]ctrStatWrite{{ctrStat: ctrStat{Board: 89, PID: first.pid(), Score: 7}}}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := bDB.read(89)
+	if err != nil || len(rows) != 0 {
+		t.Fatal("leaderboard crossed instance boundary")
+	}
+}

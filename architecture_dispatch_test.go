@@ -88,7 +88,7 @@ type architectureSnapshot struct {
 func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *ctrSQLite) {
 	t.Helper()
 	oldSessions, oldOnline, oldUserData, oldRich := sessions, testPresence.online, testPresence.userData, testPresence.rich
-	oldEconomy, oldStats, oldNames, oldNews := economy, ctrStats, testPresence.playerNames, ctrNews
+	oldEconomy, oldStats, oldNames, oldNews := testCTR.economy, testCTR.stats, testPresence.playerNames, testCTR.news
 	oldWaiting, oldPending, oldRooms := ctrMM.waiting, ctrMM.pending, ctrMM.rooms
 	oldTx, oldIDs := testReplies.transactions.Load(), ctrIDs.Load()
 	sessions, testPresence.online, testPresence.userData, testPresence.rich = map[[8]byte]*mmSession{}, map[uint64]*playerID{}, map[string][]byte{}, map[uint64]richPresence{}
@@ -96,7 +96,7 @@ func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *ctrSQLi
 	testReplies.transactions.Store(0)
 	ctrIDs.Store(0)
 	e, db := newTestEconomy(t, false)
-	economy, ctrStats, testPresence.playerNames, ctrNews = e, db, db, ctrNewsConfig{}
+	testCTR.economy, testCTR.stats, testPresence.playerNames, testCTR.news = e, db, db, ctrNewsConfig{}
 	setStartBalance(t, 10000)
 	l, _ := sharedPS4Lobby()
 	w := &architectureWire{}
@@ -105,7 +105,7 @@ func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *ctrSQLi
 	testPresence.online[l.n] = l.player
 	t.Cleanup(func() {
 		sessions, testPresence.online, testPresence.userData, testPresence.rich = oldSessions, oldOnline, oldUserData, oldRich
-		economy, ctrStats, testPresence.playerNames, ctrNews = oldEconomy, oldStats, oldNames, oldNews
+		testCTR.economy, testCTR.stats, testPresence.playerNames, testCTR.news = oldEconomy, oldStats, oldNames, oldNews
 		ctrMM.waiting, ctrMM.pending, ctrMM.rooms = oldWaiting, oldPending, oldRooms
 		testReplies.transactions.Store(oldTx)
 		ctrIDs.Store(oldIDs)

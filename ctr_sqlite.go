@@ -100,9 +100,10 @@ const replayRetention = 9 * 24 * time.Hour
 // ctrSQLite owns the only connection pool for this instance's economy, stats
 // and player names.
 type ctrSQLite struct {
-	clock func() time.Time
-	db    *sql.DB
-	lock  *os.File
+	initialBalance func() int64
+	clock          func() time.Time
+	db             *sql.DB
+	lock           *os.File
 }
 
 // Economy saves read and write in separate transactions under a process mutex,
@@ -302,8 +303,8 @@ CREATE TABLE player_names (
 CREATE INDEX player_names_lookup ON player_names(name_key, recorded_at DESC);
 `
 
-func newSQLiteAccount() *economyAccount {
-	return &economyAccount{Version: 2, Balances: map[uint64]int64{wumpaCurrency: startingBalance()}, Items: map[uint32]bool{}}
+func newSQLiteAccount(balance int64) *economyAccount {
+	return &economyAccount{Version: 2, Balances: map[uint64]int64{wumpaCurrency: balance}, Items: map[uint32]bool{}}
 }
 
 // Mutating operations receive an unsaved new account, so refusal cannot create
@@ -315,7 +316,7 @@ func (s *ctrSQLite) load(pid uint64, create bool) (*economyAccount, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	a, exists, err := readSQLiteAccount(tx, pid, s.now)
+	a, exists, err := readSQLiteAccount(tx, pid, s.now, s.startingBalance)
 	if err != nil {
 		return nil, err
 	}
@@ -344,11 +345,11 @@ func accountRows(tx *sql.Tx, query string, scan func(*sql.Rows) error, args ...a
 	return rows.Err()
 }
 
-func readSQLiteAccount(tx *sql.Tx, pid uint64, clock func() time.Time) (*economyAccount, bool, error) {
+func readSQLiteAccount(tx *sql.Tx, pid uint64, clock func() time.Time, balance func() int64) (*economyAccount, bool, error) {
 	var found int
 	err := tx.QueryRow(`SELECT 1 FROM accounts WHERE pid = ?`, int64(pid)).Scan(&found)
 	if err == sql.ErrNoRows {
-		return newSQLiteAccount(), false, nil
+		return newSQLiteAccount(balance()), false, nil
 	}
 	if err != nil {
 		return nil, false, err
@@ -448,7 +449,7 @@ func (s *ctrSQLite) save(pid uint64, a *economyAccount, change economyChange) er
 		return err
 	}
 	defer tx.Rollback()
-	before, exists, err := readSQLiteAccount(tx, pid, s.now)
+	before, exists, err := readSQLiteAccount(tx, pid, s.now, s.startingBalance)
 	if err != nil {
 		return err
 	}
@@ -823,4 +824,11 @@ func (s *ctrSQLite) now() time.Time {
 		return s.clock()
 	}
 	return time.Now()
+}
+
+func (s *ctrSQLite) startingBalance() int64 {
+	if s.initialBalance != nil {
+		return s.initialBalance()
+	}
+	return 0
 }

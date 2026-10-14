@@ -28,8 +28,6 @@ type ctrNewsConfig struct {
 	languages map[string]ctrNewsMessage
 }
 
-var ctrNews ctrNewsConfig
-
 func newCTRNewsMessage(text string) (ctrNewsMessage, error) {
 	if !utf8.ValidString(text) {
 		return ctrNewsMessage{}, fmt.Errorf("expected valid UTF-8")
@@ -99,7 +97,7 @@ func (l *lobbyConn) onMarketingComms(task byte, r *demonware.Reader) []byte {
 		if len(r.Remaining()) != 1 || r.Remaining()[0] != 0 {
 			return l.taskReply(task, errUnhandled, nil)
 		}
-		msg := ctrNews.message(language)
+		msg := l.ctr.news.message(language)
 		return l.taskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, loc := range locations {
 				w.Uint32(loc.location)

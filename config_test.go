@@ -11,9 +11,9 @@ import (
 
 func setStartBalance(t *testing.T, n int64) {
 	t.Helper()
-	old := startBalance
-	startBalance = n
-	t.Cleanup(func() { startBalance = old })
+	old := testStartBalance
+	testStartBalance = n
+	t.Cleanup(func() { testStartBalance = old })
 }
 
 func setRelayPIDs(t *testing.T, list string) {

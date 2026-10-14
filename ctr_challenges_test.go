@@ -12,14 +12,14 @@ func TestWindowShoppingOriginalScheduleAndReward(t *testing.T) {
 	if !active || state.Target != 1 || state.ID != 11 || windowShopping.Reward != 25 {
 		t.Fatalf("wrong original rule: %+v %v", state, active)
 	}
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	setStartBalance(t, 10000)
 	e := achievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
 	credit, update, err := s.awardWindowShopping(42, []achievementEvent{e, e}, now)
 	if err != nil || credit != 25 || len(update) == 0 {
 		t.Fatalf("award %d %x %v", credit, update, err)
 	}
-	s = &economyStore{dir: s.dir}
+	s = &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: s.dir}
 	credit, update, err = s.awardWindowShopping(42, []achievementEvent{e}, now)
 	if err != nil || credit != 0 || len(update) != 0 {
 		t.Fatalf("retry %d %v", credit, err)
@@ -38,7 +38,7 @@ func TestWindowShoppingOriginalScheduleAndReward(t *testing.T) {
 }
 
 func TestWindowShoppingInactiveAndStaleEvents(t *testing.T) {
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	// Original cycle day 2 has no Window Shopping challenge.
 	now := time.Unix(windowShopping.CycleStart, 0).Add(2 * 24 * time.Hour)
 	e := achievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
@@ -55,7 +55,7 @@ func TestWindowShoppingInactiveAndStaleEvents(t *testing.T) {
 
 func TestWindowShoppingConcurrentVisitsAwardOnce(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	now := time.Date(2026, 9, 23, 3, 0, 0, 0, time.UTC)
 	e := achievementEvent{Name: "visit_pit_stop", Timestamp: uint64(now.Unix()), Values: map[string]uint64{"value": 1}}
 	var wg sync.WaitGroup

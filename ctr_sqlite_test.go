@@ -22,6 +22,7 @@ func openTestCTR(t *testing.T, path string, unlockAll bool) *ctrSQLite {
 	if err != nil {
 		t.Fatal(err)
 	}
+	db.initialBalance = func() int64 { return testStartBalance }
 	t.Cleanup(func() { db.Close() })
 	return db
 }
@@ -30,7 +31,7 @@ func newTestEconomy(t *testing.T, unlockAll bool) (*economyStore, *ctrSQLite) {
 	t.Helper()
 	dir := t.TempDir()
 	db := openTestCTR(t, filepath.Join(dir, ctrDB), unlockAll)
-	return &economyStore{dir: dir, backend: db, unlockAll: unlockAll}, db
+	return &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: dir, backend: db, unlockAll: unlockAll}, db
 }
 
 func sqliteCount(t *testing.T, db *ctrSQLite, table string) int {
@@ -81,7 +82,7 @@ type economyResult struct {
 // every step. JSON encoding normalizes nil/empty maps omitted by the reference.
 func TestEconomyStoresAgree(t *testing.T) {
 	setStartBalance(t, 20000)
-	reference := &economyStore{dir: t.TempDir()}
+	reference := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	s, db := newTestEconomy(t, false)
 	const pid = uint64(math.MaxUint64)
 	type step struct {
@@ -173,7 +174,7 @@ func TestEconomyStoresAgree(t *testing.T) {
 			}
 			db = openTestCTR(parent, filepath.Join(s.dir, ctrDB), false)
 			s.backend = db
-			reference = &economyStore{dir: reference.dir}
+			reference = &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: reference.dir}
 			if got := accountJSON(t, s, pid); !bytes.Equal(got, wantState) {
 				t.Fatalf("reopen: %s", got)
 			}

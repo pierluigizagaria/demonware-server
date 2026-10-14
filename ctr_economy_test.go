@@ -12,13 +12,13 @@ import (
 
 func TestEconomyPurchaseRestartAndRetry(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	sku := economyCatalog[200085]
 	debit, err := s.purchase(42, []uint32{200085})
 	if err != nil || debit != sku.Price {
 		t.Fatalf("purchase %d %v", debit, err)
 	}
-	s = &economyStore{dir: s.dir}
+	s = &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: s.dir}
 	a, err := s.snapshot(42)
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +32,7 @@ func TestEconomyPurchaseRestartAndRetry(t *testing.T) {
 	}
 }
 func TestEconomyLegacyMigrationPreservesBalanceAndOwnership(t *testing.T) {
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	os.WriteFile(filepath.Join(s.dir, "42.json"), []byte(`{"10":9876}`), 0600)
 	os.WriteFile(filepath.Join(s.dir, "42.items.json"), []byte(`[200085]`), 0600)
 	a, err := s.snapshot(42)
@@ -48,7 +48,7 @@ func TestEconomyLegacyMigrationPreservesBalanceAndOwnership(t *testing.T) {
 }
 func TestEconomyNoPartialPurchase(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	if _, err := s.purchase(42, []uint32{200085, 4294967295}); err == nil {
 		t.Fatal("unknown SKU accepted")
 	}
@@ -59,7 +59,7 @@ func TestEconomyNoPartialPurchase(t *testing.T) {
 }
 func TestEconomyConcurrentRetry(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	var wg sync.WaitGroup
 	for i := 0; i < 12; i++ {
 		wg.Add(1)
@@ -77,7 +77,7 @@ func TestEconomyConcurrentRetry(t *testing.T) {
 	}
 }
 func TestEconomyCorruptWalletFailsClosed(t *testing.T) {
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	os.WriteFile(filepath.Join(s.dir, "42.json"), []byte(`broken`), 0600)
 	if _, err := s.purchase(42, []uint32{200085}); err == nil {
 		t.Fatal("corrupt wallet reset")
@@ -85,7 +85,7 @@ func TestEconomyCorruptWalletFailsClosed(t *testing.T) {
 }
 func TestEconomyWriteFailureDoesNotGrant(t *testing.T) {
 	setStartBalance(t, 10000)
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	a, _ := s.snapshot(42)
 	// A directory at the final path forces rename to fail on Windows and Linux.
 	os.Remove(s.accountPath(42))
@@ -142,7 +142,7 @@ func TestInventoryPagesAreOneBased(t *testing.T) {
 }
 func TestEconomyInsufficientFunds(t *testing.T) {
 	setStartBalance(t, 0)
-	s := &economyStore{dir: t.TempDir()}
+	s := &economyStore{initialBalance: func() int64 { return testStartBalance }, dir: t.TempDir()}
 	if _, err := s.purchase(42, []uint32{200085}); err == nil {
 		t.Fatal("overspend accepted")
 	}

@@ -100,20 +100,14 @@ func TestCTRNewsConfigKnownOverridesOnly(t *testing.T) {
 }
 
 func TestCTRNewsConfigAppliedPerInstance(t *testing.T) {
-	before, err := loadConfig(lookupFrom(nil), nil, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	before.news = ctrNews
-	t.Cleanup(func() { applyConfig(before) })
-	l, wire := sharedPS4Lobby()
 	request := newsFetch("ctr", "en", [2]uint32{1, 1})
 	for _, tc := range []struct{ mode, text string }{{"0", "Normal news"}, {"1", "Other news"}, {"0", "Other news"}} {
 		c, err := loadConfig(lookupFrom(map[string]string{"CTR_NEWS": tc.text, "CTR_UNLOCK_ALL": tc.mode}), nil, false)
 		if err != nil {
 			t.Fatal(err)
 		}
-		applyConfig(c)
+		l, wire := sharedPS4Lobby()
+		l.ctr = &ctrServices{news: c.news}
 		r := newsReply(t, sharedTask(t, l, wire, request), 5, 0, 1)
 		newsLocation(t, r, 1, 1)
 		newsMessage(t, r, "en", tc.text)
