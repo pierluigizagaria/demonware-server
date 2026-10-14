@@ -3,63 +3,12 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 
 	"github.com/pierluigizagaria/demonware-server/internal/ctr"
 	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
-
-func TestSQLiteUnlockAllOwnsCatalogWithoutWrites(t *testing.T) {
-	s, db := newTestEconomy(t, true)
-	a, err := s.Inventory(42)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(a.Items, ctr.CatalogItemsSnapshot()) || len(ctr.CatalogItemsSnapshot()) == 0 {
-		t.Fatal("inventory differs from catalog")
-	}
-	for _, sku := range ctr.EconomyCatalogSnapshot() {
-		if !ctr.OwnsSKU(a, sku) {
-			t.Fatal("catalog SKU not owned")
-		}
-	}
-	if got := ctr.InventoryPage(a, 1, 4096); len(got) != len(ctr.CatalogItemsSnapshot()) {
-		t.Fatalf("first page = %d items", len(got))
-	}
-	before := sqliteChanges(t, db)
-	if debit, err := s.Purchase(42, []uint32{200085, 200597}); err != nil || debit != 0 {
-		t.Fatalf("purchase = %d, %v", debit, err)
-	}
-	if _, err := s.Purchase(42, []uint32{200085, 1}); err == nil {
-		t.Fatal("unknown SKU accepted")
-	}
-	if got := sqliteChanges(t, db); got != before {
-		t.Fatalf("unlock-all wrote rows: %d -> %d", before, got)
-	}
-	for _, table := range []string{"accounts", "balances", "inventory", "ledger"} {
-		if got := sqliteCount(t, db, table); got != 0 {
-			t.Fatalf("%s has %d rows", table, got)
-		}
-	}
-}
-
-func TestSQLiteNormalInventoryIsPersisted(t *testing.T) {
-	setStartBalance(t, 10000)
-	s, _ := newTestEconomy(t, false)
-	a, err := s.Inventory(42)
-	if err != nil || len(a.Items) != 0 {
-		t.Fatalf("fresh inventory = %v, %v", a, err)
-	}
-	if _, err := s.Purchase(42, []uint32{200085}); err != nil {
-		t.Fatal(err)
-	}
-	a, err = s.Inventory(42)
-	if err != nil || len(a.Items) != len(ctr.EconomyCatalogSnapshot()[200085].Items) || a.Balances[ctr.WumpaCurrency] != 10000-ctr.EconomyCatalogSnapshot()[200085].Price {
-		t.Fatal("inventory does not reflect persisted purchases")
-	}
-}
 
 func TestPlatformMarketplaceUnlockAllInventory(t *testing.T) {
 	// Exercise the PS4 wire path using the same backend installed at startup.

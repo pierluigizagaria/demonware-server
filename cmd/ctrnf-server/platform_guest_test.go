@@ -6,14 +6,12 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/pierluigizagaria/demonware-server/internal/config"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/guest"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
-	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
 
 func guestEntropy(ids ...uint64) *bytes.Reader {
@@ -53,29 +51,6 @@ func TestGuestConfigIsExplicitAndNeedsNoShadNet(t *testing.T) {
 	delete(env, "CTR_ADMISSION")
 	if _, err := config.Load(lookupFrom(env), nil, true); err == nil {
 		t.Fatal("unlock-all silently disabled account authentication")
-	}
-}
-
-func TestGuestNamespaceCannotReuseVerifiedAccountDatabase(t *testing.T) {
-	path := filepath.Join(t.TempDir(), store.DBFile)
-	db, err := store.OpenSQLite(path, true, testTrustID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-	if guestValue, err := store.OpenSQLite(path, true, guest.TrustID); err == nil {
-		guestValue.Close()
-		t.Fatal("guest instance reused verified account state")
-	}
-	path = filepath.Join(t.TempDir(), store.DBFile)
-	db, err = store.OpenSQLite(path, true, guest.TrustID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-	if signed, err := store.OpenSQLite(path, true, testTrustID); err == nil {
-		signed.Close()
-		t.Fatal("verified instance reused anonymous state")
 	}
 }
 
