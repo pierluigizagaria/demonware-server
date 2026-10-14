@@ -13,6 +13,7 @@ type drainPlan struct {
 	admission     []func()
 	stop          []func()
 	wait          []func() error
+	closePlatform func() error
 	closeDatabase func() error
 }
 
@@ -26,6 +27,11 @@ func (p drainPlan) run() error {
 	var errs []error
 	for _, wait := range p.wait {
 		errs = append(errs, wait())
+	}
+	// Admitted HTTP handlers may still need a JWKS lookup. Keep their provider
+	// available until they finish, then cancel/join any background refresh.
+	if p.closePlatform != nil {
+		errs = append(errs, p.closePlatform())
 	}
 	// CtrSQLite.Close closes its pool before releasing the OS instance lock.
 	if p.closeDatabase != nil {

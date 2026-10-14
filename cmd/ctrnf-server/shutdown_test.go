@@ -21,12 +21,13 @@ func TestDrainOrdersAdmissionWorkersAndDatabase(t *testing.T) {
 		admission:     []func(){func() { order = append(order, "admission") }},
 		stop:          []func(){func() { order = append(order, "stop") }},
 		wait:          []func() error{func() error { order = append(order, "callback"); return waitErr }, func() error { order = append(order, "workers"); return nil }},
+		closePlatform: func() error { order = append(order, "platform"); return nil },
 		closeDatabase: func() error { order = append(order, "database"); return nil },
 	}
 	if err := drainWithin(time.Second, p); !errors.Is(err, waitErr) {
 		t.Fatalf("lost worker error: %v", err)
 	}
-	if !reflect.DeepEqual(order, []string{"admission", "stop", "callback", "workers", "database"}) {
+	if !reflect.DeepEqual(order, []string{"admission", "stop", "callback", "workers", "platform", "database"}) {
 		t.Fatalf("order: %v", order)
 	}
 }

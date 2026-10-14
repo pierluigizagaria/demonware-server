@@ -64,7 +64,7 @@ func runServer(ctx context.Context, cfg config.ServerConfig) error {
 		return fmt.Errorf("publisher admission: %w", err)
 	}
 	if closer, ok := platform.(io.Closer); ok {
-		resources.wait = append(resources.wait, closer.Close)
+		resources.closePlatform = closer.Close
 	}
 	log.Printf("[server] admission: %s", cfg.Admission)
 	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
