@@ -245,3 +245,62 @@ func testApplyConfig(c serverConfig) {
 	testOptions.migrateEnabled, testOptions.publicHost = c.migrate, c.publicIP
 	testRelay.bindAddr, testRelay.pids = c.bindAddr, c.relayPIDs
 }
+
+func TestComposedInstancesKeepEqualIdentitiesIndependent(t *testing.T) {
+	var instances []*serverInstance
+	var lobbies []*lobbyConn
+	var wires []*architectureWire
+	for n, text := range []string{"first", "second"} {
+		cfg, err := loadConfig(lookupFrom(map[string]string{"CTR_NEWS": text, "CTR_NEWS_IT": text}), nil, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.dataDir = t.TempDir()
+		cfg.startBalance = int64((n + 1) * 10000)
+		database := openTestCTR(t, filepath.Join(cfg.dataDir, ctrDB), false)
+		instance := newInstance(cfg, database)
+		// Mutating the caller's copy cannot rewrite the instance configuration.
+		cfg.news.languages["it"] = ctrNewsMessage{}
+		w := &architectureWire{}
+		l := instance.lobby.newConn(w, "")
+		fixture, _ := sharedPS4Lobby()
+		l.keys, l.player = fixture.keys, fixture.player
+		l.player.Username = text
+		now := time.Now()
+		ticket := psnTicket(now)
+		instance.tickets.rememberTicket(ticket, *l.player, now, ticketWindow)
+		if err := instance.presence.rememberPlayerName(*l.player, now); err != nil {
+			t.Fatal(err)
+		}
+		instance.presence.online[l.n] = l.player
+		frames := architectureCall(t, l, w, newsFetch("ctr", "it", [2]uint32{1, 1}))
+		payload, _ := hex.DecodeString(frames[0].Payload)
+		r := newsReply(t, payload, 5, 0, 1)
+		newsLocation(t, r, 1, 1)
+		newsMessage(t, r, "it", text)
+		newsEnd(t, r)
+		instances = append(instances, instance)
+		lobbies = append(lobbies, l)
+		wires = append(wires, w)
+	}
+	if lobbies[0].n != lobbies[1].n || lobbies[0].pid() != lobbies[1].pid() {
+		t.Fatal("fixture must reuse numeric identities")
+	}
+	for n, instance := range instances {
+		q := demonware.NewWriter([]byte{12, 3, 10})
+		q.Uint32(2)
+		q.String("first")
+		q.String("second")
+		p := architectureReply(t, architectureCall(t, lobbies[n], wires[n], q.Bytes()), 10, 0)
+		r := demonware.NewReader(p[26:])
+		pid, _ := r.Uint64()
+		name, err := r.String()
+		if err != nil || pid != lobbies[n].pid() || name != lobbies[n].player.Username || len(r.Remaining()) != 0 {
+			t.Fatal("composed name stores crossed")
+		}
+		a, err := instance.ctr.economy.snapshot(pid)
+		if err != nil || a.Balances[10] != int64((n+1)*10000) {
+			t.Fatal("composed balances crossed")
+		}
+	}
+}

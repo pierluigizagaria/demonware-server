@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -228,5 +229,24 @@ func TestSettingNamesFollowThePlatformCase(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestConfigFilesAreIndependentInOneProcess(t *testing.T) {
+	a, b := filepath.Join(t.TempDir(), "a.env"), filepath.Join(t.TempDir(), "b.env")
+	if err := os.WriteFile(a, []byte("CTR_NEWS=first\nCTR_START_BALANCE=17\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b, []byte("CTR_NEWS=second\nCTR_START_BALANCE=18\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	first, e1 := readConfigEnvironment(a, false, nil)
+	second, e2 := readConfigEnvironment(b, false, nil)
+	if e1 != nil || e2 != nil || first.startBalance != 17 || second.startBalance != 18 || bytes.Equal(first.news.fallback.content, second.news.fallback.content) {
+		t.Fatal("instance file values crossed")
+	}
+	overridden, err := readConfigEnvironment(a, false, []string{"CTR_NEWS=", "CTR_START_BALANCE=19"})
+	if err != nil || overridden.startBalance != 19 || len(overridden.news.fallback.content) != 0 {
+		t.Fatal("process environment precedence changed")
 	}
 }

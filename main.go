@@ -26,7 +26,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"time"
 )
 
@@ -68,37 +67,28 @@ func main() {
 	if err := files.writePubfiles(cfg.pubfilesConfig, cfg.pubfilesDir); err != nil {
 		diag.diagnosticLogf("[D3 Pubfiles] %v", err)
 	}
-	economy := &economyStore{initialBalance: func() int64 { return cfg.startBalance }}
-	economy.loadWallets(cfg.dataDir)
+	if err := os.MkdirAll(cfg.dataDir, 0755); err != nil {
+		panic(err)
+	}
 	store, err := openCTRSQLite(filepath.Join(cfg.dataDir, ctrDB), cfg.unlockAll, trustID)
 	if err != nil {
 		log.Fatalf("[D3] CTR database: %v", err)
 	}
 	defer store.Close()
-	economy.backend, economy.unlockAll = store, cfg.unlockAll
-	store.initialBalance = func() int64 { return cfg.startBalance }
-	ctr := &ctrServices{economy: economy, stats: store, news: cfg.news}
-	presence := newPresenceStore(store)
-	matchmaker := &ctrMatchmaker{onlinePIDs: presence.onlinePIDs, rooms: map[uint64]*ctrRoom{}}
-	registry := newSessionRegistry()
+	instance := newInstance(cfg, store)
 	if cfg.unlockAll {
 		log.Print("[D3] unlock-all: on")
 	} else {
 		log.Print("[D3] unlock-all: off")
 	}
 
-	tickets := newTicketStore()
-	ids := &atomic.Uint64{}
-	nat := &natServer{diagnostics: diag, bindAddr: cfg.bindAddr, nextendoHost: cfg.publicIP, connNum: ids, natSeen: map[string]int{}}
-	monitor := newTelemetry(cfg, nat.natIntros.Load)
-	go monitor.startDashboard(presence, matchmaker, registry, diag, files)
-	go nat.serveNAT(cfg.natPort)
-	relay := newRelayTable(diag, cfg.bindAddr, cfg.relayPIDs)
-	relay.startCTRRelay(cfg.relayLow, cfg.relayHigh, cfg.publicIP, presence.onlinePIDs)
-	go registry.reapSessions()
-	startLobby(tickets, presence, &replyCounter{}, ctr, matchmaker, registry, cfg, diag, files, relay, ids, monitor)
+	go instance.monitor.startDashboard(instance.presence, instance.matchmaker, instance.registry, instance.diagnostics, instance.files)
+	go instance.nat.serveNAT(cfg.natPort)
+	instance.relay.startCTRRelay(cfg.relayLow, cfg.relayHigh, cfg.publicIP, instance.presence.onlinePIDs)
+	go instance.registry.reapSessions()
+	instance.lobby.start()
 
-	if err := serveAuth(platform, tickets, presence, cfg, diag, monitor); err != nil {
+	if err := serveAuth(platform, instance.tickets, instance.presence, cfg, instance.diagnostics, instance.monitor); err != nil {
 		log.Fatalf("[D3 Auth] stopped: %v", err)
 	}
 }

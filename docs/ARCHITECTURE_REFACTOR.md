@@ -324,3 +324,24 @@ Phase 0 validation: 1,035 named tests/subtests passed with no failures or skips;
 `gofmt` and `go vet ./...` passed. The 648 original dispatcher snapshots remain
 unchanged. No production wire, admission, SQL, schema or transaction boundary
 was changed. Application clock/entropy defaults retain their original behavior.
+
+
+## Phase 1 acceptance (2026-10-14)
+
+Production state now belongs to composed instance components. `newInstance`
+connects tickets, presence, economy, leaderboards, news, the two matchmaking
+registries, reply counters, lobby options, diagnostics, NAT, relay and telemetry.
+Handlers do not receive the instance owner. Configuration files are overlays
+with the original process-environment precedence, without installing one
+instance's file values into the environment of the next. Reference-valued news
+and scope configuration is copied when composing the instance.
+
+Acceptance tests use equal numeric player and connection identities across
+owners and composed instances. They cover tickets, persistent names, presence,
+room/search ID sequences, pushes, disconnects, balances, purchases, leaderboards
+and independently configured news. All 648 Phase 0 snapshots are unchanged.
+Validation: 1,044 named tests/subtests, no failures or skips, and `go vet ./...`.
+Package-level production variables are restricted to immutable data, regexps
+and sentinel errors. The legacy fixtures' shared owners exist only in tests.
+Lifecycle behavior remains for Phase 4; this acceptance does not claim shutdown
+or in-game acceptance of the architecture branch.

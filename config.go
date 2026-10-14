@@ -51,12 +51,38 @@ type serverConfig struct {
 // readConfig loads envFile, if any, and reads the configuration. serving
 // requires what the server needs beyond `server pubfiles`.
 func readConfig(envFile string, serving bool) (serverConfig, error) {
-	if envFile != "" {
-		if err := loadEnvFile(envFile); err != nil {
-			return serverConfig{}, err
+	return readConfigEnvironment(envFile, serving, os.Environ())
+}
+
+// Read the file as an instance overlay. Existing process values (including an
+// explicitly empty value) win, without installing file values into the process.
+func readConfigEnvironment(envFile string, serving bool, environ []string) (serverConfig, error) {
+	values := map[string]string{}
+	for _, kv := range environ {
+		name, value, ok := strings.Cut(kv, "=")
+		if ok {
+			values[canonicalName(name)] = value
 		}
 	}
-	return loadConfig(os.Getenv, settingNames(os.Environ()), serving)
+	names := append([]string(nil), environ...)
+	if envFile != "" {
+		vars, err := parseEnvFile(envFile)
+		if err != nil {
+			return serverConfig{}, err
+		}
+		for _, v := range vars {
+			name := canonicalName(v[0])
+			if _, exists := values[name]; exists {
+				continue
+			}
+			if strings.IndexByte(v[1], 0) >= 0 {
+				return serverConfig{}, fmt.Errorf("%s: environment value contains NUL", v[0])
+			}
+			values[name] = v[1]
+			names = append(names, name+"="+v[1])
+		}
+	}
+	return loadConfig(func(name string) string { return values[canonicalName(name)] }, settingNames(names), serving)
 }
 
 // settingNames returns the canonical names in environ, without repeats, that

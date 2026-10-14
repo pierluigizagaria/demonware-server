@@ -12,18 +12,37 @@ import (
 	"sync/atomic"
 )
 
-func startLobby(tickets *ticketStore, presence *presenceStore, replies *replyCounter, ctr *ctrServices, matchmaker *ctrMatchmaker, registry *sessionRegistry, cfg serverConfig, diag *diagnostics, files *publisherFiles, relay *relayTable, connNum *atomic.Uint64, monitor *telemetry) {
-	options := &lobbyOptions{migrateEnabled: cfg.migrate, publicHost: cfg.publicIP}
-	dumps := diag.runDumpDir("lobby")
+type lobbyServer struct {
+	cfg        serverConfig
+	diag       *diagnostics
+	files      *publisherFiles
+	tickets    *ticketStore
+	presence   *presenceStore
+	replies    *replyCounter
+	ctr        *ctrServices
+	matchmaker *ctrMatchmaker
+	registry   *sessionRegistry
+	relay      *relayTable
+	ids        *atomic.Uint64
+	monitor    *telemetry
+	options    *lobbyOptions
+}
+
+func (server *lobbyServer) newConn(c net.Conn, dumps string) *lobbyConn {
+	return &lobbyConn{telemetry: server.monitor, diagnostics: server.diag, options: server.options, files: server.files, relay: server.relay, matchmaker: server.matchmaker, registry: server.registry, ctr: server.ctr, replyCounter: server.replies, presence: server.presence, tickets: server.tickets, c: c, n: server.ids.Add(1), dumpDir: dumps, pubDir: server.cfg.pubfilesDir}
+}
+
+func (server *lobbyServer) start() {
+	dumps := server.diag.runDumpDir("lobby")
 	opened := 0
-	for _, p := range strings.Split(cfg.lobbyPorts, ",") {
+	for _, p := range strings.Split(server.cfg.lobbyPorts, ",") {
 		p = strings.TrimSpace(p)
 		if p == "" {
 			continue
 		}
-		ln, err := net.Listen("tcp", net.JoinHostPort(cfg.bindAddr, p))
+		ln, err := net.Listen("tcp", net.JoinHostPort(server.cfg.bindAddr, p))
 		if err != nil {
-			diag.diagnosticLogf("[D3 Lobby] port %s unavailable: %v", p, err)
+			server.diag.diagnosticLogf("[D3 Lobby] port %s unavailable: %v", p, err)
 			continue
 		}
 		opened++
@@ -33,10 +52,10 @@ func startLobby(tickets *ticketStore, presence *presenceStore, replies *replyCou
 				if err != nil {
 					return
 				}
-				lc := &lobbyConn{telemetry: monitor, diagnostics: diag, options: options, files: files, relay: relay, matchmaker: matchmaker, registry: registry, ctr: ctr, replyCounter: replies, presence: presence, tickets: tickets, c: c, n: connNum.Add(1), dumpDir: dumps, pubDir: cfg.pubfilesDir}
+				lc := server.newConn(c, dumps)
 				go func() {
-					monitor.registerConn(lc)
-					defer monitor.unregisterConn(lc)
+					server.monitor.registerConn(lc)
+					defer server.monitor.unregisterConn(lc)
 					lc.run()
 				}()
 			}
@@ -45,5 +64,5 @@ func startLobby(tickets *ticketStore, presence *presenceStore, replies *replyCou
 	if opened == 0 {
 		log.Fatal("[D3 Lobby] no port could be opened")
 	}
-	diag.diagnosticLogf("[D3 Lobby] listening TCP %s (%d port(s), dumps=%v)", cfg.lobbyPorts, opened, dumps != "")
+	server.diag.diagnosticLogf("[D3 Lobby] listening TCP %s (%d port(s), dumps=%v)", server.cfg.lobbyPorts, opened, dumps != "")
 }
