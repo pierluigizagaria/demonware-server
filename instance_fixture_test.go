@@ -262,7 +262,7 @@ func TestComposedInstancesKeepEqualIdentitiesIndependent(t *testing.T) {
 		// Mutating the caller's copy cannot rewrite the instance configuration.
 		cfg.news.languages["it"] = ctrNewsMessage{}
 		w := &architectureWire{}
-		l := instance.lobby.newConn(w, "")
+		l := &lobbyConn{lobbySession: instance.lobby.newConn(w, ""), lobbyDependencies: lobbyDependencies{files: testFiles, relay: instance.relay, matchmaker: instance.matchmaker, registry: instance.registry, ctr: instance.ctr}}
 		fixture, _ := sharedPS4Lobby()
 		l.keys, l.player = fixture.keys, fixture.player
 		l.player.Username = text

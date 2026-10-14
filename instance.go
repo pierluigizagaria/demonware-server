@@ -13,16 +13,16 @@ type serverInstance struct {
 	cfg         serverConfig
 	database    *ctrSQLite
 	diagnostics *diagnostics
-	files       *publisherFiles
-	tickets     *ticketStore
-	presence    *presenceStore
-	ctr         *ctrServices
-	matchmaker  *ctrMatchmaker
-	registry    *sessionRegistry
-	relay       *relayTable
-	nat         *natServer
-	monitor     *telemetry
-	lobby       *lobbyServer
+
+	tickets    *ticketStore
+	presence   *presenceStore
+	ctr        *ctrServices
+	matchmaker *ctrMatchmaker
+	registry   *sessionRegistry
+	relay      *relayTable
+	nat        *natServer
+	monitor    *telemetry
+	lobby      *lobbyServer
 }
 
 func newInstance(cfg serverConfig, database *ctrSQLite) *serverInstance {
@@ -36,7 +36,7 @@ func newInstance(cfg serverConfig, database *ctrSQLite) *serverInstance {
 	}
 	diag := &diagnostics{redactLogs: cfg.redactLogs, verbose: cfg.verbose, dumpRoot: cfg.dumps, runStamp: time.Now().Format("20060102-150405")}
 	i := &serverInstance{cfg: cfg, database: database, diagnostics: diag}
-	i.files = &publisherFiles{diagnostics: diag, pubDir: cfg.pubfilesDir, pubConfigPath: cfg.pubfilesConfig, riftDir: cfg.riftData}
+
 	i.tickets = newTicketStore()
 	i.presence = newPresenceStore(database)
 	database.initialBalance = func() int64 { return cfg.startBalance }
@@ -48,7 +48,7 @@ func newInstance(cfg serverConfig, database *ctrSQLite) *serverInstance {
 	i.nat = &natServer{diagnostics: diag, bindAddr: cfg.bindAddr, nextendoHost: cfg.publicIP, connNum: ids, natSeen: map[string]int{}}
 	i.monitor = newTelemetry(cfg, i.nat.natIntros.Load)
 	replies := &replyCounter{}
-	table, _ := newCTRServiceTable(replies, i.ctr, i.presence, i.registry, i.matchmaker, i.files, cfg.pubfilesDir, i.relay)
-	i.lobby = &lobbyServer{table: table, cfg: cfg, diag: diag, files: i.files, tickets: i.tickets, presence: i.presence, replies: replies, ctr: i.ctr, matchmaker: i.matchmaker, registry: i.registry, relay: i.relay, ids: ids, monitor: i.monitor, options: &lobbyOptions{migrateEnabled: cfg.migrate, publicHost: cfg.publicIP}}
+	table, _ := newCTRServiceTable(replies, i.ctr, i.presence, i.registry, i.matchmaker, cfg.pubfilesDir, i.relay)
+	i.lobby = &lobbyServer{table: table, cfg: cfg, diag: diag, tickets: i.tickets, presence: i.presence, replies: replies, ids: ids, monitor: i.monitor, options: &lobbyOptions{migrateEnabled: cfg.migrate, publicHost: cfg.publicIP}}
 	return i
 }

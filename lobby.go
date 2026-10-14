@@ -13,24 +13,21 @@ import (
 )
 
 type lobbyServer struct {
-	table      *serviceTable
-	cfg        serverConfig
-	diag       *diagnostics
-	files      *publisherFiles
-	tickets    *ticketStore
-	presence   *presenceStore
-	replies    *replyCounter
-	ctr        *ctrServices
-	matchmaker *ctrMatchmaker
-	registry   *sessionRegistry
-	relay      *relayTable
-	ids        *atomic.Uint64
-	monitor    *telemetry
-	options    *lobbyOptions
+	table *serviceTable
+	cfg   serverConfig
+	diag  *diagnostics
+
+	tickets  *ticketStore
+	presence *presenceStore
+	replies  *replyCounter
+
+	ids     *atomic.Uint64
+	monitor sessionTelemetry
+	options *lobbyOptions
 }
 
-func (server *lobbyServer) newConn(c net.Conn, dumps string) *lobbyConn {
-	return &lobbyConn{table: server.table, telemetry: server.monitor, diagnostics: server.diag, options: server.options, files: server.files, relay: server.relay, matchmaker: server.matchmaker, registry: server.registry, ctr: server.ctr, replyCounter: server.replies, presence: server.presence, tickets: server.tickets, c: c, n: server.ids.Add(1), dumpDir: dumps, pubDir: server.cfg.pubfilesDir}
+func (server *lobbyServer) newConn(c net.Conn, dumps string) *lobbySession {
+	return &lobbySession{table: server.table, telemetry: server.monitor, diagnostics: server.diag, options: server.options, replyCounter: server.replies, presence: server.presence, tickets: server.tickets, c: c, n: server.ids.Add(1), dumpDir: dumps}
 }
 
 func (server *lobbyServer) start() {

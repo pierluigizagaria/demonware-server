@@ -50,16 +50,12 @@ type lobbyOptions struct {
 	publicHost       string
 }
 
-type lobbyConn struct {
+type lobbySession struct {
 	table     *serviceTable
-	telemetry *telemetry
+	telemetry sessionTelemetry
 	*diagnostics
-	options    *lobbyOptions
-	files      *publisherFiles
-	relay      *relayTable
-	matchmaker *ctrMatchmaker
-	registry   *sessionRegistry
-	ctr        *ctrServices
+	options *lobbyOptions
+
 	*replyCounter
 	presence *presenceStore
 	tickets  *ticketStore
@@ -68,7 +64,6 @@ type lobbyConn struct {
 	c        net.Conn
 	n        uint64
 	dumpDir  string
-	pubDir   string
 
 	maxLen   uint32
 	nonce    []byte
@@ -81,33 +76,30 @@ type lobbyConn struct {
 	sendMu  sync.Mutex
 	msgSeen int
 
-	// Last host document received in 145/2, returned as-is in 145/3.
-	lobbyDoc string
-
 	// Sent after the in-flight task reply (pushed messages).
 	afterReplyActive bool
 	replyErr         error // last attempted reply, retained for diagnostics
 }
 
-func (l *lobbyConn) now() time.Time {
+func (l *lobbySession) now() time.Time {
 	if l.clock != nil {
 		return l.clock()
 	}
 	return time.Now()
 }
 
-func (l *lobbyConn) random(p []byte) (int, error) {
+func (l *lobbySession) random(p []byte) (int, error) {
 	if l.entropy != nil {
 		return io.ReadFull(l.entropy, p)
 	}
 	return rand.Read(p)
 }
 
-func (l *lobbyConn) logf(format string, a ...any) {
+func (l *lobbySession) logf(format string, a ...any) {
 	l.diagnosticLogf("#%d "+format, append([]any{l.n}, a...)...)
 }
 
-func (l *lobbyConn) readFull(n int) ([]byte, error) {
+func (l *lobbySession) readFull(n int) ([]byte, error) {
 	b := make([]byte, n)
 	// Long: a connection kept silent must last as long as the game keeps it.
 	if l.keys == nil {
@@ -120,17 +112,17 @@ func (l *lobbyConn) readFull(n int) ([]byte, error) {
 }
 
 // readFrame returns the RAW frame (length included), nil for a keepalive.
-func (l *lobbyConn) readFrame() ([]byte, error) {
+func (l *lobbySession) readFrame() ([]byte, error) {
 	return demonware.ReadFrame(l.readFull, l.maxLen)
 }
 
-func (l *lobbyConn) send(b []byte) error {
+func (l *lobbySession) send(b []byte) error {
 	_ = l.c.SetWriteDeadline(time.Now().Add(15 * time.Second))
 	_, err := l.c.Write(b)
 	return err
 }
 
-func (l *lobbyConn) dump(tag string, b []byte) {
+func (l *lobbySession) dump(tag string, b []byte) {
 	if l.redactLogs || l.dumpDir == "" {
 		return
 	}
@@ -138,7 +130,7 @@ func (l *lobbyConn) dump(tag string, b []byte) {
 	_ = os.WriteFile(filepath.Join(l.dumpDir, name), b, 0o644)
 }
 
-func (l *lobbyConn) run() {
+func (l *lobbySession) run() {
 	defer l.c.Close()
 	defer l.table.CloseSession(l)
 	defer l.presence.dropOnline(l.n)
@@ -208,7 +200,7 @@ func (l *lobbyConn) run() {
 
 // onClientAuth checks the 0x82's tag against each candidate key, keeps the
 // one that matches, and replies with 0x83.
-func (l *lobbyConn) onClientAuth(raw []byte) bool {
+func (l *lobbySession) onClientAuth(raw []byte) bool {
 	if len(raw) < 5+1+8 {
 		l.logf("0x82 too short")
 		return false
@@ -264,7 +256,7 @@ type keyCand struct {
 
 // candidates gathers the plausible 24-byte keys. Only a fresh ticket issued
 // here may key the handshake: the one the 0x82 echoes.
-func (l *lobbyConn) candidates(raw []byte) []keyCand {
+func (l *lobbySession) candidates(raw []byte) []keyCand {
 	var out []keyCand
 	add := func(name string, t []byte) {
 		out = append(out,
@@ -282,7 +274,7 @@ func (l *lobbyConn) candidates(raw []byte) []keyCand {
 
 // onEncrypted applies the connection's admission and sequence rules before
 // dispatching the decoded protocol message to the application.
-func (l *lobbyConn) onEncrypted(raw []byte) {
+func (l *lobbySession) onEncrypted(raw []byte) {
 	encrypted, err := demonware.ParseEncryptedFrame(raw)
 	if err != nil {
 		l.logf("encrypted frame rejected: %v", err)
@@ -358,7 +350,7 @@ func (options *lobbyOptions) migrateGoPayload() []byte {
 }
 
 // sendEncrypted emits a 0x85: u32 seq | iv | AES-CBC(u32 N | type | payload | padding) | tag.
-func (l *lobbyConn) sendEncrypted(innerType byte, payload []byte) error {
+func (l *lobbySession) sendEncrypted(innerType byte, payload []byte) error {
 	l.sendMu.Lock()
 	defer l.sendMu.Unlock()
 	iv := make([]byte, 16)

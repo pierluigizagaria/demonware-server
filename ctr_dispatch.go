@@ -364,7 +364,7 @@ func (handler *diabloMatchHandler) Handle(peer taskSession, request taskRequest)
 	return result
 }
 
-func newCTRServiceTable(replies *replyCounter, ctr *ctrServices, presence *presenceStore, registry *sessionRegistry, matchmaker *ctrMatchmaker, files *publisherFiles, pubDir string, relay *relayTable) (*serviceTable, *asyncHandler) {
+func newCTRServiceTable(replies *replyCounter, ctr *ctrServices, presence *presenceStore, registry *sessionRegistry, matchmaker *ctrMatchmaker, pubDir string, relay *relayTable) (*serviceTable, *asyncHandler) {
 	friends := &presenceHandler{replyCounter: replies, presence: presence}
 	economy := &economyHandler{replyCounter: replies, economy: ctr.economy}
 	context := &contextHandler{readInfo: readCTRInfo, replyCounter: replies, registry: registry, presence: presence, relay: relay}

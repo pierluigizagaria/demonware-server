@@ -66,12 +66,12 @@ func (l *lobbyConn) onTask(payload []byte) {
 		l.processTask(payload)
 		return
 	}
-	table, async := newCTRServiceTable(l.replyCounter, l.ctr, l.presence, l.registry, l.matchmaker, l.files, l.pubDir, l.relay)
+	table, async := newCTRServiceTable(l.replyCounter, l.ctr, l.presence, l.registry, l.matchmaker, l.pubDir, l.relay)
 	async.setPlayerInfo(l.n, l.lobbyDoc)
 	l.table = table
 	defer func() { l.table = nil; l.lobbyDoc = async.playerInfo(l.n) }()
 	l.processTask(payload)
 }
 func (l *lobbyConn) fixtureTable() {
-	l.table, _ = newCTRServiceTable(l.replyCounter, l.ctr, l.presence, l.registry, l.matchmaker, l.files, l.pubDir, l.relay)
+	l.table, _ = newCTRServiceTable(l.replyCounter, l.ctr, l.presence, l.registry, l.matchmaker, l.pubDir, l.relay)
 }

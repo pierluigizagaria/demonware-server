@@ -58,7 +58,7 @@ type replyCounter struct{ transactions atomic.Uint64 }
 
 // sendPush sends a pushed message (inner type 0x02). bdLobbyService::handlePushMessage reads a
 // tagged u32: the bdEventType, resolved in the table of registered handlers.
-func (l *lobbyConn) sendPush(event uint32, build func(w *demonware.Writer)) error {
+func (l *lobbySession) sendPush(event uint32, build func(w *demonware.Writer)) error {
 	w := &demonware.Writer{}
 	w.Uint32(event)
 	if build != nil {
@@ -68,7 +68,7 @@ func (l *lobbyConn) sendPush(event uint32, build func(w *demonware.Writer)) erro
 }
 
 // onTask handles a decrypted request. payload = bytes after the inner type.
-func (l *lobbyConn) processTask(payload []byte) {
+func (l *lobbySession) processTask(payload []byte) {
 	if len(payload) == 18 && payload[0] == 18 && payload[1] == 1 && payload[2] == 0 && payload[3] == 1 {
 		_ = l.sendEncrypted(demonware.InnerTaskReply, l.taskReply(1, errUnhandled, nil))
 		return
@@ -102,7 +102,7 @@ func (l *lobbyConn) processTask(payload []byte) {
 	l.deliverResult(l.table.Handle(l, taskRequest{Service: service, Task: task, Args: r, Payload: payload}))
 }
 
-func (l *lobbyConn) deliverResult(result taskResult) {
+func (l *lobbySession) deliverResult(result taskResult) {
 	var sendErr error
 	if result.AfterReply != nil {
 		defer func() {

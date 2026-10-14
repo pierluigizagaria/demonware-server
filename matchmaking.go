@@ -59,7 +59,7 @@ type mmSession struct {
 // host reconnecting in order to stay joinable.
 const orphanGrace = 2 * time.Minute
 
-func (l *lobbyConn) pid() uint64 {
+func (l *lobbySession) pid() uint64 {
 	if l.player == nil {
 		return 0
 	}

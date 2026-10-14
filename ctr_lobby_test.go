@@ -49,7 +49,7 @@ func TestCTRUmbrellaIssuedTicket(t *testing.T) {
 
 // A friend stays joinable while their host reconnects.
 func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
-	host := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5551, player: &playerID{Username: "Mars", PID: 1800000119}}
+	host := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5551, player: &playerID{Username: "Mars", PID: 1800000119}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	defer testRegistry.dropSessionsOf(host.n)
 	info := &demonware.Writer{}
 	info.Blob(make([]byte, 67))
@@ -59,7 +59,7 @@ func TestCTRFriendSessionSurvivesReconnect(t *testing.T) {
 
 	testRegistry.dropSessionsOf(host.n) // the host loses its connection
 
-	friend := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5552, player: &playerID{Username: "Collecting", PID: 1800003406}}
+	friend := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 5552, player: &playerID{Username: "Collecting", PID: 1800003406}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	ask := &demonware.Writer{}
 	ask.Uint64(1800000119)
 	reply := friend.onFriendSessions(14, demonware.NewReader(ask.Bytes()), "ctr:Delta")
@@ -99,7 +99,7 @@ func TestCTRHTTPProxyReplyEncoding(t *testing.T) {
 
 // A connected friend's presence comes back; a departed player's does not.
 func TestCTRRichPresenceRoundTrip(t *testing.T) {
-	host := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7771, player: &playerID{Username: "Mars", PID: 1800000119}}
+	host := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7771, player: &playerID{Username: "Mars", PID: 1800000119}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	testPresence.onlineMu.Lock()
 	testPresence.online[host.n] = host.player
 	testPresence.onlineMu.Unlock()
@@ -119,7 +119,7 @@ func TestCTRRichPresenceRoundTrip(t *testing.T) {
 		q.Uint32(1)
 		q.Uint64(id)
 		q.String("nintendo")
-		peer := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7772, player: &playerID{Username: "Collecting", PID: 1800003406}}
+		peer := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 7772, player: &playerID{Username: "Collecting", PID: 1800003406}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 		return peer.onRichPresence(rpGetAndSubscribe, demonware.NewReader(q.Bytes()))
 	}
 	if n := binary.LittleEndian.Uint32(ask(1800000119)[17:21]); n != 1 {
@@ -131,7 +131,7 @@ func TestCTRRichPresenceRoundTrip(t *testing.T) {
 }
 
 func TestCTRSessionCreateDelete(t *testing.T) {
-	l := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987654}
+	l := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987654}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	defer testRegistry.dropSessionsOf(l.n)
 	info := &demonware.Writer{}
 	info.Blob(make([]byte, 67))
@@ -156,7 +156,7 @@ func TestCTRSessionCreateDelete(t *testing.T) {
 	}
 	args := &demonware.Writer{}
 	args.Blob(session.id[:])
-	other := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987655}
+	other := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 987655}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	other.onMatchMakingContext(3, demonware.NewReader(args.Bytes()), "ctr:Delta")
 	testRegistry.mu.Lock()
 	_, exists := testRegistry.sessions[session.id]

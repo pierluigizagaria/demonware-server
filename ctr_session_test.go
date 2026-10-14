@@ -9,8 +9,8 @@ import (
 )
 
 func TestCTRFriendBeyondFirstTwenty(t *testing.T) {
-	host := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 90343, player: &playerID{PID: 90343}}
-	guest := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 99000, player: &playerID{PID: 99000}}
+	host := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 90343, player: &playerID{PID: 90343}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	guest := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 99000, player: &playerID{PID: 99000}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	defer func() {
 		testRegistry.mu.Lock()
 		defer testRegistry.mu.Unlock()
@@ -42,8 +42,8 @@ func TestCTRFriendBeyondFirstTwenty(t *testing.T) {
 }
 
 func TestCTRFriendResultUnpacksUploadedAttributes(t *testing.T) {
-	host := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89011, player: &playerID{PID: 89011}}
-	guest := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89012, player: &playerID{PID: 89012}}
+	host := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89011, player: &playerID{PID: 89011}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	guest := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89012, player: &playerID{PID: 89012}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	defer func() {
 		testRegistry.mu.Lock()
 		defer testRegistry.mu.Unlock()
@@ -89,8 +89,8 @@ func TestCTRFriendResultUnpacksUploadedAttributes(t *testing.T) {
 }
 
 func TestCTRReservedSessionLifecycle(t *testing.T) {
-	host := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89001, player: &playerID{PID: 89001}}
-	guest := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89002, player: &playerID{PID: 89002}}
+	host := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89001, player: &playerID{PID: 89001}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	guest := newTestLobby(&lobbySession{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: 89002, player: &playerID{PID: 89002}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	defer func() {
 		testRegistry.mu.Lock()
 		defer testRegistry.mu.Unlock()

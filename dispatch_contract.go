@@ -29,27 +29,27 @@ type taskHandler interface {
 	Handle(taskSession, taskRequest) taskResult
 }
 
-func (l *lobbyConn) ConnID() uint64 { return l.n }
-func (l *lobbyConn) PID() uint64    { return l.pid() }
-func (l *lobbyConn) Identity() *playerID {
+func (l *lobbySession) ConnID() uint64 { return l.n }
+func (l *lobbySession) PID() uint64    { return l.pid() }
+func (l *lobbySession) Identity() *playerID {
 	if l.player == nil {
 		return nil
 	}
 	identity := *l.player
 	return &identity
 }
-func (l *lobbyConn) Title() uint32 {
+func (l *lobbySession) Title() uint32 {
 	if l.player == nil {
 		return 0
 	}
 	return l.player.Title
 }
-func (l *lobbyConn) Logf(format string, args ...any) { l.logf(format, args...) }
-func (l *lobbyConn) SendPush(event uint32, write func(*demonware.Writer)) error {
+func (l *lobbySession) Logf(format string, args ...any) { l.logf(format, args...) }
+func (l *lobbySession) SendPush(event uint32, write func(*demonware.Writer)) error {
 	return l.sendPush(event, write)
 }
-func (l *lobbyConn) Now() time.Time               { return l.now() }
-func (l *lobbyConn) Random(p []byte) (int, error) { return l.random(p) }
+func (l *lobbySession) Now() time.Time               { return l.now() }
+func (l *lobbySession) Random(p []byte) (int, error) { return l.random(p) }
 
 type economyHandler struct {
 	*replyCounter

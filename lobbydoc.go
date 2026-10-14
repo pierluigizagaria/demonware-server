@@ -55,17 +55,16 @@ func uploadedHostAddress(doc string) string {
 	return parsed.ListenServer.LocalAddress
 }
 
-func (l *lobbyConn) hostDocument() string {
-	pid := l.pid()
+func buildHostDocument(pid uint64, uploaded string, updateID uint64) string {
 	doc := lobbyHostDoc{
 		UpdateTime:           uint64(time.Now().Unix()),
-		UpdateID:             l.options.lobbyDocUpdateID.Add(1),
+		UpdateID:             updateID,
 		GameID:               pid,
 		LobbyOpen:            true,
 		LobbyOpenForPresJoin: true,
 		PlayerState:          map[string]uint32{strconv.FormatUint(pid, 10): 1},
 		ListenServer: lobbyListenServer{
-			HostAddress:  uploadedHostAddress(l.lobbyDoc),
+			HostAddress:  uploadedHostAddress(uploaded),
 			HostPlayerID: pid,
 		},
 		TeamBalance: lobbyTeamBalance{CanChangeTeams: true},
