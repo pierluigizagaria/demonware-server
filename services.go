@@ -19,9 +19,6 @@ package main
 // 01 bool, 03 u8, 08 u32, 0A u64, 10 NUL-terminated string, 13 blob (08 u32 + bytes).
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
 	"sync/atomic"
 
 	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
@@ -126,44 +123,6 @@ func (l *lobbyConn) deliverResult(result taskResult) {
 type taskResult struct {
 	Reply      []byte
 	AfterReply func(sendErr error)
-}
-
-// publisherFile looks the file up in the pubfiles folder, ignoring case (the
-// game asks for "Config.txt", the generator writes "config.txt").
-func (handler *storageHandler) publisherFile(peer taskSession, name string) ([]byte, string) {
-	if data, path, ok := handler.files.riftFile(name, peer.Now()); ok {
-		return data, path
-	}
-	if data, path, ok := handler.files.generatedPubfile(name, peer.Now()); ok {
-		return data, path
-	}
-	base := filepath.Base(name)
-	entries, err := os.ReadDir(handler.pubDir)
-	if err != nil {
-		return nil, ""
-	}
-	candidates := []string{base}
-	if alias, ok := pubFileAliases[strings.ToLower(base)]; ok {
-		candidates = append(candidates, alias)
-	}
-	for _, want := range candidates {
-		for _, e := range entries {
-			if strings.EqualFold(e.Name(), want) {
-				p := filepath.Join(handler.pubDir, e.Name())
-				if b, err := os.ReadFile(p); err == nil {
-					return b, p
-				}
-			}
-		}
-	}
-	return nil, ""
-}
-
-// Real names requested by the game -> names written by the generator (taken
-// from d3hack's cache). Seen live: Config.txt, Seasons.txt, Blacklist.txt.
-var pubFileAliases = map[string]string{
-	"seasons.txt":   "seasons_config.txt",
-	"blacklist.txt": "blacklist_config.txt",
 }
 
 func (replies *replyCounter) taskReply(task byte, code uint32, results func(w *demonware.Writer) uint32) []byte {

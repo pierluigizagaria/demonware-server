@@ -148,6 +148,9 @@ func TestArchitectureContextRegistryLifecycle(t *testing.T) {
 	for _, service := range []byte{21, 138} {
 		t.Run(fmt.Sprint(service), func(t *testing.T) {
 			l, w, _ := architectureBaseline(t)
+			if service == 21 {
+				l.table = newDiabloServiceTable(l.replyCounter, l.registry, l.presence, l.relay, l.files)
+			}
 			now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 			l.clock = func() time.Time { return now }
 			l.entropy = bytes.NewReader(bytes.Repeat([]byte{0x31}, 128))
@@ -206,6 +209,9 @@ func TestArchitectureContextRegistryLifecycle(t *testing.T) {
 			}
 			// Find through a second connection with a distinct publisher identity.
 			guest, _ := sharedPS4Lobby()
+			if service == 21 {
+				guest.table = l.table
+			}
 			guest.n++
 			guest.player.PID = 18
 			guest.c = &architectureWire{}

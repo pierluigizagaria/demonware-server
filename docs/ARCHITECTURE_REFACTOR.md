@@ -345,3 +345,44 @@ Package-level production variables are restricted to immutable data, regexps
 and sentinel errors. The legacy fixtures' shared owners exist only in tests.
 Lifecycle behavior remains for Phase 4; this acceptance does not claim shutdown
 or in-game acceptance of the architecture branch.
+
+## Phase 2 Diablo disconnection and fixture ledger
+
+The CTR table has no service 21 adapter. Its ordinary unknown-service response
+is empty success; it cannot allocate, publish or discover a Diablo session. The
+inactive compatibility table retains the original service 21 behavior. Service
+138 retains the shared registry and its ownership/reconnect rules, with the CTR
+attribute parser injected separately from the Diablo parser.
+
+The original `testdata/architecture_dispatch_baseline.json` is not rewritten.
+Exactly these twelve snapshot IDs have explicit expected-result overrides in
+`architecture_diablo_test.go`:
+
+| Snapshot prefix (each with `/write-fail-0`, `/write-fail-1`, `/write-fail-2`) | Authorized difference |
+| --- | --- |
+| `021-001-empty` | Diablo create error becomes unknown-service empty success |
+| `021-001-malformed` | Same malformed Diablo create change |
+| `021-019-empty` | Diablo reservation result becomes empty success; no registry entry |
+| `021-019-malformed` | Same Diablo reservation change (arguments were ignored) |
+
+All other snapshot bytes and state remain compared to their original values.
+`TestArchitectureContextRegistryLifecycle/21` now explicitly uses the inactive
+Diablo table with unchanged workflow assertions; `/138` uses the live CTR table.
+New tests verify service 21 is absent and cannot reserve through the CTR table,
+and service 10/21 still serves a synthetic CTR physical file case-insensitively.
+
+| Diablo path | Fate and source evidence |
+| --- | --- |
+| Public matchmaking service 21 | Inactive compatibility table; `matchmaking.go` records the D3 attribute format and selects the `d3` context (U) |
+| Seasons, community events and blacklist generators | Retained for compatibility tests; never called by CTR wiring. Their source emits Season, CommunityBuff, GBID/SNO and Diablo advertisement fields (U) |
+| Challenge Rift generator and data | Retained inactive; its source parses `challengerift_` names and patches D3 challenge records (U) |
+| Physical generated outputs | CTR excludes `config.txt`, `seasons_config.txt`, `blacklist_config.txt` and `challengerift_*`, case-insensitively; existing files are left on disk |
+| Aliases | `seasons.txt` and `blacklist.txt` remain in the inactive provider and are excluded by CTR |
+| Generic publisher storage 10/21 | Retained for other physical files under the configured directory, without Diablo generation or aliases; absence from observed CTR logs is not evidence of disuse |
+| `pubfiles` command | Still recognized and validates configuration as before, then reports that generation is inactive and exits without writing files |
+| Startup generation | Disconnected; starting CTR does not write Diablo publisher files |
+| Dashboard `/pubfiles/` | Route disconnected; no Diablo provider is registered |
+| Environment | All names and validation remain accepted. `D3_PUBFILES_CONFIG` and `D3_RIFTDATA` no longer activate generation; `D3_PUBFILES` still locates generic physical publisher files |
+
+This is an explicit source-based classification of those named Diablo paths,
+not a claim that all storage or contextual matchmaking is Diablo-only.

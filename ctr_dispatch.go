@@ -13,8 +13,7 @@ type richPresenceHandler struct{ *presenceHandler }
 type httpProxyHandler struct{ *replyCounter }
 type storageHandler struct {
 	*replyCounter
-	files  *publisherFiles
-	pubDir string
+	files publisherFileSource
 }
 type contextHandler struct {
 	*replyCounter
@@ -111,7 +110,7 @@ func (handler *storageHandler) Handle(peer taskSession, request taskRequest) (re
 			reply = handler.taskReply(task, errUnhandled, nil)
 			break
 		}
-		data, path := handler.publisherFile(peer, name)
+		data, path := handler.files.publisherFile(name, peer.Now())
 		if data == nil {
 			// No result rather than an error: the game treats a "missing
 			// file" as a normal case.
@@ -372,9 +371,8 @@ func newCTRServiceTable(replies *replyCounter, ctr *ctrServices, presence *prese
 	async := &asyncHandler{replyCounter: replies, matchmaker: matchmaker, info: map[uint64]string{}}
 	table := &serviceTable{replies: replies, handlers: map[byte]taskHandler{
 		4:   &statsHandler{replyCounter: replies, stats: ctr.stats, presence: presence},
-		10:  &storageHandler{replyCounter: replies, files: files, pubDir: pubDir},
+		10:  &storageHandler{replyCounter: replies, files: ctrPublisherFiles{dir: pubDir}},
 		12:  &utilityHandler{friends},
-		21:  &diabloMatchHandler{&contextHandler{readInfo: readInfo, replyCounter: replies, registry: registry, presence: presence, relay: relay}},
 		29:  &userDataHandler{friends},
 		38:  &platformHandler{replies},
 		68:  &richPresenceHandler{friends},
@@ -391,4 +389,12 @@ func newCTRServiceTable(replies *replyCounter, ctr *ctrServices, presence *prese
 		sendCTRNotices(matchmaker.leave(peer, 0))
 	}
 	return table, async
+}
+
+// This compatibility table is intentionally absent from production wiring.
+func newDiabloServiceTable(replies *replyCounter, registry *sessionRegistry, presence *presenceStore, relay *relayTable, files *publisherFiles) *serviceTable {
+	return &serviceTable{replies: replies, handlers: map[byte]taskHandler{
+		21: &diabloMatchHandler{&contextHandler{readInfo: readInfo, replyCounter: replies, registry: registry, presence: presence, relay: relay}},
+		10: &storageHandler{replyCounter: replies, files: files},
+	}}
 }

@@ -26,7 +26,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"time"
 )
 
 func main() {
@@ -49,13 +48,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("[D3] configuration:\n%v", err)
 	}
-	diag := &diagnostics{redactLogs: cfg.redactLogs, verbose: cfg.verbose, dumpRoot: cfg.dumps, runStamp: time.Now().Format("20060102-150405")}
-	files := &publisherFiles{diagnostics: diag, pubDir: cfg.pubfilesDir, pubConfigPath: cfg.pubfilesConfig, riftDir: cfg.riftData}
-
 	if pubfilesOnly {
-		if err := files.writePubfiles(cfg.pubfilesConfig, cfg.pubfilesDir); err != nil {
-			log.Fatalf("[D3 Pubfiles] %v", err)
-		}
+		log.Print("[diablo] pubfiles is inactive in this CTR:NF server; no files generated")
 		return
 	}
 
@@ -64,9 +58,6 @@ func main() {
 		log.Fatalf("[D3] publisher admission: %v", err)
 	}
 	log.Printf("[D3] admission: %s", cfg.admission)
-	if err := files.writePubfiles(cfg.pubfilesConfig, cfg.pubfilesDir); err != nil {
-		diag.diagnosticLogf("[D3 Pubfiles] %v", err)
-	}
 	if err := os.MkdirAll(cfg.dataDir, 0755); err != nil {
 		panic(err)
 	}

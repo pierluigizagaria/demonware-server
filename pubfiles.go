@@ -296,3 +296,41 @@ type publisherFiles struct {
 	*diagnostics
 	pubDir, pubConfigPath, riftDir string
 }
+
+// publisherFile looks the file up in the pubfiles folder, ignoring case (the
+// game asks for "Config.txt", the generator writes "config.txt").
+func (provider *publisherFiles) publisherFile(name string, now time.Time) ([]byte, string) {
+	if data, path, ok := provider.riftFile(name, now); ok {
+		return data, path
+	}
+	if data, path, ok := provider.generatedPubfile(name, now); ok {
+		return data, path
+	}
+	base := filepath.Base(name)
+	entries, err := os.ReadDir(provider.pubDir)
+	if err != nil {
+		return nil, ""
+	}
+	candidates := []string{base}
+	if alias, ok := pubFileAliases[strings.ToLower(base)]; ok {
+		candidates = append(candidates, alias)
+	}
+	for _, want := range candidates {
+		for _, e := range entries {
+			if strings.EqualFold(e.Name(), want) {
+				p := filepath.Join(provider.pubDir, e.Name())
+				if b, err := os.ReadFile(p); err == nil {
+					return b, p
+				}
+			}
+		}
+	}
+	return nil, ""
+}
+
+// Real names requested by the game -> names written by the generator (taken
+// from d3hack's cache). Seen live: Config.txt, Seasons.txt, Blacklist.txt.
+var pubFileAliases = map[string]string{
+	"seasons.txt":   "seasons_config.txt",
+	"blacklist.txt": "blacklist_config.txt",
+}

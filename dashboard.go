@@ -389,7 +389,6 @@ func (monitor *telemetry) startDashboard(presence *presenceStore, matchmaker *ct
 		_ = json.NewEncoder(w).Encode(monitor.buildGameStats(presence, matchmaker, registry, r.URL.Query().Get("game")))
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
-	mux.HandleFunc("/pubfiles/", files.pubfilesHandler)
 
 	diag.diagnosticLogf("[D3 Dashboard] stats API on :%s (token=%v)", port, token != "")
 	if err := http.ListenAndServe(net.JoinHostPort(monitor.bindAddr, port), mux); err != nil {

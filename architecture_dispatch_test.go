@@ -223,7 +223,11 @@ func TestArchitectureDispatcherBaseline(t *testing.T) {
 				after := time.Now()
 				got := architectureState(t, l, w, db, payload, before, after)
 				actual[name] = got
-				if expected != nil && !reflect.DeepEqual(got, expected[name]) {
+				want := expected[name]
+				if expected != nil {
+					want = architectureDiabloDisconnection(name, want)
+				}
+				if expected != nil && !reflect.DeepEqual(got, want) {
 					t.Error("baseline frames/state changed; inspect the fixture, do not regenerate it")
 				}
 			})

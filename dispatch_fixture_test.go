@@ -54,7 +54,9 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 	return (&contextHandler{readInfo: readInfo, replyCounter: l.replyCounter, registry: l.registry, presence: l.presence, relay: l.relay}).onMatchMakingContext(l, task, r, context)
 }
 func (l *lobbyConn) publisherFile(name string) ([]byte, string) {
-	return (&storageHandler{replyCounter: l.replyCounter, files: l.files, pubDir: l.pubDir}).publisherFile(l, name)
+	files := *l.files
+	files.pubDir = l.pubDir
+	return files.publisherFile(name, l.Now())
 }
 
 // Legacy fixtures replace dependencies between calls. Keep that test-only
