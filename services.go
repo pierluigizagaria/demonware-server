@@ -226,7 +226,7 @@ func (l *lobbyConn) handleTask(service, task byte, r *demonware.Reader, payload 
 			reply = l.taskReply(task, errUnhandled, nil)
 			break
 		}
-		search, err := l.matchmaker.parseCTRSearch(l, raw)
+		search, err := l.matchmaker.parseCTRSearch(l, raw, l.lobbyDoc)
 		if err == nil {
 			err = l.matchmaker.reserve(search)
 		}

@@ -107,7 +107,7 @@ func TestArchitectureSearchReplyFailureReleasesReservation(t *testing.T) {
 		t.Run(fmt.Sprint(fail), func(t *testing.T) {
 			l, w, _ := architectureBaseline(t)
 			s := testCTRSearch(t, l.pid(), 0)
-			l.lobbyDoc = s.conn.lobbyDoc
+			l.lobbyDoc = s.conn.(*lobbyConn).lobbyDoc
 			request := demonware.NewWriter([]byte{145, 3, 18})
 			raw, _ := json.Marshal(s.doc)
 			request.String(string(raw))
@@ -281,7 +281,7 @@ func TestArchitecturePairReplyPushAndDocuments(t *testing.T) {
 	search := func(l *lobbyConn, w *architectureWire) {
 		s := testCTRSearch(t, l.pid(), 0)
 		q := demonware.NewWriter([]byte{145, 3, 2})
-		q.String(s.conn.lobbyDoc)
+		q.String(s.conn.(*lobbyConn).lobbyDoc)
 		architectureReply(t, architectureCall(t, l, w, q.Bytes()), 2, 0)
 		q = demonware.NewWriter([]byte{145, 3, 18})
 		raw, _ := json.Marshal(s.doc)

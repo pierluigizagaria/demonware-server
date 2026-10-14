@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
@@ -16,8 +17,8 @@ func (m *ctrMatchmaker) testCTRSearch(t *testing.T, pid uint64, playlist int) *c
 	info.Listen.ID = base64.StdEncoding.EncodeToString(make([]byte, 8))
 	info.Listen.Key = base64.StdEncoding.EncodeToString(make([]byte, 16))
 	raw, _ := json.Marshal(info)
-	l := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: m, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: pid, player: &playerID{PID: pid}, lobbyDoc: string(raw)}
-	search, err := m.parseCTRSearch(l, fmt.Sprintf(`{"members":[%d],"lobby_slots":{"min":2,"max":8},"ruleset_payload":{"filter":{"playlist_id":%d,"matchmaking_version":200}}}`, pid, playlist))
+	l := &lobbyConn{telemetry: testTelemetry, diagnostics: testDiagnostics, options: testOptions, files: testFiles, relay: testRelay, matchmaker: m, registry: testRegistry, ctr: testCTR, replyCounter: testReplies, presence: testPresence, tickets: testTickets, n: testSearchConns.Add(1), player: &playerID{PID: pid}, lobbyDoc: string(raw)}
+	search, err := m.parseCTRSearch(l, fmt.Sprintf(`{"members":[%d],"lobby_slots":{"min":2,"max":8},"ruleset_payload":{"filter":{"playlist_id":%d,"matchmaking_version":200}}}`, pid, playlist), l.lobbyDoc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,4 +125,32 @@ func TestCTRSearchRetryCannotMatchItself(t *testing.T) {
 
 func testCTRSearch(t *testing.T, pid uint64, playlist int) *ctrSearch {
 	return testMatchmaker.testCTRSearch(t, pid, playlist)
+}
+
+var testSearchConns atomic.Uint64
+
+// A view of the same connection is a distinct Go object with the same ConnID.
+type peerView struct{ ctrPeer }
+
+func TestCTRPeerOwnershipUsesConnectionID(t *testing.T) {
+	m := &ctrMatchmaker{onlinePIDs: func() []uint64 { return []uint64{17, 18} }, rooms: map[uint64]*ctrRoom{}}
+	a, b := m.testCTRSearch(t, 17, 0), m.testCTRSearch(t, 18, 0)
+	m.enqueue(a)
+	notices := m.enqueue(b)
+	room := notices[0].ids[1]
+	if _, _, ok := m.documents(&peerView{a.conn}, room); !ok {
+		t.Fatal("another view of the owner connection was refused")
+	}
+	replacement := m.testCTRSearch(t, 17, 0)
+	if _, _, ok := m.documents(replacement.conn, room); ok {
+		t.Fatal("same PID on another connection became the owner")
+	}
+	m.leave(replacement.conn, 0)
+	if len(m.rooms) != 1 {
+		t.Fatal("different connection released the room")
+	}
+	m.leave(&peerView{a.conn}, 0)
+	if len(m.rooms) != 0 {
+		t.Fatal("owner view did not release the room")
+	}
 }

@@ -199,13 +199,13 @@ func TestInstanceMatchmakingAndPushesAreIsolated(t *testing.T) {
 	if len(aw.writes) != 1 || len(bw.writes) != 0 || len(a.rooms) != 1 || len(b.rooms) != 0 {
 		t.Fatal("match or push crossed instances")
 	}
-	architectureFrames(t, aa.conn, aw, 0)
+	architectureFrames(t, aa.conn.(*lobbyConn), aw, 0)
 	notices = b.enqueue(bb)
 	sendCTRNotices(notices)
 	if len(aw.writes) != 1 || len(bw.writes) != 1 || len(b.rooms) != 1 {
 		t.Fatal("second instance failed to form its own room")
 	}
-	architectureFrames(t, ba.conn, bw, 0)
+	architectureFrames(t, ba.conn.(*lobbyConn), bw, 0)
 	a.leave(aa.conn, 0)
 	if len(a.rooms) != 0 || len(b.rooms) != 1 {
 		t.Fatal("disconnect crossed instances")

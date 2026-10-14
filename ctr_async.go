@@ -17,6 +17,15 @@ import (
 	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
+// ctrPeer is the engine's connection identity and notification seam. A PID
+// alone cannot distinguish a stale connection from its replacement.
+type ctrPeer interface {
+	ConnID() uint64
+	PID() uint64
+	Logf(string, ...any)
+	SendPush(uint32, func(*demonware.Writer)) error
+}
+
 // Event layouts verified against CTR 1.0.15's bdAsyncMatchMakingEventHandler.
 const (
 	ctrJoinLobby   = 2001
@@ -43,7 +52,7 @@ type ctrPlayerInfo struct {
 	} `json:"listen_server"`
 }
 type ctrSearch struct {
-	conn     *lobbyConn
+	conn     ctrPeer
 	id, pid  uint64
 	doc      ctrSearchDoc
 	info     ctrPlayerInfo
@@ -78,7 +87,7 @@ type ctrRoom struct {
 	players     []*ctrSearch
 	hostDoc     map[string]any
 	capacity    int
-	notified    map[*lobbyConn]bool
+	notified    map[uint64]bool
 	mergeSource *ctrRoom
 	mergeTarget uint64
 }
@@ -95,8 +104,8 @@ type ctrMatchmaker struct {
 	pending map[uint64]*ctrSearch
 }
 
-func (m *ctrMatchmaker) parseCTRSearch(l *lobbyConn, raw string) (*ctrSearch, error) {
-	s := &ctrSearch{conn: l, pid: l.pid()}
+func (m *ctrMatchmaker) parseCTRSearch(l ctrPeer, raw, playerInfo string) (*ctrSearch, error) {
+	s := &ctrSearch{conn: l, pid: l.PID()}
 	// A party searches as ONE request issued by its leader, listing every member.
 	// Refusing anything but a lone member meant a duo or trio never entered the
 	// queue at all: they watched a lobby wait for players and were never placed
@@ -120,7 +129,7 @@ func (m *ctrMatchmaker) parseCTRSearch(l *lobbyConn, raw string) (*ctrSearch, er
 		return nil, errors.New("invalid search or unsupported party membership")
 	}
 	s.seats = len(s.doc.Members)
-	if json.Unmarshal([]byte(l.lobbyDoc), &s.info) != nil {
+	if json.Unmarshal([]byte(playerInfo), &s.info) != nil {
 		return nil, errors.New("missing player info")
 	}
 	for encoded, n := range map[string]int{s.info.Listen.Address: 67, s.info.Listen.ID: 8, s.info.Listen.Key: 16} {
@@ -141,7 +150,7 @@ func (m *ctrMatchmaker) parseCTRSearch(l *lobbyConn, raw string) (*ctrSearch, er
 }
 
 type ctrNotice struct {
-	conn          *lobbyConn
+	conn          ctrPeer
 	event         uint32
 	ids           []uint64
 	host, backend string
@@ -156,10 +165,10 @@ func (n ctrNotice) write(w *demonware.Writer) {
 }
 func sendCTRNotices(notices []ctrNotice) {
 	for _, n := range notices {
-		if err := n.conn.sendPush(n.event, n.write); err != nil {
-			n.conn.logf("CTR matchmaking push event=%d failed: %v", n.event, err)
+		if err := n.conn.SendPush(n.event, n.write); err != nil {
+			n.conn.Logf("CTR matchmaking push event=%d failed: %v", n.event, err)
 		} else {
-			n.conn.logf("CTR matchmaking push event=%d", n.event)
+			n.conn.Logf("CTR matchmaking push event=%d", n.event)
 		}
 	}
 }
@@ -314,7 +323,7 @@ func (m *ctrMatchmaker) activate(reserved *ctrSearch) []ctrNotice {
 	defer m.mu.Unlock()
 	s := m.pending[reserved.id]
 	if s == nil {
-		reserved.conn.logf("CTR search id=%d withdrawn before activation", reserved.id)
+		reserved.conn.Logf("CTR search id=%d withdrawn before activation", reserved.id)
 		return nil
 	}
 	delete(m.pending, s.id)
@@ -356,7 +365,7 @@ func (m *ctrMatchmaker) activate(reserved *ctrSearch) []ctrNotice {
 		case r.occupancy()+s.seats > s.doc.Slots.Max:
 			reason = "search-capacity"
 		}
-		s.conn.logf("CTR candidate search=%d seats=%d filter=%s room=%d room_filter=%s open=%t occupied=%d connected=%d capacity=%d search_max=%d reason=%s", s.id, s.seats, s.filterID, r.id, r.host.filterID, open, r.occupancy(), r.connected(), r.capacity, s.doc.Slots.Max, reason)
+		s.conn.Logf("CTR candidate search=%d seats=%d filter=%s room=%d room_filter=%s open=%t occupied=%d connected=%d capacity=%d search_max=%d reason=%s", s.id, s.seats, s.filterID, r.id, r.host.filterID, open, r.occupancy(), r.connected(), r.capacity, s.doc.Slots.Max, reason)
 		if reason == "selected" {
 			// A retry must not inherit its previous failed state in this room.
 			if states, ok := r.hostDoc["player_state"].(map[string]any); ok {
@@ -392,7 +401,7 @@ func (m *ctrMatchmaker) activate(reserved *ctrSearch) []ctrNotice {
 		return evicted
 	}
 	h := group[0]
-	r := &ctrRoom{clock: m.now, id: m.ids.Add(1), version: 1, created: m.now().Unix(), host: h, players: group, capacity: maximum, notified: map[*lobbyConn]bool{h.conn: true}}
+	r := &ctrRoom{clock: m.now, id: m.ids.Add(1), version: 1, created: m.now().Unix(), host: h, players: group, capacity: maximum, notified: map[uint64]bool{h.conn.ConnID(): true}}
 	r.hostDoc = map[string]any{
 		"update_id": r.version, "update_time": r.created, "game_id": r.id, "lobby_open": true, "lobby_open_for_pres_join": true,
 		"player_state":  map[string]uint32{strconv.FormatUint(h.pid, 10): 1},
@@ -416,11 +425,11 @@ func (m *ctrMatchmaker) activate(reserved *ctrSearch) []ctrNotice {
 	return append(evicted, out...)
 }
 
-func (m *ctrMatchmaker) cancel(conn *lobbyConn, id uint64) bool {
+func (m *ctrMatchmaker) cancel(conn ctrPeer, id uint64) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i, p := range m.waiting {
-		if p.conn == conn && p.id == id {
+		if p.conn.ConnID() == conn.ConnID() && p.id == id {
 			m.waiting = append(m.waiting[:i], m.waiting[i+1:]...)
 			return true
 		}
@@ -435,8 +444,8 @@ func (m *ctrMatchmaker) cancel(conn *lobbyConn, id uint64) bool {
 // A disconnect while the same account is connected elsewhere releases no
 // follower seat: the newer connection may hold it. (The run loop drops the
 // connection's own online entry before it calls leave.)
-func (m *ctrMatchmaker) leave(conn *lobbyConn, id uint64) []ctrNotice {
-	pid := conn.pid()
+func (m *ctrMatchmaker) leave(conn ctrPeer, id uint64) []ctrNotice {
+	pid := conn.PID()
 	stale := id == 0 && pid != 0 && slices.Contains(m.onlinePIDs(), pid)
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -444,7 +453,7 @@ func (m *ctrMatchmaker) leave(conn *lobbyConn, id uint64) []ctrNotice {
 	if pid != 0 && !stale {
 		seats[pid] = true
 	}
-	return m.detach(id, func(p *ctrSearch) bool { return p.conn == conn }, seats)
+	return m.detach(id, func(p *ctrSearch) bool { return p.conn.ConnID() == conn.ConnID() }, seats)
 }
 
 // detach withdraws every search for which lead is true and removes the seats
@@ -516,7 +525,7 @@ func (m *ctrMatchmaker) detach(id uint64, lead func(*ctrSearch) bool, seats map[
 			switch {
 			case lead(p):
 				departed = append(departed, p.doc.Members...)
-				delete(r.notified, p.conn)
+				delete(r.notified, p.conn.ConnID())
 			case member(p):
 				q := without(p)
 				for _, pid := range p.doc.Members {
@@ -556,12 +565,12 @@ func (m *ctrMatchmaker) detach(id uint64, lead func(*ctrSearch) bool, seats map[
 	}
 	return notices
 }
-func (m *ctrMatchmaker) documents(conn *lobbyConn, id uint64) (string, string, bool) {
+func (m *ctrMatchmaker) documents(conn ctrPeer, id uint64) (string, string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if r := m.rooms[id]; r != nil {
 		for _, p := range r.players {
-			if p.conn == conn {
+			if p.conn.ConnID() == conn.ConnID() {
 				h, b := r.documents()
 				return h, b, true
 			}
@@ -569,7 +578,7 @@ func (m *ctrMatchmaker) documents(conn *lobbyConn, id uint64) (string, string, b
 	}
 	return "", "", false
 }
-func (m *ctrMatchmaker) syncDoc(conn *lobbyConn, id, version uint64, raw string) (bool, []ctrNotice) {
+func (m *ctrMatchmaker) syncDoc(conn ctrPeer, id, version uint64, raw string) (bool, []ctrNotice) {
 	var doc map[string]any
 	decoder := json.NewDecoder(strings.NewReader(raw))
 	decoder.UseNumber()
@@ -579,7 +588,7 @@ func (m *ctrMatchmaker) syncDoc(conn *lobbyConn, id, version uint64, raw string)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r := m.rooms[id]
-	if r == nil || r.host.conn != conn || r.version != version {
+	if r == nil || r.host.conn.ConnID() != conn.ConnID() || r.version != version {
 		return false, nil
 	}
 	for _, key := range []string{"lobby_open", "lobby_open_for_pres_join", "player_state", "listen_server", "team_balance", "ruleset_payload", "attachment"} {
@@ -615,7 +624,7 @@ func (m *ctrMatchmaker) syncDoc(conn *lobbyConn, id, version uint64, raw string)
 		copy := p.removeMembers(r.failed)
 		released += len(p.doc.Members) - copy.seats
 		if copy.seats == 0 {
-			delete(r.notified, p.conn)
+			delete(r.notified, p.conn.ConnID())
 			continue
 		}
 		if p == r.host {
@@ -625,16 +634,16 @@ func (m *ctrMatchmaker) syncDoc(conn *lobbyConn, id, version uint64, raw string)
 	}
 	r.players = kept
 	if released > 0 {
-		conn.logf("CTR released failed reservations room=%d seats=%d", r.id, released)
+		conn.Logf("CTR released failed reservations room=%d seats=%d", r.id, released)
 	}
-	conn.logf("CTR room-state room=%d version=%d open=%v occupied=%d connected=%d searches=%d", r.id, r.version, doc["lobby_open"], r.occupancy(), r.connected(), len(r.players))
+	conn.Logf("CTR room-state room=%d version=%d open=%v occupied=%d connected=%d searches=%d", r.id, r.version, doc["lobby_open"], r.occupancy(), r.connected(), len(r.players))
 	// 2006 asks the host to produce a new document; it is not an ACK to
 	// broadcast. Echoing it on every sync causes an endless sync/push loop.
 	// Release pending guests only after the host has supplied its document.
 	out := mergeNotices
 	for _, p := range r.players {
-		if !r.notified[p.conn] {
-			r.notified[p.conn] = true
+		if !r.notified[p.conn.ConnID()] {
+			r.notified[p.conn.ConnID()] = true
 			out = append(out, r.notice(p, ctrJoinLobby))
 		}
 	}
@@ -659,7 +668,7 @@ func (m *ctrMatchmaker) syncDoc(conn *lobbyConn, id, version uint64, raw string)
 			r.players = append(r.players, p)
 			r.capacity = min(r.capacity, p.doc.Slots.Max)
 			added++
-			conn.logf("CTR backfill waiting search=%d seats=%d room=%d", p.id, p.seats, r.id)
+			conn.Logf("CTR backfill waiting search=%d seats=%d room=%d", p.id, p.seats, r.id)
 		}
 		m.waiting = remaining
 		if added > 0 {

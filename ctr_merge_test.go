@@ -161,7 +161,7 @@ func TestCTRRequeueDuringMergeReleasesReservation(t *testing.T) {
 	if a.mergeSource != nil || b.mergeTarget != 0 || a.version != version+1 || b.occupancy() != 2 {
 		t.Fatal("reservation kept after the source membership changed")
 	}
-	hosts := map[*lobbyConn]bool{}
+	hosts := map[ctrPeer]bool{}
 	for _, n := range out {
 		if n.event == ctrUpdateLobby {
 			hosts[n.conn] = true

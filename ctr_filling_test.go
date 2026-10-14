@@ -92,12 +92,12 @@ func TestCTRRejectDuplicatePartyMembers(t *testing.T) {
 	s := testCTRSearch(t, 6000, 0)
 	s.doc.Members = []uint64{6000, 6000}
 	raw, _ := json.Marshal(s.doc)
-	if _, err := testMatchmaker.parseCTRSearch(s.conn, string(raw)); err == nil {
+	if _, err := testMatchmaker.parseCTRSearch(s.conn, string(raw), s.conn.(*lobbyConn).lobbyDoc); err == nil {
 		t.Fatal("duplicate members accepted")
 	}
 	s.doc.Members = []uint64{6000, 0}
 	raw, _ = json.Marshal(s.doc)
-	if _, err := testMatchmaker.parseCTRSearch(s.conn, string(raw)); err == nil {
+	if _, err := testMatchmaker.parseCTRSearch(s.conn, string(raw), s.conn.(*lobbyConn).lobbyDoc); err == nil {
 		t.Fatal("zero member accepted")
 	}
 }
