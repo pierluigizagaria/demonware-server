@@ -83,11 +83,11 @@ func handshake(t *testing.T, ticket []byte) *lobbyConn {
 }
 
 func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
-	l, w := sharedPS4Lobby()
 	withTestPlayerNames(t)
-	testPresence.OnlineMu.Lock()
-	testPresence.Online[l.N] = l.Player
-	testPresence.OnlineMu.Unlock()
+	l, w := sharedPS4Lobby()
+
+	testPresence.RegisterOnline(l.N, l.Player)
+
 	defer testPresence.DropOnline(l.N)
 	if err := testPresence.RememberPlayerName(platform.PlayerID{PID: 42, Username: "OfflineFriend", Kind: "shadnet"}, time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)

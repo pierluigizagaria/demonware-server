@@ -22,39 +22,39 @@ import (
 )
 
 type Store struct {
-	OnlineMu    sync.Mutex
-	Online      map[uint64]*platform.PlayerID
+	onlineMu    sync.Mutex
+	online      map[uint64]*platform.PlayerID
 	userDataMu  sync.Mutex
-	UserData    map[string][]byte
-	RichMu      sync.Mutex
-	Rich        map[uint64]RichPresence
-	PlayerNames playerNameStore
+	userData    map[string][]byte
+	richMu      sync.Mutex
+	rich        map[uint64]RichPresence
+	playerNames playerNameStore
 }
 
 func NewStore(names playerNameStore) *Store {
-	return &Store{Online: map[uint64]*platform.PlayerID{}, UserData: map[string][]byte{}, Rich: map[uint64]RichPresence{}, PlayerNames: names}
+	return &Store{online: map[uint64]*platform.PlayerID{}, userData: map[string][]byte{}, rich: map[uint64]RichPresence{}, playerNames: names}
 }
 
 // dropPresence forgets a player's rich presence (ctr_presence.go keeps the store).
 func (state *Store) dropPresence(pid uint64) {
-	state.RichMu.Lock()
-	delete(state.Rich, pid)
-	state.RichMu.Unlock()
+	state.richMu.Lock()
+	delete(state.rich, pid)
+	state.richMu.Unlock()
 }
 
 func (state *Store) DropOnline(conn uint64) {
-	state.OnlineMu.Lock()
+	state.onlineMu.Lock()
 	var pid uint64
-	if p := state.Online[conn]; p != nil {
+	if p := state.online[conn]; p != nil {
 		pid = p.PID
-		for other, q := range state.Online {
+		for other, q := range state.online {
 			if other != conn && q.PID == pid { // still connected on another connection
 				pid = 0
 			}
 		}
 	}
-	delete(state.Online, conn)
-	state.OnlineMu.Unlock()
+	delete(state.online, conn)
+	state.onlineMu.Unlock()
 	if pid != 0 {
 		state.dropPresence(pid) // a player who left must not look joinable
 	}
@@ -62,9 +62,9 @@ func (state *Store) DropOnline(conn uint64) {
 
 // onlinePlayerFor returns the connected player whose account ID is ID, or nil.
 func (state *Store) onlinePlayerFor(id uint64) *platform.PlayerID {
-	state.OnlineMu.Lock()
-	defer state.OnlineMu.Unlock()
-	for _, p := range state.Online {
+	state.onlineMu.Lock()
+	defer state.onlineMu.Unlock()
+	for _, p := range state.online {
 		if p.PID != 0 && p.PID == id {
 			return p
 		}
@@ -74,11 +74,11 @@ func (state *Store) onlinePlayerFor(id uint64) *platform.PlayerID {
 
 // OnlinePIDs returns every connected player's PID once.
 func (state *Store) OnlinePIDs() []uint64 {
-	state.OnlineMu.Lock()
-	defer state.OnlineMu.Unlock()
+	state.onlineMu.Lock()
+	defer state.onlineMu.Unlock()
 	seen := map[uint64]bool{}
 	out := []uint64{}
-	for _, p := range state.Online {
+	for _, p := range state.online {
 		if p.PID != 0 && !seen[p.PID] {
 			seen[p.PID] = true
 			out = append(out, p.PID)
@@ -129,7 +129,7 @@ func (h *Handler) OnUserData(peer presencePeer, task byte, r *demonware.Reader) 
 			return h.TaskReply(task, 0, nil)
 		}
 		h.Presence.userDataMu.Lock()
-		h.Presence.UserData[strings.ToLower(peer.Identity().Username)+"|"+ctx] = data
+		h.Presence.userData[strings.ToLower(peer.Identity().Username)+"|"+ctx] = data
 		h.Presence.userDataMu.Unlock()
 		peer.Logf("[presence] userdata SET %s ctx=%q %d bytes", peer.Identity().Username, ctx, len(data))
 		return h.TaskReply(task, 0, nil)
@@ -149,7 +149,7 @@ func (h *Handler) OnUserData(peer presencePeer, task byte, r *demonware.Reader) 
 				continue
 			}
 			h.Presence.userDataMu.Lock()
-			d, ok := h.Presence.UserData[strings.ToLower(name)+"|"+ctx]
+			d, ok := h.Presence.userData[strings.ToLower(name)+"|"+ctx]
 			h.Presence.userDataMu.Unlock()
 			if ok {
 				hits = append(hits, hit{id, d})
@@ -195,19 +195,19 @@ func (h *Handler) OnGetUserIDs(peer presencePeer, task byte, r *demonware.Reader
 		names = append(names, name)
 	}
 	known := map[string]*platform.PlayerID{}
-	if h.Presence.PlayerNames != nil {
-		recorded, err := h.Presence.PlayerNames.NamedPlayers(names)
+	if h.Presence.playerNames != nil {
+		recorded, err := h.Presence.playerNames.NamedPlayers(names)
 		if err != nil {
 			peer.Logf("[presence] friends getUserIDs: player names: %v", err)
 		} else {
 			known = recorded
 		}
 	}
-	h.Presence.OnlineMu.Lock()
-	for _, p := range h.Presence.Online {
+	h.Presence.onlineMu.Lock()
+	for _, p := range h.Presence.online {
 		known[strings.ToLower(p.Username)] = p
 	}
-	h.Presence.OnlineMu.Unlock()
+	h.Presence.onlineMu.Unlock()
 	var found []*platform.PlayerID
 	for _, name := range names {
 		if p := known[strings.ToLower(name)]; p != nil && p.PID != 0 {

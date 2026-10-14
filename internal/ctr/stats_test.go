@@ -96,11 +96,12 @@ func TestCTRStatsRankAndFriendsRequests(t *testing.T) {
 	testPresence := presence.NewStore(nil)
 	testCTR := &Services{Economy: &EconomyStore{Dir: t.TempDir()}, Stats: &StatsStore{Dir: t.TempDir()}}
 
-	oldOnline, oldStore := testPresence.Online, testCTR.Stats
-	defer func() { testPresence.Online = oldOnline; testCTR.Stats = oldStore }()
-	testPresence.Online = map[uint64]*platform.PlayerID{9: {PID: 12, Username: "test", Title: 5760}}
+	oldPresence, oldStore := testPresence, testCTR.Stats
+	defer func() { testPresence = oldPresence; testCTR.Stats = oldStore }()
+	testPresence = presence.NewStore(nil)
+	testPresence.RegisterOnline(9, &platform.PlayerID{PID: 12, Username: "test", Title: 5760})
 	testCTR.Stats = &StatsStore{Dir: t.TempDir()}
-	l := newUnitPeer(t, &testPeer{Presence: testPresence, N: 9, Player: testPresence.Online[9], services: testCTR})
+	l := newUnitPeer(t, &testPeer{Presence: testPresence, N: 9, Player: testPresence.ConnectionPlayer(9), services: testCTR})
 	if err := testCTR.Stats.Write([]StatWrite{{Stat: Stat{Board: 1001, PID: 12, Score: 400, Name: "A"}, Operation: 4}, {Stat: Stat{Board: 1001, PID: 13, Score: 500, Name: "B"}, Operation: 4}}); err != nil {
 		t.Fatal(err)
 	}

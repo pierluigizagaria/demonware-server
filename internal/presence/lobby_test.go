@@ -14,9 +14,9 @@ func TestCTRRichPresenceRoundTrip(t *testing.T) {
 	testReplies := &presenceTestReplies{}
 
 	host := &presenceTestPeer{replies: testReplies, Presence: testPresence, N: 7771, Player: &platform.PlayerID{Username: "Mars", PID: 1800000119}}
-	testPresence.OnlineMu.Lock()
-	testPresence.Online[host.N] = host.Player
-	testPresence.OnlineMu.Unlock()
+	testPresence.onlineMu.Lock()
+	testPresence.online[host.N] = host.Player
+	testPresence.onlineMu.Unlock()
 	defer testPresence.DropOnline(host.N)
 
 	set := &demonware.Writer{}

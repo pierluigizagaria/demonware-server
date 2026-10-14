@@ -118,9 +118,9 @@ func TestRichPresenceGoneWhenThePlayerLeaves(t *testing.T) {
 	if rows, _ := rpRows(t, lb.onRichPresence(RPGet, demonware.NewReader(rpGetRequest("", alice.PID)))); len(rows) != 1 || rows[0].Flag != 0 || len(rows[0].Data) != 0 {
 		t.Fatalf("a player who left is still shown: %+v", rows)
 	}
-	testPresence.RichMu.Lock()
-	_, kept := testPresence.Rich[alice.PID]
-	testPresence.RichMu.Unlock()
+	testPresence.richMu.Lock()
+	_, kept := testPresence.rich[alice.PID]
+	testPresence.richMu.Unlock()
 	if kept {
 		t.Error("presence not dropped")
 	}
@@ -136,9 +136,9 @@ func TestRichPresenceFromTheRealLog(t *testing.T) {
 	withOnline(t, testPresence, map[uint64]*platform.PlayerID{1: alice})
 	l := &presenceTestPeer{replies: testReplies, Presence: testPresence, N: 1, Player: alice}
 	l.onRichPresence(RPSet, demonware.NewReader(raw))
-	testPresence.RichMu.Lock()
-	p, ok := testPresence.Rich[alice.PID]
-	testPresence.RichMu.Unlock()
+	testPresence.richMu.Lock()
+	p, ok := testPresence.rich[alice.PID]
+	testPresence.richMu.Unlock()
 	if !ok || p.Flag != 1 || len(p.Data) != 4 || p.Data[0] != 0xde {
 		t.Fatalf("stored %+v ok=%v", p, ok)
 	}
@@ -151,9 +151,9 @@ func TestRichPresenceNeedsAPlayer(t *testing.T) {
 	withOnline(t, testPresence, map[uint64]*platform.PlayerID{})
 	guest := &presenceTestPeer{replies: testReplies, Presence: testPresence, N: 9} // no identity
 	guest.onRichPresence(RPSet, demonware.NewReader(rpSetRequest("", 0, "", 1, []byte("x"))))
-	testPresence.RichMu.Lock()
-	n := len(testPresence.Rich)
-	testPresence.RichMu.Unlock()
+	testPresence.richMu.Lock()
+	n := len(testPresence.rich)
+	testPresence.richMu.Unlock()
 	if n != 0 {
 		t.Errorf("a player without a PID stored a presence")
 	}

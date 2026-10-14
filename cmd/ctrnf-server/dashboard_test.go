@@ -8,22 +8,25 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/dashboard"
 	"github.com/pierluigizagaria/demonware-server/internal/lobby"
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
 
 func TestDashboardCTRMembershipAndTitleSplit(t *testing.T) {
-	oldOnline := testPresence.Online
+	oldPresence := testPresence
 	oldTelemetry := testTelemetry
 	oldRooms := testMatchmaker.Rooms
 	oldSessions := testRegistry.Sessions
 	defer func() {
-		testPresence.Online = oldOnline
+		testPresence = oldPresence
 		testTelemetry = oldTelemetry
 		testMatchmaker.Rooms = oldRooms
 		testRegistry.Sessions = oldSessions
 	}()
-	testPresence.Online = map[uint64]*platform.PlayerID{1: {PID: 101, Username: "host", Title: 5760}, 2: {PID: 102, Username: "joined", Title: 5760}, 3: {PID: 103, Username: "pending", Title: 5760}, 4: {PID: 104, Username: "diablo"}}
+	players := map[uint64]*platform.PlayerID{1: {PID: 101, Username: "host", Title: 5760}, 2: {PID: 102, Username: "joined", Title: 5760}, 3: {PID: 103, Username: "pending", Title: 5760}, 4: {PID: 104, Username: "diablo"}}
 	testTelemetry = dashboard.NewTelemetry(testConfig, func() int64 { return 0 })
-	for id := range testPresence.Online {
+	testPresence = presence.NewStore(nil)
+	for id, player := range players {
+		testPresence.RegisterOnline(id, player)
 		testTelemetry.RegisterConn(id, "")
 	}
 	host := &ctr.Search{PID: 101, Doc: ctr.SearchDoc{Members: []uint64{101}}}

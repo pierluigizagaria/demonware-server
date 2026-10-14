@@ -15,8 +15,8 @@ type playerNameStore interface {
 }
 
 func (state *Store) RememberPlayerName(id platform.PlayerID, at time.Time) error {
-	if state.PlayerNames == nil || id.PID == 0 || id.Username == "" {
+	if state.playerNames == nil || id.PID == 0 || id.Username == "" {
 		return nil
 	}
-	return state.PlayerNames.RememberName(id.PID, id.Username, at)
+	return state.playerNames.RememberName(id.PID, id.Username, at)
 }

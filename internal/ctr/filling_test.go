@@ -271,9 +271,9 @@ func TestCTRFollowerDisbandReleasesSeat(t *testing.T) {
 	r := fillTestRoom(t, m, 7800, 2)
 	m.Enqueue(partySearchFor(m, t, 7810, 7811))
 	follower := newUnitPeer(t, &testPeer{Presence: testPresence, N: 7811, Player: &platform.PlayerID{PID: 7811}, services: testCTR})
-	testPresence.OnlineMu.Lock()
-	testPresence.Online[follower.N] = follower.Player
-	testPresence.OnlineMu.Unlock()
+
+	testPresence.RegisterOnline(follower.N, follower.Player)
+
 	defer testPresence.DropOnline(follower.N)
 	version := r.Version
 	out := m.Leave(follower, r.ID)
@@ -311,9 +311,9 @@ func TestCTRStaleDisconnectKeepsReplacementSeats(t *testing.T) {
 	party.Doc.Slots.Min = 8
 	m.Enqueue(party)
 	old := newUnitPeer(t, &testPeer{Presence: testPresence, N: 7699, Player: &platform.PlayerID{PID: 7601}, services: testCTR})
-	testPresence.OnlineMu.Lock()
-	testPresence.Online[7698] = &platform.PlayerID{PID: 7601} // the replacement connection
-	testPresence.OnlineMu.Unlock()
+
+	testPresence.RegisterOnline(7698, &platform.PlayerID{PID: 7601}) // the replacement connection
+
 	defer testPresence.DropOnline(7698)
 	m.Leave(old, 0)
 	if seats := seatsHeld(m); seats[7601] != 1 {

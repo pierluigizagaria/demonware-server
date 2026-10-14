@@ -52,7 +52,8 @@ func TestInstancePresenceAndPersistentNamesAreIsolated(t *testing.T) {
 	second, _ := sharedPS4Lobby()
 	first.Presence, second.Presence = a, b
 	first.Player.Username, second.Player.Username = "first", "second"
-	a.Online[first.N], b.Online[second.N] = first.Player, second.Player
+	a.RegisterOnline(first.N, first.Player)
+	b.RegisterOnline(second.N, second.Player)
 	aw, bw := &architectureWire{}, &architectureWire{}
 	first.C, second.C = aw, bw
 	for _, tc := range []struct {
@@ -76,11 +77,13 @@ func TestInstancePresenceAndPersistentNamesAreIsolated(t *testing.T) {
 		q.Raw(rpSetRequest("fixture", 17, "psn", 1, []byte{tc.value}))
 		architectureReply(t, architectureCall(t, tc.l, tc.w, q.Bytes()), 3, 0)
 	}
-	if !bytes.Equal(a.Rich[17].Data, []byte{1}) || !bytes.Equal(b.Rich[17].Data, []byte{2}) {
+	aRows, _ := rpRows(t, first.onRichPresence(presence.RPGet, demonware.NewReader(rpGetRequest("fixture", 17))))
+	bRows, _ := rpRows(t, second.onRichPresence(presence.RPGet, demonware.NewReader(rpGetRequest("fixture", 17))))
+	if len(aRows) != 1 || len(bRows) != 1 || !bytes.Equal(aRows[0].Data, []byte{1}) || !bytes.Equal(bRows[0].Data, []byte{2}) {
 		t.Fatal("presence crossed instance boundary")
 	}
 	a.DropOnline(first.N)
-	if len(a.Rich) != 0 || b.NicknameOnline(17) != "second" || len(b.Rich) != 1 {
+	if a.Counts().RichPresence != 0 || b.NicknameOnline(17) != "second" || b.Counts().RichPresence != 1 {
 		t.Fatal("disconnect affected another instance")
 	}
 	q := demonware.NewWriter([]byte{12, 3, 10})
@@ -237,7 +240,7 @@ func TestComposedInstancesKeepEqualIdentitiesIndependent(t *testing.T) {
 		if err := instance.presence.RememberPlayerName(*l.Player, now); err != nil {
 			t.Fatal(err)
 		}
-		instance.presence.Online[l.N] = l.Player
+		instance.presence.RegisterOnline(l.N, l.Player)
 		frames := architectureCall(t, l, w, newsFetch("ctr", "it", [2]uint32{1, 1}))
 		payload, _ := hex.DecodeString(frames[0].Payload)
 		r := newsReply(t, payload, 5, 0, 1)

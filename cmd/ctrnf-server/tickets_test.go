@@ -7,6 +7,7 @@ import (
 
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
 	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
 
@@ -17,8 +18,8 @@ func issueTestTicket(ticket []byte, id platform.PlayerID) {
 func withTestPlayerNames(t *testing.T) *store.SQLite {
 	t.Helper()
 	db := openTestCTR(t, filepath.Join(t.TempDir(), store.DBFile), false)
-	old := testPresence.PlayerNames
-	testPresence.PlayerNames = db
-	t.Cleanup(func() { testPresence.PlayerNames = old })
+	old := testPresence
+	testPresence = presence.NewStore(db)
+	t.Cleanup(func() { testPresence = old })
 	return db
 }

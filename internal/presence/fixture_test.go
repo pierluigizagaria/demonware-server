@@ -40,6 +40,6 @@ func (p *presenceTestPeer) onRichPresence(task byte, r *demonware.Reader) []byte
 }
 func withOnline(t *testing.T, state *Store, players map[uint64]*platform.PlayerID) {
 	t.Helper()
-	state.Online = players
-	state.Rich = map[uint64]RichPresence{}
+	state.online = players
+	state.rich = map[uint64]RichPresence{}
 }

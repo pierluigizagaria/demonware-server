@@ -8,6 +8,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 	"github.com/pierluigizagaria/demonware-server/internal/lobby"
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
+	"github.com/pierluigizagaria/demonware-server/internal/presence"
 	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
 
@@ -22,11 +23,12 @@ func openTestLeaderboard(t *testing.T, path string) *store.SQLite {
 }
 
 func TestSQLiteLeaderboardServesStatsTasks(t *testing.T) {
-	oldOnline, oldStore := testPresence.Online, testCTR.Stats
-	defer func() { testPresence.Online = oldOnline; testCTR.Stats = oldStore }()
-	testPresence.Online = map[uint64]*platform.PlayerID{9: {PID: 12, Username: "test", Title: 5760}}
+	oldPresence, oldStore := testPresence, testCTR.Stats
+	defer func() { testPresence = oldPresence; testCTR.Stats = oldStore }()
+	testPresence = presence.NewStore(nil)
+	testPresence.RegisterOnline(9, &platform.PlayerID{PID: 12, Username: "test", Title: 5760})
 	testCTR.Stats = openTestLeaderboard(t, filepath.Join(t.TempDir(), store.DBFile))
-	l := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 9, Player: testPresence.Online[9]}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	l := newTestLobby(&lobby.Session{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 9, Player: testPresence.ConnectionPlayer(9)}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
 	if err := testCTR.Stats.Write([]ctr.StatWrite{{Stat: ctr.Stat{Board: 1001, PID: 12, Score: 400, Name: "A"}, Operation: 4}, {Stat: ctr.Stat{Board: 1001, PID: 13, Score: 500, Name: "B"}, Operation: 4}}); err != nil {
 		t.Fatal(err)
 	}

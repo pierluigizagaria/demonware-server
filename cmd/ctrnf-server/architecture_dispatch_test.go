@@ -21,7 +21,6 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/ctr"
 	"github.com/pierluigizagaria/demonware-server/internal/demonware"
 	"github.com/pierluigizagaria/demonware-server/internal/lobby"
-	"github.com/pierluigizagaria/demonware-server/internal/platform"
 	"github.com/pierluigizagaria/demonware-server/internal/presence"
 	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
@@ -94,25 +93,26 @@ type architectureSnapshot struct {
 // replaced registries; the instance refactor must retain these observations.
 func architectureBaseline(t *testing.T) (*lobbyConn, *architectureWire, *store.SQLite) {
 	t.Helper()
-	oldSessions, oldOnline, oldUserData, oldRich := testRegistry.Sessions, testPresence.Online, testPresence.UserData, testPresence.Rich
-	oldEconomy, oldStats, oldNames, oldNews := testCTR.Economy, testCTR.Stats, testPresence.PlayerNames, testCTR.News
+	oldSessions, oldPresence := testRegistry.Sessions, testPresence
+	oldEconomy, oldStats, oldNews := testCTR.Economy, testCTR.Stats, testCTR.News
 	oldWaiting, oldPending, oldRooms := testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms
 	oldTx, oldIDs := testReplies.Transactions.Load(), testMatchmaker.IDs.Load()
-	testRegistry.Sessions, testPresence.Online, testPresence.UserData, testPresence.Rich = map[[8]byte]*lobby.MatchSession{}, map[uint64]*platform.PlayerID{}, map[string][]byte{}, map[uint64]presence.RichPresence{}
+	testRegistry.Sessions = map[[8]byte]*lobby.MatchSession{}
 	testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms = nil, nil, map[uint64]*ctr.Room{}
 	testReplies.Transactions.Store(0)
 	testMatchmaker.IDs.Store(0)
 	e, db := newTestEconomy(t, false)
-	testCTR.Economy, testCTR.Stats, testPresence.PlayerNames, testCTR.News = e, db, db, config.News{}
+	testCTR.Economy, testCTR.Stats, testCTR.News = e, db, config.News{}
+	testPresence = presence.NewStore(db)
 	setStartBalance(t, 10000)
 	l, _ := sharedPS4Lobby()
 	w := &architectureWire{}
 	l.C = w
 	l.pubDir = t.TempDir()
-	testPresence.Online[l.N] = l.Player
+	testPresence.RegisterOnline(l.N, l.Player)
 	t.Cleanup(func() {
-		testRegistry.Sessions, testPresence.Online, testPresence.UserData, testPresence.Rich = oldSessions, oldOnline, oldUserData, oldRich
-		testCTR.Economy, testCTR.Stats, testPresence.PlayerNames, testCTR.News = oldEconomy, oldStats, oldNames, oldNews
+		testRegistry.Sessions, testPresence = oldSessions, oldPresence
+		testCTR.Economy, testCTR.Stats, testCTR.News = oldEconomy, oldStats, oldNews
 		testMatchmaker.Waiting, testMatchmaker.Pending, testMatchmaker.Rooms = oldWaiting, oldPending, oldRooms
 		testReplies.Transactions.Store(oldTx)
 		testMatchmaker.IDs.Store(oldIDs)
@@ -158,7 +158,7 @@ func architectureState(t *testing.T, l *lobbyConn, w *architectureWire, db *stor
 			frames[i].Payload = hex.EncodeToString(p)
 		}
 	}
-	return architectureSnapshot{frames, testReplies.Transactions.Load(), len(testRegistry.Sessions), len(testPresence.UserData), len(testPresence.Rich), len(testMatchmaker.Waiting), len(testMatchmaker.Pending), len(testMatchmaker.Rooms), l.lobbyDoc,
+	return architectureSnapshot{frames, testReplies.Transactions.Load(), len(testRegistry.Sessions), testPresence.Counts().UserData, testPresence.Counts().RichPresence, len(testMatchmaker.Waiting), len(testMatchmaker.Pending), len(testMatchmaker.Rooms), l.lobbyDoc,
 		sqliteCount(t, db, "accounts"), sqliteCount(t, db, "inventory"), sqliteCount(t, db, "ledger"), l.AfterReplyActive, l.ReplyErr != nil}
 }
 

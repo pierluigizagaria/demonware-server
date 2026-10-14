@@ -77,9 +77,9 @@ func (h *Handler) OnRichPresence(peer presencePeer, task byte, r *demonware.Read
 		if id == 0 {
 			return h.TaskReply(task, 0, nil)
 		}
-		h.Presence.RichMu.Lock()
-		h.Presence.Rich[id] = RichPresence{plat, flag, data}
-		h.Presence.RichMu.Unlock()
+		h.Presence.richMu.Lock()
+		h.Presence.rich[id] = RichPresence{plat, flag, data}
+		h.Presence.richMu.Unlock()
 		peer.Logf("[presence] richpresence SET pid=%d ctx=%q %d bytes", id, ctx, len(data))
 		return h.TaskReply(task, 0, nil)
 
@@ -92,7 +92,7 @@ func (h *Handler) OnRichPresence(peer presencePeer, task byte, r *demonware.Read
 			p  RichPresence
 		}
 		var hits []hit
-		h.Presence.RichMu.Lock()
+		h.Presence.richMu.Lock()
 		for _, a := range ids {
 			id := a.id
 			if id == 0 {
@@ -104,13 +104,13 @@ func (h *Handler) OnRichPresence(peer presencePeer, task byte, r *demonware.Read
 			// Never return retained join data for a disconnected account.
 			p := RichPresence{Platform: a.platform}
 			if id == me || live[id] {
-				if stored, ok := h.Presence.Rich[id]; ok {
+				if stored, ok := h.Presence.rich[id]; ok {
 					p = stored
 				}
 			}
 			hits = append(hits, hit{id, p})
 		}
-		h.Presence.RichMu.Unlock()
+		h.Presence.richMu.Unlock()
 		peer.Logf("[presence] richpresence GET ctx=%q %d demande(s) -> %d presence(s)", ctx, len(ids), len(hits))
 		return h.TaskReply(task, 0, func(w *demonware.Writer) uint32 {
 			for _, h := range hits {
