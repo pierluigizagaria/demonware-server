@@ -1,0 +1,16 @@
+{
+  "Policy/populated": "{\"issuer\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"client_id\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"np_title_id\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"scopes\":[\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"]}",
+  "Policy/zero": "{\"issuer\":\"\",\"client_id\":\"\",\"np_title_id\":\"\",\"scopes\":null}",
+  "value_0/populated": "{\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\":{\"synthetic\":7}}",
+  "value_0/zero": "null",
+  "value_1/populated": "[\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"]",
+  "value_1/zero": "null",
+  "verifier_101/populated": "{\"n\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"e\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"kty\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"kid\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"alg\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"use\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"}",
+  "verifier_101/zero": "{\"n\":\"\",\"e\":\"\",\"kty\":\"\",\"kid\":\"\",\"alg\":\"\",\"use\":\"\"}",
+  "verifier_151/populated": "{\"alg\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"typ\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"kid\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"}",
+  "verifier_151/zero": "{\"alg\":\"\",\"typ\":\"\",\"kid\":\"\"}",
+  "verifier_171/populated": "{\"iss\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"sub\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"aud\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"iat\":7,\"exp\":7,\"jti\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"env_iss_id\":7,\"online_id\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"np_title_id\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"scope\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"duid\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"}",
+  "verifier_171/zero": "{\"iss\":\"\",\"sub\":\"\",\"aud\":\"\",\"iat\":0,\"exp\":0,\"jti\":\"\",\"env_iss_id\":0,\"online_id\":\"\",\"np_title_id\":\"\",\"scope\":\"\",\"duid\":\"\"}",
+  "verifier_93/populated": "{\"keys\":[{\"synthetic\":7}]}",
+  "verifier_93/zero": "{\"keys\":null}"
+}

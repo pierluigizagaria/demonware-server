@@ -1,0 +1,12 @@
+{
+  "platform_psn_53/populated": "{\"title_id\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"auth_task\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"iv_seed\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"extra_data\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"}",
+  "platform_psn_53/zero": "{\"title_id\":\"\",\"auth_task\":\"\",\"iv_seed\":\"\",\"extra_data\":\"\"}",
+  "platform_psn_65/populated": "{\"token\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"}",
+  "platform_psn_65/zero": "{\"token\":\"\"}",
+  "platform_psn_68/populated": "{\"id_token\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"}",
+  "platform_psn_68/zero": "{\"id_token\":\"\"}",
+  "value_0/populated": "{\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\":{\"synthetic\":7}}",
+  "value_0/zero": "null",
+  "value_1/populated": "{\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"}",
+  "value_1/zero": "null"
+}

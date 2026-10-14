@@ -1,0 +1,8 @@
+{
+  "auth_108/populated": "{\"auth_task\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"iv_seed\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"title_id\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"identity\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"}",
+  "auth_108/zero": "{\"auth_task\":\"\",\"iv_seed\":\"\",\"title_id\":\"\",\"identity\":\"\"}",
+  "auth_218/populated": "{\"auth_task\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"code\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"iv_seed\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"client_ticket\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"server_ticket\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"extra_data\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"}",
+  "auth_218/zero": "{\"auth_task\":\"\",\"code\":\"\",\"iv_seed\":\"\",\"client_ticket\":\"\",\"server_ticket\":\"\",\"extra_data\":\"\"}",
+  "value_0/populated": "{\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"}",
+  "value_0/zero": "null"
+}

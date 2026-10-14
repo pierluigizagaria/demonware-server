@@ -1,0 +1,16 @@
+{
+  "pubConfig/populated": "{\"season\":7,\"season_start\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"season_end\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"buff_start\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"buff_end\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"events\":{\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\":true},\"legendary_find\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"gold_find\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"xp\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"hero_publish_frequency_minutes\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"cross_platform_save_migration\":true,\"seasonal_global_leaderboards\":true,\"diablo4_advertisement\":true,\"update_version\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"challenge_rifts\":{\"mode\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"number\":7},\"season_theme\":true,\"season_rotation\":{\"enabled\":true,\"first\":7,\"last\":7,\"anchor\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"interval_seconds\":7},\"season_themes\":{\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\":[\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"]}}",
+  "pubConfig/zero": "{\"season\":0,\"season_start\":\"\",\"season_end\":\"\",\"buff_start\":\"\",\"buff_end\":\"\",\"events\":null,\"legendary_find\":\"\",\"gold_find\":\"\",\"xp\":\"\",\"hero_publish_frequency_minutes\":\"\",\"cross_platform_save_migration\":false,\"seasonal_global_leaderboards\":false,\"diablo4_advertisement\":false,\"update_version\":\"\",\"challenge_rifts\":{\"mode\":\"\",\"number\":0},\"season_theme\":false,\"season_rotation\":{\"enabled\":false,\"first\":0,\"last\":0,\"anchor\":\"\",\"interval_seconds\":0},\"season_themes\":null}",
+  "riftSettings/populated": "{\"mode\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"number\":7}",
+  "riftSettings/zero": "{\"mode\":\"\",\"number\":0}",
+  "seasonRotation/populated": "{\"enabled\":true,\"first\":7,\"last\":7,\"anchor\":\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\",\"interval_seconds\":7}",
+  "seasonRotation/zero": "{\"enabled\":false,\"first\":0,\"last\":0,\"anchor\":\"\",\"interval_seconds\":0}",
+  "value_0/populated": "[\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"]",
+  "value_0/zero": "null",
+  "value_1/populated": "[\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"]",
+  "value_1/zero": "null",
+  "value_2/populated": "{\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\":true}",
+  "value_2/zero": "null",
+  "value_3/populated": "{\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\":[\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"]}",
+  "value_3/zero": "null"
+}

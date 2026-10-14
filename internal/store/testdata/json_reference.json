@@ -1,0 +1,10 @@
+{
+  "value_0/populated": "{\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\":7}",
+  "value_0/zero": "null",
+  "value_1/populated": "{\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\":true}",
+  "value_1/zero": "null",
+  "value_2/populated": "[\"fixture \\u003c\\u0026\\u003e \\\"value\\\"\"]",
+  "value_2/zero": "null",
+  "value_3/populated": "[7]",
+  "value_3/zero": "null"
+}

@@ -232,3 +232,33 @@ economy database or assume identical catalog/reward rules to make a new client f
 This establishes a reusable protocol boundary and a way to test future reuse.
 It does not establish how Demonware organizes its own production backend or
 which third game will be compatible without further evidence.
+# JSON compatibility references
+
+The code-quality cleanup records JSON on the unchanged `06912ba` implementation
+before renaming any fields. Each package's `json_reference_test.go` and
+`testdata/json_reference.json` cover zero and populated values, exact Marshal
+bytes, Encoder's trailing newline, and decoding a saved input into the original
+value. Anonymous wire structs are also checked against their production source
+shape so that a copied test declaration cannot silently diverge. Fixtures contain
+synthetic data only and have no regeneration mode.
+
+| Owner / reference test | Reachable types and use |
+| --- | --- |
+| auth / `TestJSONReferenceAuth` | Anonymous authentication request and ordered response; `map[string]string` platform extra data. |
+| config / `TestJSONReferenceConfig` | News `map[string]string` (`content_long`). Config and news wrapper structs are not JSON-encoded. |
+| ctr / `TestJSONReferenceCtr` | `CtrSearchDoc` including slots/rules/filter and RawMessage values; `CtrPlayerInfo` including listen-server fields; dynamic host/backend documents (`map[string]any`, string maps, JSON numbers); `lobbyHostDoc`, `lobbyListenServer`, `lobbyTeamBalance`, anonymous uploaded-address and Umbrella request/response shapes, `jsonUint32`. |
+| ctr / same test | `economySKU` and its uint32-keyed catalog; `EconomyAccount`, `ChallengeCompletion`, `PitStopRefreshRecord`; legacy uint64-keyed balances and SKU slices; receipt, item and online-seconds maps. |
+| ctr / same test | `challengeSchedule`, `ChallengeRule`, `challengePeriod`, `windowShoppingRule`; `raceRate` and its uint64-keyed map; `AchievementEvent` receipt input; `CtrStat` in the nested board/player map (Rank excluded). |
+| dashboard / `TestJSONReferenceDashboard` | `/api/stats`: `ApiStats`, `apiServer`, `apiPlayer`, `ApiGathering`, `ApiLobbyP`, `apiEvent`, `apiMethod`, including the optional gathering code. |
+| diablo / `TestJSONReferenceDiablo` | `pubConfig`, `riftSettings`, `seasonRotation`, `seasonEvents` and season-theme maps; the existing season tests also cover the alternate event-object decoding. |
+| platform/ps4 / `TestJSONReferencePlatformPs4` | Anonymous PSN outer request, token and id-token envelopes; strict-object RawMessage maps and platform extra-data string maps. |
+| platform/guest / `TestJSONReferencePlatformGuest` | Platform extra-data string map. |
+| platform/shadnet / `TestJSONReferencePlatformShadnet` | Anonymous JWKS set/JWK, JWT header/claims; RawMessage maps, trust-ID string tuple; `Policy` retained as an additional data-contract reference. No real keys or credentials. |
+| store / `TestJSONReferenceStore` | SQLite JSON columns: challenge receipt `map[string]uint64`, challenge distinct and refresh receipt `map[string]bool`, ledger receipt `[]string` and ledger SKUs `[]uint32`. Existing adapter tests cover save/reopen and ledger persistence. |
+| strictjson / `TestJSONReferenceStrictjson` | RawMessage and dynamic-object destinations. Existing strict decoder tests cover UseNumber, duplicate keys, unknown fields, depth and trailing values. |
+
+Nested types are exercised through their root values. The shared wire package
+does not serialize production JSON; its JSON use loads test fixtures. The
+architecture dispatcher fixture remains unchanged: 648 snapshots with exactly
+the existing 12 service-21 Diablo disconnection exceptions. No schema or SQL
+change accompanies these references.
