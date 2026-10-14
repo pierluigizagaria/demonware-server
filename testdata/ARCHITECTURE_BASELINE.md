@@ -22,8 +22,14 @@ The only normalization in this baseline is:
 
 Transactions start from a known fixture-owned counter and are not normalized.
 Reward timestamps are never normalized. No global entropy source is replaced.
-Additional full workflows and component clock/entropy seams are separate work;
-this first fixture does not claim to cover every successful handler branch.
+`architecture_workflows_test.go` additionally checks successful dispatcher paths:
+stats persistence and reads, exact reward receipts and audit timestamps, callbacks
+after failed replies, context-registry lifecycle, search/cancel, pair creation,
+host sync and guest push, documents/disband, names, user data and presence.
+Component-local clock/entropy seams make the time-dependent workflows repeatable;
+the default clock/entropy call sites, SQL and transaction boundaries are unchanged.
+The original baseline JSON remains unchanged. The golden header fixture alone
+does not claim to cover every successful argument branch.
 
 `TestArchitectureIdentityDoubleRead` captures the documented split between key
 candidate admission and the subsequent identity lookup, with an intervening

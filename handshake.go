@@ -46,6 +46,8 @@ import (
 var serverIDs atomic.Uint64
 
 type lobbyConn struct {
+	clock   func() time.Time
+	entropy io.Reader
 	c       net.Conn
 	n       uint64
 	dumpDir string
@@ -68,6 +70,20 @@ type lobbyConn struct {
 	// Sent after the in-flight task reply (pushed messages).
 	afterReply func()
 	replyErr   error // outcome of the last task reply, for afterReply
+}
+
+func (l *lobbyConn) now() time.Time {
+	if l.clock != nil {
+		return l.clock()
+	}
+	return time.Now()
+}
+
+func (l *lobbyConn) random(p []byte) (int, error) {
+	if l.entropy != nil {
+		return io.ReadFull(l.entropy, p)
+	}
+	return rand.Read(p)
 }
 
 func (l *lobbyConn) logf(format string, a ...any) {

@@ -71,6 +71,7 @@ func (s *ctrSearch) removeMembers(remove func(uint64) bool) *ctrSearch {
 }
 
 type ctrRoom struct {
+	clock       func() time.Time
 	id, version uint64
 	created     int64
 	host        *ctrSearch
@@ -82,6 +83,7 @@ type ctrRoom struct {
 	mergeTarget uint64
 }
 type ctrMatchmaker struct {
+	clock   func() time.Time
 	mu      sync.Mutex
 	waiting []*ctrSearch
 	rooms   map[uint64]*ctrRoom
@@ -223,7 +225,7 @@ func (r *ctrRoom) documents() (string, string) {
 		}
 	}
 	backend := map[string]any{
-		"update_id": r.version, "update_time": time.Now().Unix(), "lobby_id": r.id, "create_time": r.created,
+		"update_id": r.version, "update_time": r.now().Unix(), "lobby_id": r.id, "create_time": r.created,
 		"players": expected, "dtls": map[string]string{"security_id": r.host.info.Listen.ID, "security_key": r.host.info.Listen.Key}, "ruleset_payload": r.host.doc.Rules,
 	}
 	h, _ := json.Marshal(r.hostDoc)
@@ -367,7 +369,7 @@ func (m *ctrMatchmaker) activate(reserved *ctrSearch) []ctrNotice {
 			r.capacity = min(r.capacity, s.doc.Slots.Max)
 			r.version++
 			r.hostDoc["update_id"] = r.version
-			r.hostDoc["update_time"] = time.Now().Unix()
+			r.hostDoc["update_time"] = m.now().Unix()
 			return append(evicted, r.notice(r.host, ctrUpdateLobby))
 		}
 	}
@@ -391,7 +393,7 @@ func (m *ctrMatchmaker) activate(reserved *ctrSearch) []ctrNotice {
 		return evicted
 	}
 	h := group[0]
-	r := &ctrRoom{id: ctrIDs.Add(1), version: 1, created: time.Now().Unix(), host: h, players: group, capacity: maximum, notified: map[*lobbyConn]bool{h.conn: true}}
+	r := &ctrRoom{clock: m.now, id: ctrIDs.Add(1), version: 1, created: m.now().Unix(), host: h, players: group, capacity: maximum, notified: map[*lobbyConn]bool{h.conn: true}}
 	r.hostDoc = map[string]any{
 		"update_id": r.version, "update_time": r.created, "game_id": r.id, "lobby_open": true, "lobby_open_for_pres_join": true,
 		"player_state":  map[string]uint32{strconv.FormatUint(h.pid, 10): 1},
@@ -550,7 +552,7 @@ func (m *ctrMatchmaker) detach(id uint64, lead func(*ctrSearch) bool, seats map[
 		}
 		r.version++
 		r.hostDoc["update_id"] = r.version
-		r.hostDoc["update_time"] = time.Now().Unix()
+		r.hostDoc["update_time"] = m.now().Unix()
 		notices = append(notices, r.notice(r.host, ctrUpdateLobby))
 	}
 	return notices
@@ -597,7 +599,7 @@ func (m *ctrMatchmaker) syncDoc(conn *lobbyConn, id, version uint64, raw string)
 	// players into a lobby that had already started racing and could not take
 	// them: "you can only join once, and after it starts nobody else gets in".
 	doc["update_id"] = r.version
-	doc["update_time"] = time.Now().Unix()
+	doc["update_time"] = m.now().Unix()
 	r.hostDoc = doc
 	mergeNotices := m.finishMerge(r)
 	// A source may close or withdraw eligibility while the destination is
@@ -671,4 +673,17 @@ func (m *ctrMatchmaker) syncDoc(conn *lobbyConn, id, version uint64, raw string)
 		out = append(out, m.startMerge(r)...)
 	}
 	return true, out
+}
+
+func (m *ctrMatchmaker) now() time.Time {
+	if m.clock != nil {
+		return m.clock()
+	}
+	return time.Now()
+}
+func (r *ctrRoom) now() time.Time {
+	if r.clock != nil {
+		return r.clock()
+	}
+	return time.Now()
 }

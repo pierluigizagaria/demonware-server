@@ -102,8 +102,9 @@ const replayRetention = 9 * 24 * time.Hour
 // ctrSQLite owns the only connection pool for this instance's economy, stats
 // and player names.
 type ctrSQLite struct {
-	db   *sql.DB
-	lock *os.File
+	clock func() time.Time
+	db    *sql.DB
+	lock  *os.File
 }
 
 // Economy saves read and write in separate transactions under a process mutex,
@@ -316,12 +317,12 @@ func (s *ctrSQLite) load(pid uint64, create bool) (*economyAccount, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	a, exists, err := readSQLiteAccount(tx, pid)
+	a, exists, err := readSQLiteAccount(tx, pid, s.now)
 	if err != nil {
 		return nil, err
 	}
 	if !exists && create {
-		if err := saveSQLiteAccount(tx, pid, a, a, false, economyChange{source: "starting balance"}); err != nil {
+		if err := saveSQLiteAccount(tx, pid, a, a, false, economyChange{source: "starting balance"}, s.now); err != nil {
 			return nil, err
 		}
 	}
@@ -345,7 +346,7 @@ func accountRows(tx *sql.Tx, query string, scan func(*sql.Rows) error, args ...a
 	return rows.Err()
 }
 
-func readSQLiteAccount(tx *sql.Tx, pid uint64) (*economyAccount, bool, error) {
+func readSQLiteAccount(tx *sql.Tx, pid uint64, clock func() time.Time) (*economyAccount, bool, error) {
 	var found int
 	err := tx.QueryRow(`SELECT 1 FROM accounts WHERE pid = ?`, int64(pid)).Scan(&found)
 	if err == sql.ErrNoRows {
@@ -432,7 +433,7 @@ func readSQLiteAccount(tx *sql.Tx, pid uint64) (*economyAccount, bool, error) {
 			return nil
 		}},
 	}
-	retained := time.Now().Add(-replayRetention).Unix()
+	retained := clock().Add(-replayRetention).Unix()
 	for _, q := range queries {
 		// Replay-state queries take the retention cutoff as a second parameter.
 		args := []any{int64(pid), retained}[:strings.Count(q.query, "?")]
@@ -449,11 +450,11 @@ func (s *ctrSQLite) save(pid uint64, a *economyAccount, change economyChange) er
 		return err
 	}
 	defer tx.Rollback()
-	before, exists, err := readSQLiteAccount(tx, pid)
+	before, exists, err := readSQLiteAccount(tx, pid, s.now)
 	if err != nil {
 		return err
 	}
-	if err := saveSQLiteAccount(tx, pid, before, a, exists, change); err != nil {
+	if err := saveSQLiteAccount(tx, pid, before, a, exists, change, s.now); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -468,7 +469,7 @@ func jsonColumn(v any) string {
 // The account delta is the audit boundary: one row per changed currency and one
 // per newly granted item. A batch keeps all known SKU/receipt references. No
 // reward or pricing rules are reimplemented here.
-func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *economyAccount, exists bool, change economyChange) error {
+func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *economyAccount, exists bool, change economyChange, clock func() time.Time) error {
 	if after.Version != 2 || after.Balances == nil || after.Items == nil {
 		return fmt.Errorf("invalid economy account")
 	}
@@ -477,7 +478,7 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *economyAccount, ex
 			return fmt.Errorf("inventory is insert-only")
 		}
 	}
-	now := time.Now().Unix()
+	now := clock().Unix()
 	if !exists {
 		if _, err := tx.Exec(`INSERT INTO accounts(pid, created_at) VALUES (?, ?)`, int64(pid), now); err != nil {
 			return err
@@ -640,7 +641,7 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *economyAccount, ex
 		}
 	}
 	// Drop replay state that can no longer affect a reward.
-	expired := time.Now().Add(-replayRetention).Unix()
+	expired := clock().Add(-replayRetention).Unix()
 	if err := exec(`DELETE FROM race_receipts WHERE pid = ? AND recorded_at < ?`, expired); err != nil {
 		return err
 	}
@@ -817,4 +818,11 @@ func (s *ctrSQLite) namedPlayers(names []string) (map[string]*playerID, error) {
 		out[key] = &playerID{PID: uint64(pid), Username: stored}
 	}
 	return out, nil
+}
+
+func (s *ctrSQLite) now() time.Time {
+	if s.clock != nil {
+		return s.clock()
+	}
+	return time.Now()
 }

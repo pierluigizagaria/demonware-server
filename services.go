@@ -25,7 +25,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
@@ -112,7 +111,7 @@ func (l *lobbyConn) onTask(payload []byte) {
 	case service == 4 && l.player != nil && isCTRTitle(l.player.Title):
 		reply = l.onCTRStats(task, r)
 	case service == svcTitleUtilities && task == taskGetServerTime:
-		now := uint32(time.Now().Unix())
+		now := uint32(l.now().Unix())
 		reply = taskReply(task, 0, func(w *demonware.Writer) uint32 { w.Uint32(now); return 1 })
 		l.logf("task bdTitleUtilities.getServerTime -> %d", now)
 
@@ -305,10 +304,10 @@ func (l *lobbyConn) onTask(payload []byte) {
 // publisherFile looks the file up in the pubfiles folder, ignoring case (the
 // game asks for "Config.txt", the generator writes "config.txt").
 func (l *lobbyConn) publisherFile(name string) ([]byte, string) {
-	if data, path, ok := riftFile(name, time.Now()); ok {
+	if data, path, ok := riftFile(name, l.now()); ok {
 		return data, path
 	}
-	if data, path, ok := generatedPubfile(name, time.Now()); ok {
+	if data, path, ok := generatedPubfile(name, l.now()); ok {
 		return data, path
 	}
 	base := filepath.Base(name)

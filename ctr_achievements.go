@@ -1,8 +1,6 @@
 package main
 
 import (
-	"time"
-
 	"github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
 )
 
@@ -34,17 +32,17 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) []byte {
 			for _, e := range events {
 				l.logf("CTR reward event=%s timestamp=%d values=%v", e.Name, e.Timestamp, e.Values)
 			}
-			credit, err = economy.awardRaces(l.pid(), events, time.Now())
+			credit, err = economy.awardRaces(l.pid(), events, l.now())
 			if err != nil {
 				l.logf("CTR reward persistence failed: %v", err)
 				return taskReply(task, errUnhandled, nil)
 			}
-			updates, err = economy.reportPitStopRefresh(l.pid(), events, time.Now())
+			updates, err = economy.reportPitStopRefresh(l.pid(), events, l.now())
 			if err != nil {
 				l.logf("CTR refresh persistence failed: %v", err)
 				return taskReply(task, errUnhandled, nil)
 			}
-			challengeCredit, challengeUpdates, err := economy.awardChallenges(l.pid(), events, time.Now())
+			challengeCredit, challengeUpdates, err := economy.awardChallenges(l.pid(), events, l.now())
 			if err != nil {
 				l.logf("CTR challenge persistence failed: %v", err)
 				return taskReply(task, errUnhandled, nil)
@@ -79,13 +77,13 @@ func (l *lobbyConn) onAchievements(task byte, payload []byte) []byte {
 		if err != nil {
 			return taskReply(task, errUnhandled, nil)
 		}
-		state := currentPitStopRefresh(a, time.Now())
+		state := currentPitStopRefresh(a, l.now())
 		var states []byte
 		if achievementRequested(payload, state) {
 			states = demonware.AppendBytesField(nil, 1, state.encode())
 		}
 		for _, rule := range challengeRules.Rules {
-			if challenge, _, active := rule.current(a, time.Now()); active && achievementRequested(payload, challenge) {
+			if challenge, _, active := rule.current(a, l.now()); active && achievementRequested(payload, challenge) {
 				states = demonware.AppendBytesField(states, 1, challenge.encode())
 			}
 		}

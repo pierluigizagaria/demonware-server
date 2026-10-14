@@ -21,7 +21,6 @@ package main
 // the server only relays it.
 
 import (
-	"crypto/rand"
 	"encoding/hex"
 	"strings"
 	"sync"
@@ -208,8 +207,8 @@ func (l *lobbyConn) onMatchMaking(task byte, r *demonware.Reader) []byte {
 func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context string) []byte {
 	switch task {
 	case mmRequestSessionID:
-		s := &mmSession{context: context, owner: l.n, ownerPID: l.pid(), reserved: true, updated: time.Now()}
-		if _, err := rand.Read(s.id[:]); err != nil {
+		s := &mmSession{context: context, owner: l.n, ownerPID: l.pid(), reserved: true, updated: l.now()}
+		if _, err := l.random(s.id[:]); err != nil {
 			return taskReply(task, errUnhandled, nil)
 		}
 		sessionsMu.Lock()
@@ -228,8 +227,8 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 			l.logf("createSession unreadable: %v", err)
 			return taskReply(task, errUnhandled, nil)
 		}
-		s := &mmSession{owner: l.n, ownerPID: l.pid(), hostAddr: host, gameType: gt, maxPlayers: maxp, numPlayers: 1, attrs: attrs, updated: time.Now()}
-		_, _ = rand.Read(s.id[:])
+		s := &mmSession{owner: l.n, ownerPID: l.pid(), hostAddr: host, gameType: gt, maxPlayers: maxp, numPlayers: 1, attrs: attrs, updated: l.now()}
+		_, _ = l.random(s.id[:])
 		s.context = context
 		sessionsMu.Lock()
 		// A host recreating its game after reconnecting replaces the old one.
@@ -264,7 +263,7 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 		s, ok := sessions[id]
 		if ok && s.context == context && l.owns(s) {
 			s.owner, s.ownerPID = l.n, l.pid()
-			s.hostAddr, s.gameType, s.maxPlayers, s.attrs, s.updated = host, gt, maxp, attrs, time.Now()
+			s.hostAddr, s.gameType, s.maxPlayers, s.attrs, s.updated = host, gt, maxp, attrs, l.now()
 			if task == mmInitializeSession {
 				s.reserved = false
 				s.numPlayers = 1
@@ -297,7 +296,7 @@ func (l *lobbyConn) onMatchMakingContext(task byte, r *demonware.Reader, context
 			if err == nil {
 				s.hostAddr, s.gameType, s.maxPlayers, s.attrs = host, gt, maxp, attrs
 			}
-			s.updated = time.Now()
+			s.updated = l.now()
 		}
 		sessionsMu.Unlock()
 		l.logf("matchmaking PLAYERS session=%X players=%d/%d known=%v", id, players, maxp, ok)
