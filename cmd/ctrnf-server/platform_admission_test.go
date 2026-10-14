@@ -1,0 +1,199 @@
+package main
+
+import (
+	bytes "bytes"
+	rand "crypto/rand"
+	rsa "crypto/rsa"
+	x509 "crypto/x509"
+	binary "encoding/binary"
+	json "encoding/json"
+	pem "encoding/pem"
+	authpkg "github.com/NextendoNetwork/nextendo-demonware/internal/auth"
+	ctrpkg "github.com/NextendoNetwork/nextendo-demonware/internal/ctr"
+	demonwarepkg "github.com/NextendoNetwork/nextendo-demonware/internal/demonware"
+	lobbypkg "github.com/NextendoNetwork/nextendo-demonware/internal/lobby"
+	platformpkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform"
+	ps4pkg "github.com/NextendoNetwork/nextendo-demonware/internal/platform/ps4"
+	io "io"
+	httptest "net/http/httptest"
+	os "os"
+	exec "os/exec"
+	filepath "path/filepath"
+	testing "testing"
+	iotest "testing/iotest"
+	time "time"
+)
+
+func testCTRSigner(t *testing.T) *authpkg.CtrAuthSigner {
+	t.Helper()
+	if _, err := exec.LookPath("openssl"); err != nil {
+		t.Skip("openssl unavailable")
+	}
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "signer.pem")
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := authpkg.LoadCTRAuthSigner(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func fixturePSNPlatform() ps4pkg.PsnPlatform {
+	return ps4pkg.PsnPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platformpkg.Identity, error) {
+		return platformpkg.Identity{AccountID: 17, Subject: "17", OnlineID: "fixture"}, nil
+	})}
+}
+
+func psnTicket(issued time.Time) []byte {
+	ticket := make([]byte, 128)
+	binary.LittleEndian.PutUint32(ticket, authpkg.TicketMagic)
+	ticket[4] = 1
+	binary.LittleEndian.PutUint32(ticket[5:], 5760)
+	binary.LittleEndian.PutUint32(ticket[13:], uint32(issued.Unix()))
+	binary.LittleEndian.PutUint64(ticket[17:], 17)
+	binary.LittleEndian.PutUint64(ticket[25:], 17)
+	_, _ = rand.Read(ticket[33:97])
+	copy(ticket[97:121], ticket[33:57])
+	return ticket
+}
+
+// handshake sends a client 0x82 carrying ticket, tagged with the ticket's own
+// lobby key, and returns the connection so callers can see if it was keyed.
+func handshake(t *testing.T, ticket []byte) *lobbyConn {
+	t.Helper()
+	l, _ := sharedPS4Lobby()
+	l.Keys, l.Player = nil, nil
+	l.MaxLen, l.Nonce, l.Payload1 = 65536, make([]byte, 8), make([]byte, 20)
+	raw := demonwarepkg.Frame(append(append([]byte{demonwarepkg.MsgClientAuth}, ticket...), make([]byte, 8)...))
+	var transcript bytes.Buffer
+	transcript.Write(demonwarepkg.Uint32LE(210))
+	transcript.Write(demonwarepkg.Uint32LE(220))
+	transcript.Write(demonwarepkg.Uint32LE(l.MaxLen))
+	transcript.Write(l.Nonce)
+	transcript.Write(demonwarepkg.Uint32LE(uint32(len(l.Payload1) + 2)))
+	transcript.WriteByte(demonwarepkg.FrameFlag)
+	transcript.WriteByte(demonwarepkg.MsgServerHi)
+	transcript.Write(l.Payload1)
+	transcript.Write(raw[:len(raw)-8])
+	k := demonwarepkg.DeriveKeys(transcript.Bytes(), ticket[97:121])
+	copy(raw[len(raw)-8:], k.ClientTag[:])
+	l.OnClientAuth(raw)
+	return l
+}
+
+func TestPS4LobbyAdmitsOnlyFreshIssuedTickets(t *testing.T) {
+	if l := handshake(t, psnTicket(time.Now())); l.Keys != nil {
+		t.Fatal("unissued self-supplied ticket established encrypted session")
+	}
+	fresh := psnTicket(time.Now())
+	issueTestTicket(fresh, platformpkg.PlayerID{PID: 17, Username: "fixture", Sub: "shadnet:17", Kind: "shadnet", Title: 5760})
+	l := handshake(t, fresh)
+	defer testPresence.DropOnline(l.N)
+	if l.Keys == nil || l.Player == nil || l.Player.PID != 17 || l.Player.Title != 5760 {
+		t.Fatal("fresh issued ticket refused or identity lost")
+	}
+	stale := psnTicket(time.Now().Add(-121 * time.Second))
+	issueTestTicket(stale, platformpkg.PlayerID{PID: 17, Username: "fixture"})
+	if l := handshake(t, stale); l.Keys != nil {
+		t.Fatal("expired publisher ticket admitted")
+	}
+	foreign := psnTicket(time.Now())
+	issueTestTicket(foreign, platformpkg.PlayerID{PID: 18, Username: "other"})
+	if l := handshake(t, foreign); l.Keys != nil {
+		t.Fatal("ticket bound to another account admitted")
+	}
+}
+
+func TestPS4AuthRequiresResponseSigner(t *testing.T) {
+	h := testAuthHandler(fixturePSNPlatform(), nil, "")
+	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
+	before := issuedTicketCount()
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", bytes.NewReader(body)))
+	if w.Code == 200 {
+		t.Fatal("PS4 auth succeeded without required response signature")
+	}
+	if issuedTicketCount() != before {
+		t.Fatal("ticket issued without a signed response")
+	}
+}
+
+func TestPS4UmbrellaUsesFreshIssuedTicket(t *testing.T) {
+	call := func(ticket []byte) int {
+		body, _ := json.Marshal(map[string]any{"ticket": ticket, "titleID": "5760"})
+		w := httptest.NewRecorder()
+		testUmbrellaHandler(w, httptest.NewRequest("POST", "/v1.0/tokens/lsg/", bytes.NewReader(body)), body, 1, "")
+		return w.Code
+	}
+	fresh, stale := psnTicket(time.Now()), psnTicket(time.Now().Add(-121*time.Second))
+	for _, ticket := range [][]byte{fresh, stale} {
+		issueTestTicket(ticket, platformpkg.PlayerID{PID: 17, Username: "fixture"})
+	}
+	if call(fresh) != 200 || call(stale) != 401 || call(psnTicket(time.Now())) != 401 {
+		t.Fatal("Umbrella did not apply fresh issued-ticket admission")
+	}
+}
+
+func TestSharedGetUserIDsResolvesOnlineAndKnownIdentities(t *testing.T) {
+	l, w := sharedPS4Lobby()
+	withTestPlayerNames(t)
+	testPresence.OnlineMu.Lock()
+	testPresence.Online[l.N] = l.Player
+	testPresence.OnlineMu.Unlock()
+	defer testPresence.DropOnline(l.N)
+	if err := testPresence.RememberPlayerName(platformpkg.PlayerID{PID: 42, Username: "OfflineFriend", Kind: "shadnet"}, time.Now().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	req := demonwarepkg.NewWriter([]byte{12, demonwarepkg.TagUint8, 10})
+	req.Uint32(3)
+	req.String("FIXTURE")
+	req.String("offlinefriend")
+	req.String("stranger")
+	req.Raw([]byte{0})
+	reply := sharedTask(t, l, w, req.Bytes())
+	if len(reply) < 21 || binary.LittleEndian.Uint32(reply[10:14]) != 0 || binary.LittleEndian.Uint32(reply[17:21]) != 2 {
+		t.Fatal("online and previously authenticated friends were not both resolved")
+	}
+	if !bytes.Contains(reply, []byte("OfflineFriend\x00")) || bytes.Contains(reply, []byte("stranger")) {
+		t.Fatal("wrong identities resolved")
+	}
+}
+
+func TestCTRFollowerLeaveKeepsPartyAndNotifiesHost(t *testing.T) {
+	m := &ctrpkg.CtrMatchmaker{OnlinePIDs: testPresence.OnlinePIDs, Rooms: map[uint64]*ctrpkg.CtrRoom{}}
+	r := fillTestRoom(t, m, 30000, 2)
+	leader := r.Players[1]
+	leader.Doc.Members = []uint64{leader.Pid, 30009}
+	leader.Seats = 2
+	follower := newTestLobby(&lobbypkg.LobbySession{Telemetry: testTelemetry, Diagnostics: testDiagnostics, Options: testOptions, ReplyCounter: testReplies, Presence: testPresence, Tickets: testTickets, N: 30009, Player: &platformpkg.PlayerID{PID: 30009}}, lobbyDependencies{files: testFiles, relay: testRelay, matchmaker: testMatchmaker, registry: testRegistry, ctr: testCTR})
+	version := r.Version
+	out := m.Leave(follower, 0)
+	if len(out) != 1 || out[0].Conn != r.Host.Conn || out[0].Event != ctrpkg.CtrUpdateLobby || r.Version != version+1 {
+		t.Fatal("host not notified of the follower's departure")
+	}
+	if got := r.Players[1].Doc.Members; len(got) != 1 || got[0] != leader.Pid || r.Occupancy() != 2 {
+		t.Fatal("follower seat not released")
+	}
+	if out := m.Leave(leader.Conn, 0); len(out) != 1 || len(r.Players) != 1 {
+		t.Fatal("leader departure did not remove its search")
+	}
+}
+
+func TestAuthRefusesIncompleteBody(t *testing.T) {
+	h := testAuthHandler(fixturePSNPlatform(), testCTRSigner(t), "")
+	before := issuedTicketCount()
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", iotest.ErrReader(io.ErrUnexpectedEOF)))
+	if w.Code != 400 {
+		t.Fatalf("incomplete body answered %d", w.Code)
+	}
+	if issuedTicketCount() != before {
+		t.Fatal("ticket issued for an incomplete request")
+	}
+}

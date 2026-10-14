@@ -1,0 +1,141 @@
+// Demonware NAT probes on UDP 3074 (hosts stun.{us,eu,jp,au}.demonware.net).
+// This is not RFC 5389 STUN: three raw header bytes "type | version |
+// padding", then raw fields. Format taken from project-bo4/shield-development's
+// STUN server (same Demonware SDK generation) and confirmed by the console's
+// probes:
+//
+//	1e 03 00       type 30, IP discovery  -> 31 | 02 | 00 | ip[4] | port u16
+//	14 02 00 00    type 20, NAT discovery -> 21 | 02 | 00 | ip[4] | port u16 | serverIp[4] | serverPort u16
+//
+// The IP is written in network order, the port as a little-endian u16. Without
+// these replies the NAT type stays unknown and the game only offers local
+// games.
+//
+// NAT traversal (29-byte packets, format documented by
+// Protarium-Network/bo2-wiiu-demonware):
+//
+//	type | u16 version | id[10] | hmac[4] | sourceAddress[6] | destAddress[6]
+//
+// 0x0A: a joining player asks to be introduced to the host. We send the packet
+// back BYTE FOR BYTE to the destination with type 0x0B (INTRO); the HMAC covers
+// the addresses and only the requester verifies it, so nothing else may
+// change. The host answers 0x0C directly to the requester, which opens the P2P
+// connection. 0x0E: keepalive, no reply.
+
+package nat
+
+import (
+	binary "encoding/binary"
+	hex "encoding/hex"
+	fmt "fmt"
+	diagnosticspkg "github.com/NextendoNetwork/nextendo-demonware/internal/diagnostics"
+	net "net"
+	os "os"
+	filepath "path/filepath"
+	strconv "strconv"
+	sync "sync"
+	atomic "sync/atomic"
+)
+
+const natSeenMax = 4096
+
+type NatServer struct {
+	*diagnosticspkg.Diagnostics
+	BindAddr, NextendoHost string
+	ConnNum                *atomic.Uint64
+	natSeenMu              sync.Mutex
+	NatSeen                map[string]int
+	NatIntros              atomic.Int64
+}
+
+func (s *NatServer) ServeNAT(port int) {
+	pc, err := net.ListenPacket("udp", net.JoinHostPort(s.BindAddr, strconv.Itoa(port)))
+	if err != nil {
+		s.DiagnosticLogf("[D3 NAT] udp %d unavailable: %v", port, err)
+		return
+	}
+	serverIP := net.ParseIP(s.NextendoHost).To4()
+	if serverIP == nil {
+		s.DiagnosticLogf("[D3 NAT] NEXTENDO_HOST=%q is not an IPv4 address: announcing 127.0.0.1", s.NextendoHost)
+		serverIP = net.IPv4(127, 0, 0, 1).To4()
+	}
+	s.DiagnosticLogf("[D3 NAT] listening UDP %d (announced server ip %s)", port, serverIP)
+
+	buf := make([]byte, 2048)
+	for {
+		n, addr, err := pc.ReadFrom(buf)
+		if err != nil || n < 3 {
+			continue
+		}
+		ua, ok := addr.(*net.UDPAddr)
+		if !ok || ua.IP.To4() == nil {
+			continue
+		}
+		sig := fmt.Sprintf("%X", buf[:n])
+		s.natSeenMu.Lock()
+		if len(s.NatSeen) >= natSeenMax {
+			s.NatSeen = map[string]int{}
+		}
+		cnt := s.NatSeen[sig]
+		s.NatSeen[sig] = cnt + 1
+		s.natSeenMu.Unlock()
+
+		if n == 29 && (buf[0] == 0x0A || buf[0] == 0x0E) {
+			if buf[0] == 0x0E {
+				continue
+			}
+			dst := buf[23:29]
+			dstIP := net.IPv4(dst[0], dst[1], dst[2], dst[3])
+			dstPort := int(binary.LittleEndian.Uint16(dst[4:6]))
+			if dstPort == 0 || dstIP.Equal(net.IPv4(0, 255, 0, 255)) {
+				s.DiagnosticLogf("[D3 NAT] 0x0A from %s without destination: %X", addr, buf[:n])
+				continue
+			}
+			intro := append([]byte{0x0B}, buf[1:n]...)
+			to := &net.UDPAddr{IP: dstIP, Port: dstPort}
+			if _, err := pc.WriteTo(intro, to); err != nil {
+				s.DiagnosticLogf("[D3 NAT] INTRO to %s: %v", to, err)
+			} else {
+				s.NatIntros.Add(1)
+				// The host answers 0x0C to sourceAddress from INSIDE the packet, not to
+				// where we saw the request come from. A client that fills in its LAN
+				// address there is unreachable and the join fails with "failed to connect".
+				src := buf[17:23]
+				srcAddr := &net.UDPAddr{IP: net.IPv4(src[0], src[1], src[2], src[3]),
+					Port: int(binary.LittleEndian.Uint16(src[4:6]))}
+				ua, _ := addr.(*net.UDPAddr)
+				mismatch := ua == nil || !ua.IP.Equal(srcAddr.IP) || ua.Port != srcAddr.Port
+				s.DiagnosticLogf("[D3 NAT] INTRO %s -> %s (id=%X) claimed_src=%s mismatch=%v",
+					addr, to, buf[3:13], srcAddr, mismatch)
+			}
+			continue
+		}
+
+		resp := []byte{}
+		switch buf[0] {
+		case 30:
+			resp = append(resp, 31, 2, 0)
+			resp = append(resp, ua.IP.To4()...)
+			resp = binary.LittleEndian.AppendUint16(resp, uint16(ua.Port))
+		case 20:
+			resp = append(resp, 21, 2, 0)
+			resp = append(resp, ua.IP.To4()...)
+			resp = binary.LittleEndian.AppendUint16(resp, uint16(ua.Port))
+			resp = append(resp, serverIP...)
+			resp = binary.LittleEndian.AppendUint16(resp, uint16(port))
+		default:
+			if cnt < 2 {
+				s.DiagnosticLogf("[D3 NAT] unknown packet from %s: %s", addr, hex.EncodeToString(buf[:n]))
+				if dir := s.RunDumpDir("nat"); dir != "" {
+					_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("unknown_%d.bin", s.ConnNum.Add(1))), buf[:n], 0o644)
+				}
+			}
+			continue
+		}
+		if _, err := pc.WriteTo(resp, addr); err != nil {
+			s.DiagnosticLogf("[D3 NAT] reply to %s: %v", addr, err)
+		} else if cnt < 2 {
+			s.DiagnosticLogf("[D3 NAT] %s type %d -> %X", addr, buf[0], resp)
+		}
+	}
+}
