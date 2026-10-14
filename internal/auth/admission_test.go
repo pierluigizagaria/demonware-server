@@ -64,13 +64,13 @@ func TestPS4AuthRequiresResponseSigner(t *testing.T) {
 	testTickets := NewTicketStore()
 	h := testAuthHandler(testTickets, fixturePSNPlatform(), nil, "")
 	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
-	before := len(testTickets.Entries)
+	before := len(testTickets.entries)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", bytes.NewReader(body)))
 	if w.Code == 200 {
 		t.Fatal("PS4 auth succeeded without required response signature")
 	}
-	if len(testTickets.Entries) != before {
+	if len(testTickets.entries) != before {
 		t.Fatal("ticket issued without a signed response")
 	}
 }
@@ -78,13 +78,13 @@ func TestPS4AuthRequiresResponseSigner(t *testing.T) {
 func TestAuthRefusesIncompleteBody(t *testing.T) {
 	testTickets := NewTicketStore()
 	h := testAuthHandler(testTickets, fixturePSNPlatform(), testCTRSigner(t), "")
-	before := len(testTickets.Entries)
+	before := len(testTickets.entries)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", iotest.ErrReader(io.ErrUnexpectedEOF)))
 	if w.Code != 400 {
 		t.Fatalf("incomplete body answered %d", w.Code)
 	}
-	if len(testTickets.Entries) != before {
+	if len(testTickets.entries) != before {
 		t.Fatal("ticket issued for an incomplete request")
 	}
 }

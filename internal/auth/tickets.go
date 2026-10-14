@@ -19,11 +19,11 @@ type issuedTicket struct {
 }
 
 type TicketStore struct {
-	Mu      sync.Mutex
-	Entries map[[8]byte]issuedTicket
+	mu      sync.Mutex
+	entries map[[8]byte]issuedTicket
 }
 
-func NewTicketStore() *TicketStore { return &TicketStore{Entries: map[[8]byte]issuedTicket{}} }
+func NewTicketStore() *TicketStore { return &TicketStore{entries: map[[8]byte]issuedTicket{}} }
 
 // An issued identity stays readable this long after its ticket stops
 // admitting, for a lobby that admitted it just before the window closed.
@@ -41,14 +41,14 @@ func ticketIssuedAt(ticket []byte) time.Time {
 // RememberTicket records a ticket issued to ID and forgets those that can no
 // longer be read, so the store holds at most one window of issuance.
 func (s *TicketStore) RememberTicket(ticket []byte, id platform.PlayerID, now time.Time, window time.Duration) {
-	s.Mu.Lock()
-	defer s.Mu.Unlock()
-	for tag, t := range s.Entries {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for tag, t := range s.entries {
 		if now.Sub(ticketIssuedAt(t.ticket)) >= window+IssuedIdentityGrace {
-			delete(s.Entries, tag)
+			delete(s.entries, tag)
 		}
 	}
-	s.Entries[ticketTag(ticket)] = issuedTicket{ticket: append([]byte(nil), ticket...), id: id}
+	s.entries[ticketTag(ticket)] = issuedTicket{ticket: append([]byte(nil), ticket...), id: id}
 }
 
 // IssuedTicketPlayer admits a ticket only if this server issued exactly these
@@ -69,9 +69,9 @@ func (s *TicketStore) IssuedIdentity(ticket []byte) (*platform.PlayerID, bool) {
 	if len(ticket) != 128 {
 		return nil, false
 	}
-	s.Mu.Lock()
-	t, ok := s.Entries[ticketTag(ticket)]
-	s.Mu.Unlock()
+	s.mu.Lock()
+	t, ok := s.entries[ticketTag(ticket)]
+	s.mu.Unlock()
 	if !ok || !bytes.Equal(t.ticket, ticket) || t.id.PID == 0 || t.id.PID != binary.LittleEndian.Uint64(ticket[17:25]) {
 		return nil, false
 	}
