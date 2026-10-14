@@ -191,7 +191,7 @@ func TestSQLiteReplayStateRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	var expired int
-	if err := db.DB.QueryRow(`SELECT (SELECT count(*) FROM race_receipts WHERE recorded_at < ?1) +
+	if err := db.db.QueryRow(`SELECT (SELECT count(*) FROM race_receipts WHERE recorded_at < ?1) +
 		(SELECT count(*) FROM online_seconds WHERE updated_at < ?1)`, now.Add(-ReplayRetention).Unix()).Scan(&expired); err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestSQLiteRankedReadsMatchReference(t *testing.T) {
 		t.Fatalf("entities: sqlite %+v/%d, reference %+v/%d", got, gotTotal, want, wantTotal)
 	}
 	var plan strings.Builder
-	rs, err := db.DB.Query(`EXPLAIN QUERY PLAN SELECT pid FROM leaderboard WHERE board = ? ORDER BY `+LeaderboardOrder+` LIMIT 3 OFFSET 2`, 89)
+	rs, err := db.db.Query(`EXPLAIN QUERY PLAN SELECT pid FROM leaderboard WHERE board = ? ORDER BY `+LeaderboardOrder+` LIMIT 3 OFFSET 2`, 89)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func openTestCTR(t *testing.T, path string, unlockAll bool, initialBalance int64
 func sqliteCount(t *testing.T, db *SQLite, table string) int {
 	t.Helper()
 	var n int
-	if err := db.DB.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
+	if err := db.db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -294,7 +294,7 @@ func sqliteCount(t *testing.T, db *SQLite, table string) int {
 func sqliteChanges(t *testing.T, db *SQLite) int {
 	t.Helper()
 	var n int
-	if err := db.DB.QueryRow("SELECT total_changes()").Scan(&n); err != nil {
+	if err := db.db.QueryRow("SELECT total_changes()").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -302,7 +302,7 @@ func sqliteChanges(t *testing.T, db *SQLite) int {
 
 func sqliteExec(t *testing.T, db *SQLite, query string, args ...any) {
 	t.Helper()
-	if _, err := db.DB.Exec(query, args...); err != nil {
+	if _, err := db.db.Exec(query, args...); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -430,7 +430,7 @@ func TestEconomyStoresAgree(t *testing.T) {
 		})
 	}
 	var storedPID int64
-	if err := db.DB.QueryRow("SELECT pid FROM accounts").Scan(&storedPID); err != nil || storedPID != -1 {
+	if err := db.db.QueryRow("SELECT pid FROM accounts").Scan(&storedPID); err != nil || storedPID != -1 {
 		t.Fatalf("uint64 PID not stored as int64 bits: %d, %v", storedPID, err)
 	}
 }
@@ -564,13 +564,13 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	item := ctr.EconomyCatalogSnapshot()[200085].Items[0]
 	var source string
 	var stamp int64
-	if err := db.DB.QueryRow("SELECT source, granted_at FROM inventory WHERE pid=? AND item=?", pid, item).Scan(&source, &stamp); err != nil || source != "purchase" || stamp <= 0 {
+	if err := db.db.QueryRow("SELECT source, granted_at FROM inventory WHERE pid=? AND item=?", pid, item).Scan(&source, &stamp); err != nil || source != "purchase" || stamp <= 0 {
 		t.Fatalf("grant provenance = %s %d, %v", source, stamp, err)
 	}
 	var delta int64
 	var sku uint32
 	var skus string
-	if err := db.DB.QueryRow("SELECT delta, sku, skus FROM ledger WHERE source='purchase' AND currency=10").Scan(&delta, &sku, &skus); err != nil || delta != -ctr.EconomyCatalogSnapshot()[200085].Price || sku != 200085 || skus != "[200085]" {
+	if err := db.db.QueryRow("SELECT delta, sku, skus FROM ledger WHERE source='purchase' AND currency=10").Scan(&delta, &sku, &skus); err != nil || delta != -ctr.EconomyCatalogSnapshot()[200085].Price || sku != 200085 || skus != "[200085]" {
 		t.Fatalf("purchase audit = %d %d %s, %v", delta, sku, skus, err)
 	}
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
@@ -593,7 +593,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	} {
 		var delta int64
 		var receipt sql.NullString
-		if err := db.DB.QueryRow("SELECT delta, receipt FROM ledger WHERE source=? AND currency=10", tc.source).Scan(&delta, &receipt); err != nil {
+		if err := db.db.QueryRow("SELECT delta, receipt FROM ledger WHERE source=? AND currency=10", tc.source).Scan(&delta, &receipt); err != nil {
 			t.Fatal(err)
 		}
 		var refs []string
@@ -634,7 +634,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	var unlogged int
-	if err := db.DB.QueryRow(`SELECT count(*) FROM inventory i WHERE NOT EXISTS (
+	if err := db.db.QueryRow(`SELECT count(*) FROM inventory i WHERE NOT EXISTS (
 		SELECT 1 FROM ledger l WHERE l.pid=i.pid AND l.item=i.item AND l.source=i.source AND l.timestamp=i.granted_at)`).Scan(&unlogged); err != nil || unlogged != 0 {
 		t.Fatalf("unlogged items: %d, %v", unlogged, err)
 	}
@@ -644,7 +644,7 @@ func TestSQLiteLedgerAccountsForEveryChange(t *testing.T) {
 	}
 	for currency, amount := range a.Balances {
 		var sum int64
-		if err := db.DB.QueryRow("SELECT coalesce(sum(delta),0) FROM ledger WHERE pid=? AND currency=?", pid, currency).Scan(&sum); err != nil || sum != amount {
+		if err := db.db.QueryRow("SELECT coalesce(sum(delta),0) FROM ledger WHERE pid=? AND currency=?", pid, currency).Scan(&sum); err != nil || sum != amount {
 			t.Fatalf("currency %d: ledger %d balance %d, %v", currency, sum, amount, err)
 		}
 	}
@@ -688,7 +688,7 @@ func TestSQLiteInventoryAndLedgerAreAppendOnly(t *testing.T) {
 		"UPDATE ledger SET delta=1", "DELETE FROM ledger",
 		"INSERT OR REPLACE INTO ledger SELECT * FROM ledger",
 	} {
-		if _, err := db.DB.Exec(query); err == nil {
+		if _, err := db.db.Exec(query); err == nil {
 			t.Fatalf("accepted %s", query)
 		}
 	}
@@ -741,35 +741,35 @@ func TestSQLiteModeSchemaAndDurabilitySettings(t *testing.T) {
 			db := openTestCTR(t, path, unlockAll, testStartBalance)
 			var schema, mode, journal string
 			var version, synchronous, timeout int
-			if err := db.DB.QueryRow("SELECT sql FROM sqlite_master WHERE name='meta'").Scan(&schema); err != nil {
+			if err := db.db.QueryRow("SELECT sql FROM sqlite_master WHERE name='meta'").Scan(&schema); err != nil {
 				t.Fatal(err)
 			}
 			if schema != "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)" {
 				t.Fatalf("meta schema: %s", schema)
 			}
-			if err := db.DB.QueryRow("SELECT value FROM meta WHERE key='unlock_all'").Scan(&mode); err != nil {
+			if err := db.db.QueryRow("SELECT value FROM meta WHERE key='unlock_all'").Scan(&mode); err != nil {
 				t.Fatal(err)
 			}
 			var trust string
-			if err := db.DB.QueryRow("SELECT value FROM meta WHERE key='trust_id'").Scan(&trust); err != nil {
+			if err := db.db.QueryRow("SELECT value FROM meta WHERE key='trust_id'").Scan(&trust); err != nil {
 				t.Fatal(err)
 			}
 			if mode != map[bool]string{false: "0", true: "1"}[unlockAll] || trust != testTrustID || sqliteCount(t, db, "meta") != 2 {
 				t.Fatalf("meta rows: %q %q", mode, trust)
 			}
-			if err := db.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+			if err := db.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.DB.QueryRow("PRAGMA journal_mode").Scan(&journal); err != nil {
+			if err := db.db.QueryRow("PRAGMA journal_mode").Scan(&journal); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.DB.QueryRow("PRAGMA synchronous").Scan(&synchronous); err != nil {
+			if err := db.db.QueryRow("PRAGMA synchronous").Scan(&synchronous); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.DB.QueryRow("PRAGMA busy_timeout").Scan(&timeout); err != nil {
+			if err := db.db.QueryRow("PRAGMA busy_timeout").Scan(&timeout); err != nil {
 				t.Fatal(err)
 			}
-			if version != SchemaVersion || journal != "wal" || synchronous != 2 || timeout != 5000 || db.DB.Stats().MaxOpenConnections != 1 {
+			if version != SchemaVersion || journal != "wal" || synchronous != 2 || timeout != 5000 || db.db.Stats().MaxOpenConnections != 1 {
 				t.Fatalf("settings: %d %s %d %d", version, journal, synchronous, timeout)
 			}
 			db.Close()

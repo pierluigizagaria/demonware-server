@@ -77,8 +77,9 @@ func TestStartupFailureReleasesOpenedDatabase(t *testing.T) {
 		t.Fatalf("startup retained database lock: %v", err)
 	}
 	defer db.Close()
+	registerDatabaseInspector(t, db, filepath.Join(cfg.DataDir, store.DBFile))
 	var version int
-	if err := db.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 1 {
+	if err := inspectDatabase(t, db).QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 1 {
 		t.Fatal("schema changed during failed startup")
 	}
 }

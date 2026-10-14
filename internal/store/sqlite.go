@@ -32,7 +32,7 @@ const ReplayRetention = 9 * 24 * time.Hour
 type SQLite struct {
 	InitialBalance func() int64
 	Clock          func() time.Time
-	DB             *sql.DB
+	db             *sql.DB
 	lock           *os.File
 }
 
@@ -74,7 +74,7 @@ func OpenSQLite(path string, unlockAll bool, trustID string) (*SQLite, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s := &SQLite{DB: db, lock: lock}
+	s := &SQLite{db: db, lock: lock}
 	if err := s.initialize(unlockAll, trustID); err != nil {
 		s.Close()
 		return nil, err
@@ -83,13 +83,13 @@ func OpenSQLite(path string, unlockAll bool, trustID string) (*SQLite, error) {
 }
 
 func (s *SQLite) Close() error {
-	err := s.DB.Close()
+	err := s.db.Close()
 	s.lock.Close() // releases the instance lock; repeated closes are harmless
 	return err
 }
 
 func (s *SQLite) initialize(unlockAll bool, trustID string) error {
-	tx, err := s.DB.Begin()
+	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func newSQLiteAccount(balance int64) *ctr.EconomyAccount {
 // rows or an initial credit. A normal-economy snapshot creates it atomically;
 // unlock-all snapshots remain read-only. All account tables are read consistently.
 func (s *SQLite) Load(pid uint64, create bool) (*ctr.EconomyAccount, error) {
-	tx, err := s.DB.Begin()
+	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
@@ -374,7 +374,7 @@ func readSQLiteAccount(tx *sql.Tx, pid uint64, clock func() time.Time, balance f
 }
 
 func (s *SQLite) Save(pid uint64, a *ctr.EconomyAccount, change ctr.EconomyChange) error {
-	tx, err := s.DB.Begin()
+	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
@@ -578,7 +578,7 @@ func saveSQLiteAccount(tx *sql.Tx, pid uint64, before, after *ctr.EconomyAccount
 }
 
 func (s *SQLite) Write(writes []ctr.StatWrite) error {
-	tx, err := s.DB.Begin()
+	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
@@ -612,7 +612,7 @@ func (s *SQLite) Write(writes []ctr.StatWrite) error {
 }
 
 func (s *SQLite) Read(board uint32) ([]ctr.Stat, error) {
-	rs, err := s.DB.Query(`SELECT pid, score, driver, name, updated FROM leaderboard WHERE board = ?`, board)
+	rs, err := s.db.Query(`SELECT pid, score, driver, name, updated FROM leaderboard WHERE board = ?`, board)
 	if err != nil {
 		return nil, err
 	}
@@ -649,7 +649,7 @@ func (s *SQLite) Read(board uint32) ([]ctr.Stat, error) {
 const LeaderboardOrder = `score DESC, pid < 0, pid`
 
 func (s *SQLite) ReadRanks(board uint32, start uint64, limit uint32) ([]ctr.Stat, uint64, error) {
-	tx, err := s.DB.Begin()
+	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -694,7 +694,7 @@ func (s *SQLite) ReadEntities(board uint32, pids []uint64) ([]ctr.Stat, error) {
 	for _, pid := range pids {
 		args = append(args, int64(pid))
 	}
-	rs, err := s.DB.Query(`SELECT l.pid, l.score, l.driver, l.name, l.updated,
+	rs, err := s.db.Query(`SELECT l.pid, l.score, l.driver, l.name, l.updated,
 		1 + (SELECT count(*) FROM leaderboard o WHERE o.board = l.board AND (o.score > l.score
 			OR (o.score = l.score AND ((o.pid < 0) < (l.pid < 0) OR ((o.pid < 0) = (l.pid < 0) AND o.pid < l.pid)))))
 		FROM leaderboard l WHERE l.board = ? AND l.pid IN (?`+strings.Repeat(", ?", len(pids)-1)+`)`, args...)
@@ -719,7 +719,7 @@ func (s *SQLite) ReadEntities(board uint32, pids []uint64) ([]ctr.Stat, error) {
 }
 
 func (s *SQLite) RememberName(pid uint64, name string, at time.Time) error {
-	_, err := s.DB.Exec(`INSERT INTO player_names(pid, name, name_key, recorded_at) VALUES (?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO player_names(pid, name, name_key, recorded_at) VALUES (?, ?, ?, ?)
 		ON CONFLICT(pid) DO UPDATE SET name = excluded.name, name_key = excluded.name_key, recorded_at = excluded.recorded_at`,
 		int64(pid), name, strings.ToLower(name), at.Unix())
 	return err
@@ -736,7 +736,7 @@ func (s *SQLite) NamedPlayers(names []string) (map[string]*platform.PlayerID, er
 		}
 		var pid int64
 		var stored string
-		err := s.DB.QueryRow(`SELECT pid, name FROM player_names WHERE name_key = ?
+		err := s.db.QueryRow(`SELECT pid, name FROM player_names WHERE name_key = ?
 			ORDER BY recorded_at DESC, pid DESC LIMIT 1`, key).Scan(&pid, &stored)
 		if err == sql.ErrNoRows {
 			continue

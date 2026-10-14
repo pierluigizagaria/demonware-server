@@ -86,7 +86,7 @@ func TestArchitectureRewardReplyFailureStillCommitsAndPushes(t *testing.T) {
 			}
 			var receipt string
 			var recorded int64
-			if err := db.DB.QueryRow("SELECT receipt, recorded_at FROM race_receipts").Scan(&receipt, &recorded); err != nil || receipt != ctr.RaceReceipt(event) || recorded != now.Unix() {
+			if err := inspectDatabase(t, db).QueryRow("SELECT receipt, recorded_at FROM race_receipts").Scan(&receipt, &recorded); err != nil || receipt != ctr.RaceReceipt(event) || recorded != now.Unix() {
 				t.Fatal("reward timestamp/receipt not persisted exactly")
 			}
 			a, err := db.Load(l.PID(), false)
@@ -269,7 +269,7 @@ func TestArchitectureStatsWritesAndReadsThroughRouter(t *testing.T) {
 		stamp, _ := r.Uint32()
 		driver, err := r.Uint32()
 		var stored uint32
-		_ = db.DB.QueryRow("SELECT updated FROM leaderboard").Scan(&stored)
+		_ = inspectDatabase(t, db).QueryRow("SELECT updated FROM leaderboard").Scan(&stored)
 		if err != nil || pid != l.PID() || score != 4000000000 || rank != 1 || name != l.Player.Username || stamp != stored || driver != 123 || len(r.Remaining()) != 0 {
 			t.Fatal("stats persisted result changed")
 		}

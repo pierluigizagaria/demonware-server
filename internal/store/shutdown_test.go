@@ -37,7 +37,7 @@ func TestInstanceLockOutlivesDatabaseClose(t *testing.T) {
 	if err := db.Ping(); err != nil {
 		t.Fatal(err)
 	}
-	s := &SQLite{DB: db, lock: lock}
+	s := &SQLite{db: db, lock: lock}
 	done := make(chan error, 1)
 	go func() { done <- s.Close() }()
 	<-conn.entered

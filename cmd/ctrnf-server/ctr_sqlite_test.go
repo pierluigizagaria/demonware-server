@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"net/url"
 	"path/filepath"
 	"testing"
 
@@ -16,6 +18,7 @@ func openTestCTR(t *testing.T, path string, unlockAll bool) *store.SQLite {
 	if err != nil {
 		t.Fatal(err)
 	}
+	registerDatabaseInspector(t, db, path)
 	db.InitialBalance = func() int64 { return testStartBalance }
 	t.Cleanup(func() { db.Close() })
 	return db
@@ -31,7 +34,7 @@ func newTestEconomy(t *testing.T, unlockAll bool) (*ctr.EconomyStore, *store.SQL
 func sqliteCount(t *testing.T, db *store.SQLite, table string) int {
 	t.Helper()
 	var n int
-	if err := db.DB.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
+	if err := inspectDatabase(t, db).QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -39,9 +42,37 @@ func sqliteCount(t *testing.T, db *store.SQLite, table string) int {
 
 func sqliteChanges(t *testing.T, db *store.SQLite) int {
 	t.Helper()
-	var n int
-	if err := db.DB.QueryRow("SELECT total_changes()").Scan(&n); err != nil {
+	activity, err := db.Activity()
+	if err != nil {
 		t.Fatal(err)
 	}
-	return n
+	return activity.TotalChanges
+}
+
+// Composed tests independently inspect the persisted file through a read-only
+// connection. They never borrow the application's live SQL pool.
+var databaseInspectors = map[*store.SQLite]*sql.DB{}
+
+func registerDatabaseInspector(t *testing.T, database *store.SQLite, path string) {
+	t.Helper()
+	uriPath := filepath.ToSlash(path)
+	if filepath.VolumeName(path) != "" {
+		uriPath = "/" + uriPath
+	}
+	uri := (&url.URL{Scheme: "file", Path: uriPath}).String() + "?mode=ro"
+	observer, err := sql.Open("sqlite", uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	databaseInspectors[database] = observer
+	t.Cleanup(func() { observer.Close(); delete(databaseInspectors, database) })
+}
+
+func inspectDatabase(t *testing.T, database *store.SQLite) *sql.DB {
+	t.Helper()
+	observer := databaseInspectors[database]
+	if observer == nil {
+		t.Fatal("missing read-only database fixture")
+	}
+	return observer
 }
