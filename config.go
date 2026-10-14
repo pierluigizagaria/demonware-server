@@ -50,6 +50,7 @@ type serverConfig struct {
 	verbose                            bool
 	riftData                           string
 	shadnet                            shadnet.Policy
+	admission                          string
 	jwksURL                            string
 	signingKey, dataDir                string
 	unlockAll, migrate, redactLogs     bool
@@ -98,7 +99,13 @@ func canonicalName(name string) string {
 // environment's variables with a server prefix, must be a setting.
 func loadConfig(lookup func(string) string, check []string, serving bool) (serverConfig, error) {
 	r := &envReader{lookup: lookup, known: map[string]bool{}}
+	admission := r.text("CTR_ADMISSION", "shadnet")
+	if admission != "shadnet" && admission != "guest" {
+		r.fail("CTR_ADMISSION must be shadnet or guest")
+	}
+	needsShadNet := serving && admission != "guest"
 	c := serverConfig{
+		admission:      admission,
 		publicIP:       r.ipv4("NEXTENDO_HOST", nextendoHost),
 		bindAddr:       r.ip("BIND_ADDR"),
 		authPort:       r.port("AUTH_PORT", authPort),
@@ -116,12 +123,12 @@ func loadConfig(lookup func(string) string, check []string, serving bool) (serve
 		verbose:        r.flag("D3_VERBOSE", verbose),
 		riftData:       r.text("D3_RIFTDATA", riftDir),
 		shadnet: shadnet.Policy{
-			Issuer:    r.required("SHADNET_ISSUER", serving),
-			ClientID:  r.required("SHADNET_CLIENT_ID", serving),
-			NPTitleID: r.required("SHADNET_TITLE_ID", serving),
-			Scopes:    strings.Fields(r.required("SHADNET_SCOPES", serving)),
+			Issuer:    r.required("SHADNET_ISSUER", needsShadNet),
+			ClientID:  r.required("SHADNET_CLIENT_ID", needsShadNet),
+			NPTitleID: r.required("SHADNET_TITLE_ID", needsShadNet),
+			Scopes:    strings.Fields(r.required("SHADNET_SCOPES", needsShadNet)),
 		},
-		jwksURL:      r.required("SHADNET_JWKS_URL", serving),
+		jwksURL:      r.required("SHADNET_JWKS_URL", needsShadNet),
 		signingKey:   r.required("CTR_AUTH_SIGNING_KEY", serving),
 		dataDir:      r.text("DATA_DIR", dataDir),
 		unlockAll:    r.flag("CTR_UNLOCK_ALL", false),
@@ -133,7 +140,15 @@ func loadConfig(lookup func(string) string, check []string, serving bool) (serve
 		redactLogs:   r.flag("NEXTENDO_REDACT_LOGS", redactLogs),
 		news:         r.news(),
 	}
-	if serving && c.shadnet.Issuer != "" && c.shadnet.ClientID != "" && c.shadnet.NPTitleID != "" &&
+	if admission == "guest" {
+		if !c.unlockAll {
+			r.fail("CTR_ADMISSION=guest requires CTR_UNLOCK_ALL=1")
+		}
+		if c.shadnet.Issuer != "" || c.shadnet.ClientID != "" || c.shadnet.NPTitleID != "" || len(c.shadnet.Scopes) != 0 || c.jwksURL != "" {
+			r.fail("SHADNET_* must be empty for guest admission")
+		}
+	}
+	if needsShadNet && c.shadnet.Issuer != "" && c.shadnet.ClientID != "" && c.shadnet.NPTitleID != "" &&
 		len(c.shadnet.Scopes) != 0 && c.jwksURL != "" {
 		if err := shadnet.Check(c.shadnet, c.jwksURL); err != nil {
 			r.fail("SHADNET_*: %v", err)

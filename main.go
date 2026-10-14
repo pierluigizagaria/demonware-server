@@ -1,5 +1,5 @@
 // Demonware server for Crash Team Racing Nitro-Fueled on PS4 (CUSA13795),
-// whose players sign in through shadNet. It is a fork of the Nextendo server
+// with shadNet sign-in or explicit anonymous unlock-all admission. A fork of the Nextendo server
 // for Diablo III and Crash Team Racing on Switch; the Diablo III code is kept
 // unchanged but unused (FORK.md).
 //
@@ -100,10 +100,11 @@ func main() {
 		return
 	}
 
-	platform, trustID, err := loadPSNPlatform(cfg.shadnet, cfg.jwksURL)
+	platform, trustID, err := loadPublisherPlatform(cfg)
 	if err != nil {
-		log.Fatalf("[D3] shadNet trust policy (SHADNET_*): %v", err)
+		log.Fatalf("[D3] publisher admission: %v", err)
 	}
+	log.Printf("[D3] admission: %s", cfg.admission)
 	if err := writePubfiles(pubConfigPath, pubDir); err != nil {
 		diagnosticLogf("[D3 Pubfiles] %v", err)
 	}

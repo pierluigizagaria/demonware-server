@@ -122,8 +122,8 @@ func lockCTRInstance(path string) (*os.File, error) {
 	return f, nil
 }
 
-// openCTRSQLite opens the instance database bound to trustID, the shadNet
-// issuer, client and title whose account IDs it stores.
+// openCTRSQLite binds the instance to its admission namespace: the shadNet
+// issuer/client/title or the separate anonymous-guest namespace.
 func openCTRSQLite(path string, unlockAll bool, trustID string) (*ctrSQLite, error) {
 	if trustID == "" {
 		return nil, fmt.Errorf("CTR database needs a trust ID")
@@ -190,7 +190,7 @@ func (s *ctrSQLite) initialize(unlockAll bool, trustID string) error {
 			return fmt.Errorf("read trust ID: %w", err)
 		}
 		if trusted != trustID {
-			return fmt.Errorf("CTR database belongs to another shadNet issuer, client or title")
+			return fmt.Errorf("CTR database belongs to another admission identity namespace")
 		}
 		var got string
 		if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'unlock_all'`).Scan(&got); err != nil {

@@ -5,7 +5,8 @@ Base: `c3400c312a739cf7598204a981156959910ed874` from
 License unchanged: PolyForm Shield.
 
 This fork serves only Crash Team Racing Nitro-Fueled on PS4 (CUSA13795,
-Demonware title 5760), whose players sign in through shadNet. The PS4 game
+Demonware title 5760). Normal instances require shadNet sign-in; an explicit
+guest provider is available for anonymous unlock-all instances. The PS4 game
 speaks the same Demonware protocol as the Switch version (handshake, 128-byte
 ticket, the service 145/138/12 tasks), so it runs through the original
 dispatcher, matchmaking engine and CTR services. The Nintendo sign-in, account
@@ -19,6 +20,7 @@ as the service 21 public matchmaking.
 | Piece | Where | Behavior |
 | --- | --- | --- |
 | PS4 identity | `platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL and cached for 5 minutes, renewed in the background during the last minute, issuer/audience/title/scopes, 60 s clock leeway) |
+| Anonymous admission | `platform_guest.go` | Explicit injected provider, `CTR_ADMISSION=guest`, restricted to unlock-all instances. Reads the unchanged PS4 envelope, assigns a random positive 63-bit publisher ID and a matching nickname of at most 15 characters. No issuer lookup, account, client identity claim or network-address binding. Never a fallback after failed verification. |
 | Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | Lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity; a missing response signer fails closed. Tickets live in memory by session tag (the auth handler, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. No session files and no all-zero handshake key |
 | PS4 tasks | `platform_tasks.go`, `services.go` | 38/6 identity report; raw bandwidth completion; 12/10 getUserIDs (online players, then the name each player was last issued a ticket under, from `player_names` in `ctrnf.db`; never used for admission). Friend IDs are shadNet account IDs |
 | Marketplace | `ctr_marketplace.go`, `ctr_rewards.go` | 80/245,165,154 use `octane_psn` and owner `psn`; purchases accept only original PS4 SDK defaults. 80/246 (Switch only) and unknown tasks fail without ledger writes |
@@ -60,7 +62,8 @@ Keys and certificates stay in their own files, named by path.
 
 | Variable | Purpose |
 | --- | --- |
-| `SHADNET_ISSUER`, `SHADNET_CLIENT_ID`, `SHADNET_TITLE_ID`, `SHADNET_SCOPES`, `SHADNET_JWKS_URL` | Required shadNet trust: issuer, registered client and title, exact granted scopes (space-separated) and the trusted public key set |
+| `CTR_ADMISSION` | `shadnet` (default) or `guest`. Guest requires `CTR_UNLOCK_ALL=1` and empty `SHADNET_*` values. Selection is passed to the auth handler; no mutable global admission switch. |
+| `SHADNET_ISSUER`, `SHADNET_CLIENT_ID`, `SHADNET_TITLE_ID`, `SHADNET_SCOPES`, `SHADNET_JWKS_URL` | Required for shadNet admission: issuer, registered client and title, exact granted scopes (space-separated) and the trusted public key set |
 | `CTR_AUTH_SIGNING_KEY` | Required RSA-2048 key (exponent 65537) for the CTR response signature; the PS4 game accepts it only with the CTR:NF Server Signature Patch (see [Client side](#client-side)) |
 | `DATA_DIR` | Persistent state directory (default `data`): `ctrnf.db` holds the economy, ledger, mode, leaderboards and player names. |
 | `CTR_UNLOCK_ALL` | Optional instance-wide unlock-all: unset, `0`, `false` = off; `1`, `true` = on. The database records the mode and refuses a different one. |
@@ -154,7 +157,7 @@ read receipt or used to count views.
 
 ## Client side
 
-This repository contains only the server. A PS4 player also needs:
+This repository contains only the server. With shadNet admission a PS4 player also needs:
 
 - shadNet with the NPAuth ID-token issuer, proposed in
   [shadps4-emu/shadNet#44](https://github.com/shadps4-emu/shadNet/pull/44)
@@ -169,11 +172,44 @@ This repository contains only the server. A PS4 player also needs:
   whose TLS certificate the client must accept. Client routing and
   certificates are not part of this repository.
 
+### Anonymous unlock-all candidate
+
+For an anonymous instance, set `CTR_ADMISSION=guest`, `CTR_UNLOCK_ALL=1`, omit
+the five shadNet trust values, and choose a separate `DATA_DIR`. TLS and the
+response signing key remain required. Merely setting unlock-all never disables
+account verification. Normal progression instances cannot select guest admission.
+
+The guest provider accepts the original nested PS4 request, including a placeholder
+or empty `id_token`; this is explicitly anonymous admission, not successful token
+verification. It ignores supplied account IDs and names. Each authentication
+gets a new cryptographically random ID and the nickname `G-` followed by that ID
+in base 36. Both ticket ID fields, lobby identity, name lookup and Umbrella refer
+to the same assigned guest. Fresh-ticket checks, response signing and encrypted
+lobby messages still apply. Established sessions have no added timeout.
+
+No account can reclaim the identity after another authentication, so progression
+is not associated with a returning person. Guest statistics and names may still
+be recorded under their ephemeral IDs in the guest instance's SQLite database;
+the mode does not promise network anonymity or zero retained operational data.
+Its fixed `ctrnf:anonymous-guests:v1` namespace cannot open a shadNet-bound database,
+and a shadNet instance cannot open the guest database. No data migration occurs.
+
+**Client acceptance is still experimental.** Unmodified CTR stops at platform
+checks when shadNet is disabled, before sending this request. A separate local
+CUSA13795 01.21 game-patch candidate bypasses those game-owned gates, supplies
+the unchanged placeholder envelope, and adopts the publisher-assigned ID. An
+offline CPU experiment reaches HTTP upload with no NP service calls. This is not
+full game-loop/Toolkit, native stock-binary, matchmaking or race qualification.
+The server unit/integration fixtures cover anonymous ticket issuance, lobby
+handshake, name lookup and Umbrella; they do not establish those client results.
+Platform friends and invitations are not promised for anonymous identities.
+
 ## Two publisher servers
 
 An unlock-all server and a normal economy server are two processes with their own
-`DATA_DIR`, listeners and matchmaking pools. Both may trust the
-same shadNet issuer. Nothing is shared between them. Unlock-all covers Pit Stop
+`DATA_DIR`, listeners and matchmaking pools. Both may trust the same shadNet issuer,
+or the unlock-all instance can explicitly choose guest admission. Nothing is shared
+between them. Unlock-all covers Pit Stop
 content only; save-owned unlocks stay with the save. The game caches marketplace
 inventory in the save, so give each server its own profile and save.
 
@@ -232,7 +268,7 @@ checks verification, the signed response, ticket issuance and lobby admission.
 Fixes from the original repository are merged with `git merge`, so the fork
 keeps the upstream layout:
 
-- New components live in files the fork owns: `config.go`, `platform_psn.go`,
+- New components live in files the fork owns: `config.go`, `platform_psn.go`, `platform_guest.go`,
   `platform_tasks.go`, `tickets.go`, `ctr_sqlite.go`, `ctr_economy_policy.go`,
   `ctr_news.go`, `diagnostic_redaction.go`, `instance_lock_*.go`, `internal/`
   and their tests.

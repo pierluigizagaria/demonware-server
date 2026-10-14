@@ -2,7 +2,8 @@ package main
 
 // Online friends.
 //
-// Friend IDs are shadNet account IDs, the PID each ticket carries. 12/10
+// For verified players, friend IDs are shadNet account IDs. Anonymous guests
+// have publisher-assigned IDs and no platform friend association. 12/10
 // (getUserIDs) resolves the friends' online names to them; the other lookups
 // take them as they are.
 //
@@ -22,7 +23,7 @@ type playerID struct {
 	Username string `json:"username"`
 	PID      uint64 `json:"pid"`
 	Sub      string `json:"sub"`
-	Kind     string `json:"kind,omitempty"` // "shadnet"
+	Kind     string `json:"kind,omitempty"` // "shadnet" or "guest"
 
 	// Demonware title from the ticket: 5760, Crash Team Racing on PS4.
 	Title uint32 `json:"-"`

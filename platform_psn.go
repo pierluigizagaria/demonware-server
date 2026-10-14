@@ -34,17 +34,32 @@ type psnPlatform struct {
 
 func (p psnPlatform) Authenticate(body []byte) (playerID, error) {
 	refused := func() (playerID, error) { return playerID{}, fmt.Errorf("platform identity refused") }
+	token, ok := readPSNEnvelope(body)
+	if p.verifier == nil || !ok || token == "" {
+		return refused()
+	}
+	id, err := p.verifier.Verify(token, time.Now())
+	if err != nil || id.AccountID == 0 || id.Subject != strconv.FormatUint(id.AccountID, 10) || id.OnlineID == "" {
+		return refused()
+	}
+	// Keep the publisher's subject namespace separate from shadNet's decimal sub.
+	return playerID{PID: id.AccountID, Username: id.OnlineID, Sub: "shadnet:" + id.Subject, Kind: "shadnet", Title: ctrTitle}, nil
+}
+
+// Both admission providers consume the original PS4 envelope. Only the
+// shadNet provider treats its id_token as an account credential.
+func readPSNEnvelope(body []byte) (string, bool) {
 	var request struct {
 		TitleID   string `json:"title_id"`
 		AuthTask  string `json:"auth_task"`
 		IVSeed    string `json:"iv_seed"`
 		ExtraData string `json:"extra_data"`
 	}
-	if p.verifier == nil || len(body) > 16384 || !decodePSNObject(body, &request, "title_id", "auth_task", "iv_seed", "extra_data") || request.TitleID != strconv.Itoa(ctrTitle) || request.AuthTask != "46" {
-		return refused()
+	if len(body) > 16384 || !decodePSNObject(body, &request, "title_id", "auth_task", "iv_seed", "extra_data") || request.TitleID != strconv.Itoa(ctrTitle) || request.AuthTask != "46" {
+		return "", false
 	}
 	if _, err := strconv.ParseUint(request.IVSeed, 10, 32); err != nil {
-		return refused()
+		return "", false
 	}
 	var extra struct {
 		Token string `json:"token"`
@@ -52,15 +67,10 @@ func (p psnPlatform) Authenticate(body []byte) (playerID, error) {
 	var envelope struct {
 		IDToken string `json:"id_token"`
 	}
-	if !decodePSNObject([]byte(request.ExtraData), &extra, "token") || !decodePSNObject([]byte(extra.Token), &envelope, "id_token") || len(envelope.IDToken) == 0 || len(envelope.IDToken) > 4096 {
-		return refused()
+	if !decodePSNObject([]byte(request.ExtraData), &extra, "token") || !decodePSNObject([]byte(extra.Token), &envelope, "id_token") || len(envelope.IDToken) > 4096 {
+		return "", false
 	}
-	id, err := p.verifier.Verify(envelope.IDToken, time.Now())
-	if err != nil || id.AccountID == 0 || id.Subject != strconv.FormatUint(id.AccountID, 10) || id.OnlineID == "" {
-		return refused()
-	}
-	// Keep the publisher's subject namespace separate from shadNet's decimal sub.
-	return playerID{PID: id.AccountID, Username: id.OnlineID, Sub: "shadnet:" + id.Subject, Kind: "shadnet", Title: ctrTitle}, nil
+	return envelope.IDToken, true
 }
 
 func (psnPlatform) AuthData(id playerID) map[string]string {

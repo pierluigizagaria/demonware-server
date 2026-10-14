@@ -4,12 +4,21 @@
 
 This is an unofficial fork that serves only Crash Team Racing Nitro-Fueled on
 PS4 (CUSA13795, Demonware title 5760), running in the
-[shadPS4](https://github.com/shadps4-emu/shadPS4) emulator. Players sign in to a
+[shadPS4](https://github.com/shadps4-emu/shadPS4) emulator. By default, players sign in to a
 separate [shadNet](https://github.com/shadps4-emu/shadNet) service; this server
 verifies its ID tokens against shadNet's public keys and then serves the same
 Demonware protocol, matchmaking and CTR services as for Switch. It is not
 affiliated with Sony, Activision, Demonware, Nintendo, Nextendo Network or the
 shadPS4 project.
+
+An unlock-all instance can explicitly select `CTR_ADMISSION=guest` with
+`CTR_UNLOCK_ALL=1`. It requires no shadNet service or account and assigns a fresh
+random publisher ID and nickname on each authentication. It needs a separate
+database and an anonymous game patch; server configuration alone cannot bypass
+CTR's platform sign-in checks. The client candidate is still under local test,
+with guest authentication and encrypted lobby observed, but no completed
+anonymous matchmaking/race or stock-emulator qualification yet.
+The normal progression instance continues to require verified shadNet tokens.
 
 **Status: experimental research code.** Validated only on one local machine,
 with earlier builds: sign-in through shadNet and the publisher, and one complete
@@ -21,8 +30,8 @@ Race rewards rely on what the client reports.
 
 Architecture, configuration (one env file per instance, documented in
 [example.env](example.env): `SHADNET_*`, `CTR_AUTH_SIGNING_KEY`, `DATA_DIR`,
-`CTR_UNLOCK_ALL`, `CTR_NEWS`, `CTR_NEWS_<CODE>`, ...) and the changes to the
-original code are in [FORK.md](FORK.md). Players also need shadNet and shadPS4
+`CTR_ADMISSION`, `CTR_UNLOCK_ALL`, `CTR_NEWS`, `CTR_NEWS_<CODE>`, ...) and the changes to the
+original code are in [FORK.md](FORK.md). The authenticated path also needs shadNet and shadPS4
 changes that are still under review upstream, and the
 [CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch):
 see [Client side](FORK.md#client-side).
@@ -41,7 +50,7 @@ its Noncompete section before running a service.
 
 The rest of this file is the original documentation for Diablo III and
 Crash Team Racing on Switch, which this fork no longer serves: it accepts only
-PS4 players signed in through shadNet.
+PS4 clients through the configured admission provider.
 
 Game server for **Diablo III** nxmod [creator of the original Diablo-3 repo](https://github.com/nx-mod/nextendo-demonware) & the original developer of the backend for Demonware support for [Nextendo Network](https://nextendo.network), and also with **Crash Team Racing Nitro-Fueled** support contributed by [CollectingW](https://github.com/CollectingW) (see [Crash Team Racing](#crash-team-racing)). Source only, no binaries, no certs, no game assets. Not affiliated with Blizzard, Activision, Demonware or Nintendo.
 

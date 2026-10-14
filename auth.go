@@ -33,7 +33,7 @@ const ticketMagic uint32 = 0xEFBDADDE
 
 var authReqNum atomic.Uint64
 
-func serveAuth(platform psnPlatform) error {
+func serveAuth(platform publisherPlatform) error {
 	ctrSigner, err := loadCTRAuthSigner(signingKeyFile)
 	if err != nil {
 		return err
@@ -69,7 +69,7 @@ func serveAuth(platform psnPlatform) error {
 	return srv.ServeTLS(ln, certFile, keyFile)
 }
 
-func newPlatformAuthHandler(platform psnPlatform, ctrSigner *ctrAuthSigner, dumps string) http.Handler {
+func newPlatformAuthHandler(platform publisherPlatform, ctrSigner *ctrAuthSigner, dumps string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := authReqNum.Add(1)
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
@@ -110,7 +110,7 @@ func newPlatformAuthHandler(platform psnPlatform, ctrSigner *ctrAuthSigner, dump
 		}
 		_ = json.Unmarshal(body, &req)
 
-		// The shadNet identity is verified BEFORE any ticket is issued (platform_psn.go).
+		// The instance's admission provider supplies identity before ticket issuance.
 		id, identityErr := platform.Authenticate(body)
 		if identityErr != nil {
 			reason := "platform verification failed"
@@ -151,9 +151,10 @@ func newPlatformAuthHandler(platform psnPlatform, ctrSigner *ctrAuthSigner, dump
 		binary.LittleEndian.PutUint32(clientTicket[9:], 0) // reserve
 		binary.LittleEndian.PutUint32(clientTicket[13:], uint32(time.Now().Unix()))
 		// CTR reads its online id at +25, where Diablo keeps the expiry.
-		// It must be stable: the game ties a match to its host through
+		// Verified identities stay stable: the game ties a match to its host through
 		// CFriendManager::getFriendByOnlineId(Net::MatchMakingInfo +0x170), and an
-		// id that changes on every connection matches no friend.
+		// id that changes on every connection matches no friend. Guest admission
+		// intentionally has no platform friend association.
 		userID, expiry := uint64(1), uint64(time.Now().Unix()+86400)
 		if isCTRTitle(titleID) {
 			userID, expiry = id.PID, id.PID
