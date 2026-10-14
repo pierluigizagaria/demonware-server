@@ -27,39 +27,39 @@ func (h *EconomyHandler) OnAchievements(peer lobbypkg.TaskSession, task byte, pa
 		if task == taskReportEvents {
 			events, err := ParseRewardEvents(payload)
 			if err != nil {
-				peer.Logf("CTR reward event rejected: %v", err)
+				peer.Logf("[ctr] reward event rejected: %v", err)
 				result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
 				return result
 			}
 			for _, e := range events {
-				peer.Logf("CTR reward event=%s timestamp=%d values=%v", e.Name, e.Timestamp, e.Values)
+				peer.Logf("[ctr] reward event=%s timestamp=%d values=%v", e.Name, e.Timestamp, e.Values)
 			}
 			credit, err = h.Economy.AwardRaces(peer.PID(), events, peer.Now())
 			if err != nil {
-				peer.Logf("CTR reward persistence failed: %v", err)
+				peer.Logf("[ctr] reward persistence failed: %v", err)
 				result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
 				return result
 			}
 			updates, err = h.Economy.ReportPitStopRefresh(peer.PID(), events, peer.Now())
 			if err != nil {
-				peer.Logf("CTR refresh persistence failed: %v", err)
+				peer.Logf("[ctr] refresh persistence failed: %v", err)
 				result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
 				return result
 			}
 			challengeCredit, challengeUpdates, err := h.Economy.AwardChallenges(peer.PID(), events, peer.Now())
 			if err != nil {
-				peer.Logf("CTR challenge persistence failed: %v", err)
+				peer.Logf("[ctr] challenge persistence failed: %v", err)
 				result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
 				return result
 			}
 			credit += challengeCredit
 			updates = append(updates, challengeUpdates...)
 			if challengeCredit != 0 {
-				peer.Logf("CTR challenge reward=%d persisted", challengeCredit)
+				peer.Logf("[ctr] challenge reward=%d persisted", challengeCredit)
 			}
 
 			if credit != 0 {
-				peer.Logf("CTR reward credit=%d currency=10 persisted", credit)
+				peer.Logf("[ctr] reward credit=%d currency=10 persisted", credit)
 			}
 		}
 		result.AfterReply = func(_ error) {
@@ -70,10 +70,10 @@ func (h *EconomyHandler) OnAchievements(peer lobbypkg.TaskSession, task byte, pa
 				return
 			}
 			if err := peer.SendPush(pushAchievementsUpdated, func(w *demonwarepkg.Writer) { w.Struct(updates) }); err != nil {
-				peer.Logf("CTR achievements push: %v", err)
+				peer.Logf("[ctr] achievements push: %v", err)
 				return
 			}
-			peer.Logf("CTR achievements -> push %d achievements-updated", pushAchievementsUpdated)
+			peer.Logf("[ctr] achievements -> push %d achievements-updated", pushAchievementsUpdated)
 		}
 		result.Reply = h.StructTaskReply(task, nil)
 		return result
@@ -100,7 +100,7 @@ func (h *EconomyHandler) OnAchievements(peer lobbypkg.TaskSession, task byte, pa
 	case TaskGetUserState:
 		// field 1 is the engine's user-state blob. Empty JSON keeps it valid and lets
 		// handleGetUserState fire CAEUserStateRefreshed, which is the refresh confirmation.
-		peer.Logf("CTR achievements getUserState -> empty state")
+		peer.Logf("[ctr] achievements getUserState -> empty state")
 		result.Reply = h.StructTaskReply(task, demonwarepkg.AppendBytesField(nil, 1, []byte("{}")))
 		return result
 	}

@@ -37,12 +37,12 @@ func HandleCTRUmbrella(diag *diagnosticspkg.Diagnostics, tickets *authpkg.Ticket
 		if len(preview) > 300 {
 			preview = preview[:300]
 		}
-		diag.DiagnosticLogf("[CTR Umbrella] #%d %s -> %d (%s) body=%s", n, r.URL.RequestURI(), code, reason, preview)
+		diag.DiagnosticLogf("[ctr] umbrella #%d %s -> %d (%s) body=%s", n, r.URL.RequestURI(), code, reason, preview)
 		http.Error(w, reason, code)
 	}
 	if !diag.RedactLogs && dumps != "" && len(body) > 0 {
 		if err := os.WriteFile(filepath.Join(dumps, fmt.Sprintf("%03d_umbrella.json", n)), body, 0o644); err != nil {
-			diag.DiagnosticLogf("[CTR Umbrella] dump: %v", err)
+			diag.DiagnosticLogf("[ctr] umbrella dump: %v", err)
 		}
 	}
 	if r.Method != http.MethodPost {
@@ -77,7 +77,7 @@ func HandleCTRUmbrella(diag *diagnosticspkg.Diagnostics, tickets *authpkg.Ticket
 		deny(500, "token generation failed")
 		return
 	}
-	diag.DiagnosticLogf("[CTR Umbrella] #%d pid=%d -> 200 (lsg token issued)", n, id.PID)
+	diag.DiagnosticLogf("[ctr] umbrella #%d pid=%d -> 200 (lsg token issued)", n, id.PID)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
 		ID       uint64 `json:"umbrellaID"`

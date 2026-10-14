@@ -1,14 +1,6 @@
-// Monitoring API for nextendo-dashboard: GET /api/stats?key=<DASH_TOKEN>, with
-// the same JSON shape as the NEX game servers (luigis-mansion-3 dashboard.go), so
-// the aggregator shows Diablo III without game-specific code. Demonware has no
-// RMC or gatherings; the mapping is:
-//
-//	players     lobby connections whose Nextendo player is known
-//	gatherings  bdMatchMaking sessions (21/1); id = first 4 bytes of the session id
-//	rmc         remote tasks, named "Service::task" (taskName)
-//	sessions    successful auth logins
-//
-// Also /healthz, and /pubfiles/ (read-only view of the generated publisher files).
+// Monitoring API: authenticated /api/stats and /healthz. Component owners
+// provide snapshots; the dashboard never acquires their internal mutexes.
+// The inherited JSON shape remains compatible with nextendo-dashboard.
 
 package dashboard
 
@@ -338,7 +330,7 @@ func (monitor *Telemetry) StartDashboard(views DashboardViews, diag *diagnostics
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 
-	diag.DiagnosticLogf("[D3 Dashboard] stats API on :%s (token=%v)", port, token != "")
+	diag.DiagnosticLogf("[dashboard] stats API on :%s (token=%v)", port, token != "")
 	ln, err := net.Listen("tcp", net.JoinHostPort(monitor.bindAddr, port))
 	if err != nil {
 		return nil, err

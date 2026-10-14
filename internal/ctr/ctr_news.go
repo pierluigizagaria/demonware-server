@@ -79,9 +79,9 @@ func (h *NewsHandler) OnMarketingComms(peer lobbypkg.TaskSession, task byte, r *
 		if len(r.Remaining()) != 1 || r.Remaining()[0] != 0 {
 			return h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
 		}
-		peer.Logf("CTR news viewed count=%d", count)
+		peer.Logf("[ctr] news viewed count=%d", count)
 		for _, id := range ids {
-			peer.Logf("CTR news viewed id=%d", id)
+			peer.Logf("[ctr] news viewed id=%d", id)
 		}
 		return h.TaskReply(task, 0, nil)
 	}

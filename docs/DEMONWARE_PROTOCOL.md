@@ -29,7 +29,7 @@ No new firmware/game disassembly or live Diablo session was performed for this
 extraction. Tests are regression evidence, not an additional source class and
 not proof of original production-server policy.
 
-Upstream's retained [README](../README.md#crash-team-racing) reports the same
+Upstream's retained [historical README](HISTORICAL_SWITCH_README.md#crash-team-racing) reports the same
 lobby protocol for CTR and Diablo and a Diablo login/create/find test on the
 merged server (**U**). Its known limits explicitly say live Diablo rich presence
 was not demonstrated. The source comments retain D3 NSO addresses; those addresses
@@ -62,17 +62,32 @@ and synthetic CTR tests. They do not prove a complete shared game backend.
 
 ```mermaid
 flowchart TD
-    A[Single executable: configuration and listeners] --> B[Admission and lobby lifecycle]
-    B --> C[Shared application dispatcher]
-    C --> D[CTR services and economy]
-    C --> E[Inherited Diablo handlers]
-    C --> F[Presence and session services]
-    B --> P[internal/demonware: wire codecs and crypto]
-    D --> P
-    E --> P
-    F --> P
-    D --> S[CTR instance SQLite database]
+    A[cmd/ctrnf-server: one composed instance] --> C[config and diagnostics]
+    A --> H[auth and platform providers]
+    A --> L[lobby transport and router]
+    A --> T[ctr: one service table and engine]
+    A --> S[store: SQLite adapter]
+    A --> N[nat / relay / dashboard]
+    A --> R[presence snapshots and handlers]
+    H --> O[httpserver: owned HTTP transport]
+    N --> O
+    T --> I[lobby dispatch contract]
+    L --> I
+    S --> B[CTR persistence interfaces]
+    T --> B
+    L --> P[internal/demonware: wire codecs]
+    T --> P
+    R --> P
+    D[internal/diablo: inactive compatibility package] --> P
 ```
+
+Arrows describe composition/dependencies, not additional services or network
+APIs. The entrypoint injects the CTR table into the lobby; the lobby never
+imports CTR. SQLite implements CTR's consumer-owned interfaces; CTR never
+imports the adapter. No admitted title or production entrypoint reaches Diablo.
+`httpserver` owns only the existing auth/dashboard transports. The protocol
+package and its original vectors are unchanged by the architecture refactor.
+
 
 Dependencies point from services to the wire package. It cannot import package
 `main`, platform adapters, SQLite or game rules. A future game can supply its own
@@ -87,7 +102,7 @@ as an accidental external SDK; there is no new `go.mod`, release or service API.
 | `frame.go` | Hello/transcript encoding, bounded frame reads, encrypted envelopes, ticket bit extraction | Exact-read callback, deadlines, identity, ticket validity, sequence admission, fresh IV, dispatch |
 | `crypto.go` | Existing key derivation, MAC and block encryption | Directional key selection, public wrapping label and trust policy |
 
-The wrapping public-key label stays in application `pubkey.go`. It is an explicit
+The wrapping public-key label stays in `internal/lobby/pubkey.go`. It is an explicit
 input to `WrapKey24`, not a universal trust anchor embedded in the package.
 `FindTicket` only extracts bytes; admission still requires a fresh locally issued
 ticket bound to its identity. Auth signing, shadNet verification, anonymous guests,
@@ -168,19 +183,20 @@ plugin registry or extra process is introduced. This follows Go's
 [internal-package layout guidance](https://go.dev/doc/modules/layout) and
 [small behavior-oriented interfaces](https://go.dev/doc/effective_go#interfaces).
 
-`richpresence.go` replaces the misleading `ctr_presence.go` filename because its
-implementation already serves both fixture families. Other game files remain in
-place; original tests are retained and migrated to the package API. The broader
-application still has shared mutable registries and a central dispatcher.
-Replacing these can be evaluated separately against a concrete lifecycle problem;
-this extraction does not claim to complete a repository-wide architecture rewrite.
+The initial protocol extraction renamed `ctr_presence.go` to `richpresence.go`.
+The subsequent architecture refactor moved it to `internal/presence`, extracted
+owned components and wired one CTR table. Diablo's table and generators are now
+inactive. The [architecture inventory and fixture ledger](ARCHITECTURE_REFACTOR.md)
+record the allowed disconnection changes; all other dispatcher snapshots retain
+their original bytes and state. The [final report](ARCHITECTURE_REFACTOR_REPORT.md)
+records package moves, lifecycle verification and the new parser fuzz run.
 
 Compatibility checks use fixed synthetic outputs recorded from **c16b085 before
 extraction**, stored in `internal/demonware/testdata/pre_refactor.json`. The fixture
 also includes the already-public wrapping label. It contains no live ticket,
 account or signing key. `TestPreRefactorWireVectors` compares exact bytes for
 typed values, reply variants, proofs, directional keys and encrypted envelopes.
-Independent existing root fixtures still construct requests/replies manually.
+Independent existing integration fixtures in `cmd/ctrnf-server` still construct requests/replies manually.
 
 Small robustness changes are explicit: invalid IV lengths return errors rather
 than panicking; malformed lengths cannot overflow slice bounds; field tags above

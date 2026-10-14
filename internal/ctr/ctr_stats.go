@@ -214,7 +214,7 @@ func (h *StatsHandler) OnCTRStats(peer lobbypkg.TaskSession, task byte, r *demon
 		name = p.Username
 	}
 	fail := func(err error) []byte {
-		peer.Logf("CTR stats task=%d failed: %v", task, err)
+		peer.Logf("[ctr] stats task=%d failed: %v", task, err)
 		return h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
 	}
 	if !allowed {
@@ -228,9 +228,9 @@ func (h *StatsHandler) OnCTRStats(peer lobbypkg.TaskSession, task byte, r *demon
 		if err = h.Stats.Write(writes); err != nil {
 			return fail(err)
 		}
-		peer.Logf("CTR stats saved pid=%d records=%d", pid, len(writes))
+		peer.Logf("[ctr] stats saved pid=%d records=%d", pid, len(writes))
 		for _, row := range writes {
-			peer.Logf("CTR stats upload board=%d score=%d operation=%d", row.Board, row.Score, row.Operation)
+			peer.Logf("[ctr] stats upload board=%d score=%d operation=%d", row.Board, row.Score, row.Operation)
 		}
 		return h.TaskReply(task, 0, nil)
 	}
@@ -277,6 +277,6 @@ func (h *StatsHandler) OnCTRStats(peer lobbypkg.TaskSession, task byte, r *demon
 	if err != nil {
 		return fail(err)
 	}
-	peer.Logf("CTR stats read task=%d board=%d rows=%d total=%d", task, board, len(rows), total)
+	peer.Logf("[ctr] stats read task=%d board=%d rows=%d total=%d", task, board, len(rows), total)
 	return StatsReply(h.ReplyCounter, task, rows, total)
 }

@@ -10,8 +10,8 @@
 //	config.txt            Key "value" lines, including all the CommunityBuff*
 //	blacklist_config.txt   [GBID] / [SNO] sections
 //
-// pubfiles.json drives the content. The files are written at startup and by
-// "server.exe pubfiles"; the lobby re-reads them on every request.
+// pubfiles.json drives the retained compatibility provider. The CTR executable
+// never invokes these generators; its pubfiles command is inactive.
 
 package diablo
 
@@ -192,7 +192,7 @@ func (provider *PublisherFiles) clampDates(c *pubConfig) {
 		"buff_start": &c.BuffStart, "buff_end": &c.BuffEnd,
 	} {
 		if fixed, changed := clampGameDate(*d); changed {
-			provider.DiagnosticLogf("[D3 Pubfiles] %s %q is past 19 Jan 2038, which the game cannot hold: using %q", name, *d, fixed)
+			provider.DiagnosticLogf("[diablo] pubfiles %s %q is past 19 Jan 2038, which the game cannot hold: using %q", name, *d, fixed)
 			*d = fixed
 		}
 	}
@@ -205,7 +205,7 @@ func (provider *PublisherFiles) loadPubConfig(path string) (pubConfig, error) {
 		// First run: write the default file so there is something to edit,
 		// rather than failing.
 		if werr := os.WriteFile(path, defaultPubfiles, 0o644); werr == nil {
-			provider.DiagnosticLogf("[D3 Pubfiles] %s created with defaults", path)
+			provider.DiagnosticLogf("[diablo] pubfiles %s created with defaults", path)
 		}
 		return c, nil
 	}
@@ -254,9 +254,9 @@ func (provider *PublisherFiles) writePubfiles(cfgPath, outDir string) error {
 		}
 	}
 	if len(on) == 0 {
-		provider.DiagnosticLogf("[D3 Pubfiles] %s: season %d, no community event", outDir, cfg.Season)
+		provider.DiagnosticLogf("[diablo] pubfiles %s: season %d, no community event", outDir, cfg.Season)
 	} else {
-		provider.DiagnosticLogf("[D3 Pubfiles] %s: season %d, events: %s", outDir, cfg.Season, strings.Join(on, ", "))
+		provider.DiagnosticLogf("[diablo] pubfiles %s: season %d, events: %s", outDir, cfg.Season, strings.Join(on, ", "))
 	}
 	return nil
 }

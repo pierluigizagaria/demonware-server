@@ -56,7 +56,7 @@ func (d *Diagnostics) RunDumpDir(component string) string {
 	}
 	dir := filepath.Join(d.DumpRoot, d.RunStamp, component)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		d.DiagnosticLogf("[D3] dumps %s: %v", dir, err)
+		d.DiagnosticLogf("[diagnostics] dumps %s: %v", dir, err)
 		return ""
 	}
 	return dir

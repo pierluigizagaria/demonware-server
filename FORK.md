@@ -22,33 +22,29 @@ architecture refactor. Profile B crashed once on `Game:Main` with `0xc0000005`
 about five seconds after the first match notification; it did not recur after
 restart. The cause remains open and unattributed.
 
-This fork serves only Crash Team Racing Nitro-Fueled on PS4 (CUSA13795,
-Demonware title 5760). Normal instances require shadNet sign-in; an explicit
-guest provider is available for anonymous unlock-all instances. The PS4 game
-speaks the same Demonware protocol as the Switch version (handshake, 128-byte
-ticket, the service 145/138/12 tasks), so it runs through the original
-dispatcher, matchmaking engine and CTR services. The Nintendo sign-in, account
-gates, presence reporting and console friend lookups were removed. The Diablo
-III code is kept and no Diablo III ticket is issued, but its services stay in
-the shared dispatcher: authenticated PS4 clients can still reach handlers such
-as the service 21 public matchmaking.
+This fork admits only CTR:NF PS4 title 5760 through the configured shadNet or
+explicit guest provider. The shared protocol remains in `internal/demonware`;
+one CTR service table is wired per instance. Diablo III handlers and generators
+are retained in `internal/diablo` for compatibility tests and cannot be reached
+by an admitted client. Nintendo sign-in, account gates, presence reporting and
+console friend lookups remain removed.
 
 ## Design
 
 | Piece | Where | Behavior |
 | --- | --- | --- |
 | Demonware wire protocol | `internal/demonware` | Shared framing, handshake key derivation, typed buffers and task/reply envelopes. Standard-library dependencies only; no game state, identity policy or listeners. [Contracts and evidence](docs/DEMONWARE_PROTOCOL.md). |
-| PS4 identity | `platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL and cached for 5 minutes, renewed in the background during the last minute, issuer/audience/title/scopes, 60 s clock leeway) |
-| Anonymous admission | `platform_guest.go` | Explicit injected provider, `CTR_ADMISSION=guest`, restricted to unlock-all instances. Reads the unchanged PS4 envelope, assigns a random positive 63-bit publisher ID and a matching nickname of at most 15 characters. No issuer lookup, account, client identity claim or network-address binding. Never a fallback after failed verification. |
-| Ticket admission | `tickets.go`, `handshake.go`, `ctr_umbrella.go` | Lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity; a missing response signer fails closed. Tickets live in memory by session tag (the auth handler, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. No session files and no all-zero handshake key |
-| PS4 tasks | `platform_tasks.go`, `services.go` | 38/6 identity report; raw bandwidth completion; 12/10 getUserIDs (online players, then the name each player was last issued a ticket under, from `player_names` in `ctrnf.db`; never used for admission). Friend IDs are shadNet account IDs |
-| Marketplace | `ctr_marketplace.go`, `ctr_rewards.go` | 80/245,165,154 use `octane_psn` and owner `psn`; purchases accept only original PS4 SDK defaults. 80/246 (Switch only) and unknown tasks fail without ledger writes |
-| Unlock-all option | `ctr_economy_policy.go`, `main.go` | Opt-in full catalog ownership is computed at read time. Known-SKU purchases debit nothing and write nothing; unknown SKUs fail. `meta.unlock_all` fixes the mode for the database, independently of admission. Startup logs `unlock-all: on` or `unlock-all: off`. |
-| Economy storage | `ctr_sqlite.go`, `ctr_economy.go` | One `<DATA_DIR>/ctrnf.db` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction and writes only changed rows. Race receipts and online seconds older than nine days, beyond the seven-day reward window, are never loaded and are deleted when that account next saves (an inactive account keeps its expired rows). |
-| Leaderboards | `ctr_sqlite.go`, `ctr_stats.go`, `main.go` | bdStats shares `ctrnf.db` with the economy, keeping the original table, batch transactions and ranking. Rank pages and entity reads run in SQL on an index matching the ranking order. The upstream JSON store remains the reference for the contract test. |
-| Engine | `ctr_async.go`, `ctr_merge.go` | Every player holds one seat. Party members are the leader's unverified claim, so a search whose claimed followers already hold a seat is refused; the check and the reservation are atomic before the success reply. A leader's new search replaces only its own searches and seat (`detach`, shared with disconnects); a stale connection's disconnect releases no seat the account's newer connection may hold; disbanding an old lobby ends no search. Party followers who leave lose only their seat and the host gets the new membership; explicit merge-eligibility flags; merges cancelled when a source closes or membership changes; handoff before backfill |
-| Main-menu news | `ctr_news.go`, `config.go` | 104/5 returns per-instance text for location 1 with exact-language overrides; 104/4 acknowledges views without persistence. No identity, economy or statistics changes. |
-| Diagnostics | `diagnostic_redaction.go` | `NEXTENDO_REDACT_LOGS` (default on) keeps only numeric and boolean log arguments (errors show their type) and disables raw dumps |
+| PS4 identity | `internal/platform/ps4/platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL and cached for 5 minutes, renewed in the background during the last minute, issuer/audience/title/scopes, 60 s clock leeway) |
+| Anonymous admission | `internal/platform/guest/platform_guest.go` | Explicit injected provider, `CTR_ADMISSION=guest`, restricted to unlock-all instances. Reads the unchanged PS4 envelope, assigns a random positive 63-bit publisher ID and a matching nickname of at most 15 characters. No issuer lookup, account, client identity claim or network-address binding. Never a fallback after failed verification. |
+| Ticket admission | `internal/auth/tickets.go`, `internal/lobby/handshake.go`, `internal/ctr/ctr_umbrella.go` | Lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity; a missing response signer fails closed. Tickets live in memory by session tag (the auth handler, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. No session files and no all-zero handshake key |
+| PS4 tasks | `internal/ctr/platform_tasks.go`, `internal/lobby/services.go` | 38/6 identity report; raw bandwidth completion; 12/10 getUserIDs (online players, then the name each player was last issued a ticket under, from `player_names` in `ctrnf.db`; never used for admission). Friend IDs are shadNet account IDs |
+| Marketplace | `internal/ctr/ctr_marketplace.go`, `internal/ctr/ctr_rewards.go` | 80/245,165,154 use `octane_psn` and owner `psn`; purchases accept only original PS4 SDK defaults. 80/246 (Switch only) and unknown tasks fail without ledger writes |
+| Unlock-all option | `internal/ctr/ctr_economy_policy.go`, `cmd/ctrnf-server/main.go` | Opt-in full catalog ownership is computed at read time. Known-SKU purchases debit nothing and write nothing; unknown SKUs fail. `meta.unlock_all` fixes the mode for the database, independently of admission. Startup logs the configured boolean mode. |
+| Economy storage | `internal/store/ctr_sqlite.go`, `internal/ctr/ctr_economy.go` | One `<DATA_DIR>/ctrnf.db` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction and writes only changed rows. Race receipts and online seconds older than nine days, beyond the seven-day reward window, are never loaded and are deleted when that account next saves (an inactive account keeps its expired rows). |
+| Leaderboards | `internal/store/ctr_sqlite.go`, `internal/ctr/ctr_stats.go`, `cmd/ctrnf-server/main.go` | bdStats shares `ctrnf.db` with the economy, keeping the original table, batch transactions and ranking. Rank pages and entity reads run in SQL on an index matching the ranking order. The upstream JSON store remains the reference for the contract test. |
+| Engine | `internal/ctr/ctr_async.go`, `internal/ctr/ctr_merge.go` | Every player holds one seat. Party members are the leader's unverified claim, so a search whose claimed followers already hold a seat is refused; the check and the reservation are atomic before the success reply. A leader's new search replaces only its own searches and seat (`detach`, shared with disconnects); a stale connection's disconnect releases no seat the account's newer connection may hold; disbanding an old lobby ends no search. Party followers who leave lose only their seat and the host gets the new membership; explicit merge-eligibility flags; merges cancelled when a source closes or membership changes; handoff before backfill |
+| Main-menu news | `internal/ctr/ctr_news.go`, `internal/config/config.go` | 104/5 returns per-instance text for location 1 with exact-language overrides; 104/4 acknowledges views without persistence. No identity, economy or statistics changes. |
+| Diagnostics | `internal/diagnostics/diagnostic_redaction.go` | `NEXTENDO_REDACT_LOGS` (default on) keeps only numeric and boolean log arguments (errors show their type) and disables raw dumps |
 
 Established lobby connections have no idle or elapsed-time cutoff; only the
 handshake and individual network operations are bounded. Encrypted client
@@ -69,10 +65,10 @@ invented races or occurrences. The auth listener bounds reading each request
 Settings are environment variables, as in the other Nextendo servers, and
 [`example.env`](example.env) documents every one. Give each instance its own
 copy (for example `normal.env`, `unlock-all.env`; git ignores `*.env` except
-the example) and start `server -env normal.env`, or let the deployment supply
+the example) and start `ctrnf-server -env normal.env`, or let the deployment supply
 the file (systemd `EnvironmentFile=`, `docker --env-file`). `-env` reads the
 file as `docker --env-file` does (values kept exactly, no quotes) and lets
-variables already in the process environment take precedence. `config.go`
+variables already in the process environment take precedence. `internal/config/config.go`
 reads and validates everything once at startup, shadNet trust included and
 before any key is fetched: an invalid value, a missing required one, or an
 unknown `CTR_`, `D3_`, `DASH_`, `NEXTENDO_` or `SHADNET_` variable stops the
@@ -247,8 +243,9 @@ title in `SHADNET_*`: shadNet account IDs are unique only within it, so a
 database refuses to open for another one. A missing, invalid or conflicting mode
 or trust ID fails closed on reopen. Player names and the trust binding are part
 of the initial schema. Other versions are refused; there is no migration from
-the discarded pre-release lab schemas. Back up that state and start with a fresh
-database when installing this version.
+the discarded pre-release lab schemas. The architecture refactor preserves the
+accepted version-1 schema, SQL and transaction boundaries; existing version-1
+databases reopen without conversion or reinitialization.
 
 Economy and leaderboard stores share one connection with WAL, `synchronous=FULL`
 and a 5-second busy timeout. PIDs use their signed 64-bit bit pattern. Challenge
@@ -281,47 +278,64 @@ modules in `go.sum` are used only by the driver's own tooling.
 ```text
 go test -count=1 ./...
 go vet ./...
-go test -tags=integration -run TestShadNetPublisherInterop .   # needs SHADNET_INTEROP_FIXTURE
+go build -o .cache/ctrnf-server ./cmd/ctrnf-server
+go test -tags=integration -run TestShadNetPublisherInterop ./cmd/ctrnf-server   # needs SHADNET_INTEROP_FIXTURE
 ```
 
-The integration test consumes tokens from a running native shadNet issuer and
-checks verification, the signed response, ticket issuance and lobby admission.
+The opt-in integration test consumes tokens from a running native shadNet issuer
+and checks verification, the signed response, ticket issuance and lobby admission.
+It was not run for this offline architecture task. Full synthetic verification,
+package moves and remaining risks are recorded in the
+[final report](docs/ARCHITECTURE_REFACTOR_REPORT.md).
+
+## Lifecycle and persistence
+
+SIGINT/SIGTERM follows the same owned cleanup path as a partial startup error.
+Admission closes for lobby, auth and dashboard, including HTTP keep-alive requests.
+Idle and partial lobby reads are interrupted. A task already admitted finishes
+its reply attempt and `AfterReply`, including the existing callback-specific
+send-error behavior. Listeners register connections before launching workers.
+Registry reaping, NAT, relay sockets and JWKS refresh have explicit stop/join
+owners; PROXY header and handoff workers cannot block shutdown indefinitely.
+
+All workers and callbacks complete before `DB.Close`, which precedes release of
+the OS instance lock. One 30-second overall budget covers every stage, including
+database close. Expiry forces process exit without an early unlock under running
+workers. No WAL file is manually removed. Undelivered replies and pushes may be
+abandoned during operator shutdown; there is no added session/menu-idle cutoff.
+
+SQLite transactions are atomic and durable at commit (WAL, `synchronous=FULL`).
+Success replies follow commits, but the client may never receive a reply for a
+committed operation. Atomicity is per transaction, not per task: 125/1 retains
+separate race-reward, refresh and challenge transactions. No exactly-once claim
+is made. Transaction boundaries and SQL remain unchanged.
+
+Logs use component prefixes and preserve default redaction. `D3_*` names remain
+accepted. `D3_PUBFILES_CONFIG` and `D3_RIFTDATA` are inactive; `D3_PUBFILES`
+retains generic physical publisher storage excluding Diablo outputs/aliases.
+`pubfiles` is a validating no-op, and dashboard `/pubfiles/` is disconnected.
 
 ## Following upstream
 
-Upstream fixes are reviewed and ported by hand; merging upstream is no longer
-a design constraint. Record each newly reviewed upstream commit here.
-The 2026-10-14 protocol extraction deliberately changes the upstream layout:
-`internal/demonware` owns the codecs previously spread across `bdcrypto.go`,
-`handshake.go`, `services.go`, `matchmaking.go`, `friends.go` and CTR files.
-There is still one module and executable. Read the
-[protocol contract](docs/DEMONWARE_PROTOCOL.md) before resolving codec conflicts.
+Last reviewed upstream commit: **`c3400c312a739cf7598204a981156959910ed874`**.
+No additional upstream commit was fetched or reviewed during this refactor.
+Useful CTR fixes are reviewed and ported by hand, with the reviewed source commit
+recorded here. Merging upstream is no longer a design constraint.
 
-- New components live in files the fork owns: `config.go`, `platform_psn.go`, `platform_guest.go`,
-  `platform_tasks.go`, `tickets.go`, `ctr_sqlite.go`, `ctr_economy_policy.go`,
-  `ctr_news.go`, `diagnostic_redaction.go`, `instance_lock_*.go`, `internal/`
-  and their tests.
-  Service 104 adds only a dispatch hook and malformed-task refusal in `services.go`,
-  plus names in `dashboard.go`; parsing and replies stay in `ctr_news.go`.
-- Upstream code reads the package variables `config.go` sets, never the
-  environment. An upstream change that adds a variable must add it to
-  `config.go` and `example.env`; a test fails when `example.env` misses one.
-- Nintendo-only upstream files are deleted: `identity.go`, `gates.go`,
-  `accountlookup.go`, `presence.go` and their tests. An upstream change to one
-  of them is a modify/delete conflict; keep the deletion.
-- Shared upstream files retain their application responsibilities, but expect conflicts there.
-  Nintendo branches and values were removed or replaced (for example
-  `octane_switch` and `nintendo` became the PS4 constants in `platform_psn.go`),
-  the engine fixes above changed `ctr_async.go`, `ctr_merge.go`, `handshake.go`
-  and `ctr_relay.go`, and a few signatures changed for the PS4 path (`serveAuth`
-  takes the platform adapter, `ctrMatchmaker.leave` returns the notices to send).
-- Original service tests are retained and now use the protocol package API.
-  Reader cursors are private; use checked methods instead of restoring direct
-  buffer access. Protocol fixes belong in `internal/demonware`, with regression
-  vectors; game schemas and error policy stay in their services.
-- Shared rich presence moved from `ctr_presence.go` to `richpresence.go`.
-  Its Diablo fixture is retained; live Diablo support is not established by it.
-- Diablo III-only files keep their behavior: logging changed in `pubfiles.go`
-  and `seasons.go`; `riftdata.go` reads configured `D3_RIFTDATA` and delegates
-  varint decoding to the protocol package. `matchmaking.go` uses the same
-  package for codecs. `lobbydoc.go` is unchanged.
+One module and executable remain. `cmd/ctrnf-server` owns configuration loading,
+wiring, startup and shutdown; packages own their state and accept only their
+individual dependencies. `internal/httpserver` owns the two existing HTTP
+transports and their admission/drain gate; it adds no listener, endpoint or service.
+`internal/diagnostics` owns logging and capture settings. The other boundaries
+and mechanical moves are listed in the [architecture report](docs/ARCHITECTURE_REFACTOR_REPORT.md).
+
+Keep original attribution and the PolyForm Shield license. Preserve the
+[protocol contract](docs/DEMONWARE_PROTOCOL.md) and its fixed vectors when
+porting codec changes. CTR schemas, error policy and economy rules belong in CTR;
+the lobby never imports CTR, and CTR never imports the SQLite adapter. Connect
+consumer-owned persistence interfaces in the entrypoint. Configuration changes
+must remain explicit and documented in `example.env`.
+
+Retained Diablo fixtures are compatibility references, not live Diablo support.
+New title support, admission changes or database changes require separate
+evidence and an explicit decision; do not connect the inactive table implicitly.

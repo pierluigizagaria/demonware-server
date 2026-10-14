@@ -1,12 +1,6 @@
-// Demonware authentication for Diablo III Switch (title "crimson").
-//
-// The client (bdAuthSwitch, transport bdHTTPCurl) hits
-//
-//	https://crimson-switch-auth3.prod.demonware.net:<port>/auth/
-//
-// via sni-router, then switches to the lobby (lobby.go). The game's NSO gives
-// the hosts, the URL template "https://%s:%d/auth/" and the ticket vocabulary;
-// the body format comes from captures and the parser at 0xBE30C0.
+// Publisher HTTPS authentication for CTR:NF PS4. The injected platform
+// provider admits identity; this owner signs replies and issues local tickets.
+// Historical NSO offsets below remain upstream evidence for the shared layout.
 
 package auth
 
@@ -49,7 +43,7 @@ func StartAuth(platform PublisherPlatform, tickets *TicketStore, presence *prese
 	if err != nil {
 		return nil, err
 	}
-	diag.DiagnosticLogf("[CTR Auth] signed replies enabled (client trust mod required)")
+	diag.DiagnosticLogf("[auth] signed replies enabled (client trust mod required)")
 	dumps := diag.RunDumpDir("auth")
 
 	h := NewPlatformAuthHandler(diag, monitor, tickets, presence, platform, ctrSigner, dumps, umbrella)
@@ -73,7 +67,7 @@ func StartAuth(platform PublisherPlatform, tickets *TicketStore, presence *prese
 	if cfg.ProxyProtocol {
 		ln = NewProxyListener(ln)
 	}
-	diag.DiagnosticLogf("[D3 Auth] listening HTTPS :%d (proxyProto=%v, cert=%s)", cfg.AuthPort, cfg.ProxyProtocol, cfg.CertFile)
+	diag.DiagnosticLogf("[auth] listening HTTPS :%d (proxyProto=%v, cert=%s)", cfg.AuthPort, cfg.ProxyProtocol, cfg.CertFile)
 	return httpserver.Start(srv, ln, true), nil
 }
 
@@ -84,7 +78,7 @@ func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboard
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		r.Body.Close()
 		if err != nil {
-			diag.DiagnosticLogf("[D3 Auth] #%d body: %v", n, err)
+			diag.DiagnosticLogf("[auth] #%d body: %v", n, err)
 			http.Error(w, "incomplete request", http.StatusBadRequest)
 			return
 		}
@@ -94,12 +88,12 @@ func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboard
 		}
 
 		// Request line only: the body carries the player's NSA id_token.
-		diag.DiagnosticLogf("[D3 Auth] #%d %s %s%s from %s (%d bytes)", n, r.Method, r.Host, r.URL.RequestURI(), r.RemoteAddr, len(body))
+		diag.DiagnosticLogf("[auth] #%d %s %s%s from %s (%d bytes)", n, r.Method, r.Host, r.URL.RequestURI(), r.RemoteAddr, len(body))
 		if !diag.RedactLogs && dumps != "" && len(body) > 0 {
 			name := fmt.Sprintf("%03d_%s_%s.bin", n, r.Method,
 				strings.NewReplacer("/", "_", "?", "_", "&", "_", ":", "_").Replace(strings.TrimPrefix(r.URL.RequestURI(), "/")))
 			if err := os.WriteFile(filepath.Join(dumps, name), body, 0o644); err != nil {
-				diag.DiagnosticLogf("[D3 Auth] dump: %v", err)
+				diag.DiagnosticLogf("[auth] dump: %v", err)
 			}
 		}
 
@@ -123,12 +117,12 @@ func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboard
 		id, identityErr := platform.Authenticate(body)
 		if identityErr != nil {
 			reason := "platform verification failed"
-			diag.DiagnosticLogf("[D3 Auth] #%d %q pid=%d kind=%s REFUSED (%s)", n, id.Username, id.PID, id.Kind, reason)
+			diag.DiagnosticLogf("[auth] #%d %q pid=%d kind=%s REFUSED (%s)", n, id.Username, id.PID, id.Kind, reason)
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		if ctrSigner == nil {
-			diag.DiagnosticLogf("[D3 Auth] #%d refused: responses must be signed", n)
+			diag.DiagnosticLogf("[auth] #%d refused: responses must be signed", n)
 			http.Error(w, "authentication signing unavailable", http.StatusInternalServerError)
 			return
 		}
@@ -137,8 +131,8 @@ func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboard
 		// magic 0xEFBDADDE (bytes DE AD BD EF), resolved via an
 		// R_AARCH64_RELATIVE relocation to 0xF07FB8. If they match, the
 		// decryption branch is skipped and the ticket is read in the clear —
-		// this is what makes a standalone server possible with no key and no
-		// client patch.
+		// this bypass concerns ticket decryption only. CTR still requires signed
+		// auth replies and the separately installed server-signature patch.
 		//
 		// Layout read from parse_ticket (0xBFCF30), 128 bytes packed:
 		//   +0 u32 magic | +4 u8 | +5 u32 | +9 u32 | +13 u32
@@ -171,7 +165,7 @@ func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboard
 		binary.LittleEndian.PutUint64(clientTicket[17:], userID)
 		binary.LittleEndian.PutUint64(clientTicket[25:], expiry)
 		if _, err := rand.Read(clientTicket[33:97]); err != nil { // session key
-			diag.DiagnosticLogf("[D3 Auth] rand: %v", err)
+			diag.DiagnosticLogf("[auth] rand: %v", err)
 		}
 		// +97 [24]: the lobby key. The lobby connection (0xBFC8F0) copies a
 		// config block whose bytes 0x88..0xA0 become conn+0x100, the key that
@@ -190,7 +184,7 @@ func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboard
 		tickets.RememberTicket(clientTicket, id, time.Now(), ps4pkg.TicketWindow)
 		// 12/10 resolves friends by the names they were issued a ticket under.
 		if err := presence.RememberPlayerName(id, time.Now()); err != nil {
-			diag.DiagnosticLogf("[D3 Auth] #%d player name not recorded: %v", n, err)
+			diag.DiagnosticLogf("[auth] #%d player name not recorded: %v", n, err)
 		}
 
 		ivSeed := req.IVSeed
@@ -240,7 +234,7 @@ func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboard
 		if ps4pkg.IsCTRTitle(titleID) && ctrSigner != nil {
 			signature, err := ctrSigner.Sign(out)
 			if err != nil {
-				diag.DiagnosticLogf("[CTR Auth] %v", err)
+				diag.DiagnosticLogf("[auth] %v", err)
 				http.Error(w, "authentication signing failed", http.StatusInternalServerError)
 				return
 			}
@@ -248,7 +242,7 @@ func NewPlatformAuthHandler(diag *diagnosticspkg.Diagnostics, monitor *dashboard
 		}
 
 		monitor.LoginsTotal.Add(1)
-		diag.DiagnosticLogf("[D3 Auth] #%d %q pid=%d kind=%s -> 200 code=700 auth_task=%s", n, id.Username, id.PID, id.Kind, authTask)
+		diag.DiagnosticLogf("[auth] #%d %q pid=%d kind=%s -> 200 code=700 auth_task=%s", n, id.Username, id.PID, id.Kind, authTask)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(out)

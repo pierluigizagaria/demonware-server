@@ -102,7 +102,7 @@ func (l *LobbySession) random(p []byte) (int, error) {
 }
 
 func (l *LobbySession) logf(format string, a ...any) {
-	l.DiagnosticLogf("#%d "+format, append([]any{l.N}, a...)...)
+	l.DiagnosticLogf("[lobby] #%d "+format, append([]any{l.N}, a...)...)
 }
 
 func (l *LobbySession) readFull(n int) ([]byte, error) {

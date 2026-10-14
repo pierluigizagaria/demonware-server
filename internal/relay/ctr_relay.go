@@ -100,7 +100,7 @@ func (relay *RelayTable) relayEnabled() bool { return relay.High >= relay.Low &&
 func (relay *RelayTable) StartCTRRelay(low, high int, host string, onlinePIDs func() []uint64) {
 	ip := net.ParseIP(host).To4()
 	if ip == nil || low <= 0 || high < low {
-		relay.DiagnosticLogf("[CTR Relay] disabled (host=%q ports %d-%d)", host, low, high)
+		relay.DiagnosticLogf("[relay] disabled (host=%q ports %d-%d)", host, low, high)
 		return
 	}
 	relay.mu.Lock()
@@ -113,7 +113,7 @@ func (relay *RelayTable) StartCTRRelay(low, high int, host string, onlinePIDs fu
 	relay.workers.Add(1)
 	relay.Low, relay.High, relay.Next, relay.Ip = low, high, low, ip
 	relay.mu.Unlock()
-	relay.DiagnosticLogf("[CTR Relay] enabled on %s:%d-%d", ip, low, high)
+	relay.DiagnosticLogf("[relay] enabled on %s:%d-%d", ip, low, high)
 	go func() { defer relay.workers.Done(); relay.reap(onlinePIDs) }()
 }
 
@@ -172,7 +172,7 @@ func (relay *RelayTable) WithRelay(hostAddr []byte, hostPID, joinerPID uint64) [
 			continue // already occupied
 		}
 		writeAddrSlot(out[off:off+RelayAddrLen], &net.UDPAddr{IP: relay.Ip, Port: p.port})
-		relay.DiagnosticLogf("[CTR Relay] offered :%d to pid=%d for host=%d (slot %d)", p.port, joinerPID, hostPID, slot)
+		relay.DiagnosticLogf("[relay] offered :%d to pid=%d for host=%d (slot %d)", p.port, joinerPID, hostPID, slot)
 		return out
 	}
 	return hostAddr
@@ -211,10 +211,10 @@ func (t *RelayTable) pairFor(hostPID, joinerPID uint64, host *net.UDPAddr) *Rela
 		t.Pairs[key], t.ByPort[port] = p, p
 		t.workers.Add(1)
 		go func() { defer t.workers.Done(); p.serve() }()
-		t.DiagnosticLogf("[CTR Relay] pair %d<->%d on :%d (host %s)", hostPID, joinerPID, port, host)
+		t.DiagnosticLogf("[relay] pair %d<->%d on :%d (host %s)", hostPID, joinerPID, port, host)
 		return p
 	}
-	t.DiagnosticLogf("[CTR Relay] no free port for %d<->%d", hostPID, joinerPID)
+	t.DiagnosticLogf("[relay] no free port for %d<->%d", hostPID, joinerPID)
 	return nil
 }
 
@@ -232,7 +232,7 @@ func (p *RelayPair) serve() {
 		fromHost := host != nil && src.IP.Equal(host.IP) && src.Port == host.Port
 		if !fromHost && (joiner == nil || !src.IP.Equal(joiner.IP) || src.Port != joiner.Port) {
 			p.joiner, joiner = src, src
-			p.table.DiagnosticLogf("[CTR Relay] :%d FIRST PACKET from %s (%d bytes) — the game DOES use relay slots",
+			p.table.DiagnosticLogf("[relay] :%d FIRST PACKET from %s (%d bytes) — the game DOES use relay slots",
 				p.port, src, n)
 		}
 		p.table.mu.Unlock()

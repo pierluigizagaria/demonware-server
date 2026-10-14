@@ -95,10 +95,10 @@ func (s *NatServer) servePacket(pc net.PacketConn, port int) {
 	defer pc.Close()
 	serverIP := net.ParseIP(s.NextendoHost).To4()
 	if serverIP == nil {
-		s.DiagnosticLogf("[D3 NAT] NEXTENDO_HOST=%q is not an IPv4 address: announcing 127.0.0.1", s.NextendoHost)
+		s.DiagnosticLogf("[nat] NEXTENDO_HOST=%q is not an IPv4 address: announcing 127.0.0.1", s.NextendoHost)
 		serverIP = net.IPv4(127, 0, 0, 1).To4()
 	}
-	s.DiagnosticLogf("[D3 NAT] listening UDP %d (announced server ip %s)", port, serverIP)
+	s.DiagnosticLogf("[nat] listening UDP %d (announced server ip %s)", port, serverIP)
 
 	buf := make([]byte, 2048)
 	for {
@@ -130,13 +130,13 @@ func (s *NatServer) servePacket(pc net.PacketConn, port int) {
 			dstIP := net.IPv4(dst[0], dst[1], dst[2], dst[3])
 			dstPort := int(binary.LittleEndian.Uint16(dst[4:6]))
 			if dstPort == 0 || dstIP.Equal(net.IPv4(0, 255, 0, 255)) {
-				s.DiagnosticLogf("[D3 NAT] 0x0A from %s without destination: %X", addr, buf[:n])
+				s.DiagnosticLogf("[nat] 0x0A from %s without destination: %X", addr, buf[:n])
 				continue
 			}
 			intro := append([]byte{0x0B}, buf[1:n]...)
 			to := &net.UDPAddr{IP: dstIP, Port: dstPort}
 			if _, err := pc.WriteTo(intro, to); err != nil {
-				s.DiagnosticLogf("[D3 NAT] INTRO to %s: %v", to, err)
+				s.DiagnosticLogf("[nat] INTRO to %s: %v", to, err)
 			} else {
 				s.NatIntros.Add(1)
 				// The host answers 0x0C to sourceAddress from INSIDE the packet, not to
@@ -147,7 +147,7 @@ func (s *NatServer) servePacket(pc net.PacketConn, port int) {
 					Port: int(binary.LittleEndian.Uint16(src[4:6]))}
 				ua, _ := addr.(*net.UDPAddr)
 				mismatch := ua == nil || !ua.IP.Equal(srcAddr.IP) || ua.Port != srcAddr.Port
-				s.DiagnosticLogf("[D3 NAT] INTRO %s -> %s (id=%X) claimed_src=%s mismatch=%v",
+				s.DiagnosticLogf("[nat] INTRO %s -> %s (id=%X) claimed_src=%s mismatch=%v",
 					addr, to, buf[3:13], srcAddr, mismatch)
 			}
 			continue
@@ -167,7 +167,7 @@ func (s *NatServer) servePacket(pc net.PacketConn, port int) {
 			resp = binary.LittleEndian.AppendUint16(resp, uint16(port))
 		default:
 			if cnt < 2 {
-				s.DiagnosticLogf("[D3 NAT] unknown packet from %s: %s", addr, hex.EncodeToString(buf[:n]))
+				s.DiagnosticLogf("[nat] unknown packet from %s: %s", addr, hex.EncodeToString(buf[:n]))
 				if dir := s.RunDumpDir("nat"); dir != "" {
 					_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("unknown_%d.bin", s.ConnNum.Add(1))), buf[:n], 0o644)
 				}
@@ -175,9 +175,9 @@ func (s *NatServer) servePacket(pc net.PacketConn, port int) {
 			continue
 		}
 		if _, err := pc.WriteTo(resp, addr); err != nil {
-			s.DiagnosticLogf("[D3 NAT] reply to %s: %v", addr, err)
+			s.DiagnosticLogf("[nat] reply to %s: %v", addr, err)
 		} else if cnt < 2 {
-			s.DiagnosticLogf("[D3 NAT] %s type %d -> %X", addr, buf[0], resp)
+			s.DiagnosticLogf("[nat] %s type %d -> %X", addr, buf[0], resp)
 		}
 	}
 }

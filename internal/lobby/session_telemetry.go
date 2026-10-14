@@ -2,8 +2,6 @@
 
 package lobby
 
-import ()
-
 // The session reports transport events without retaining monitoring internals.
 type sessionTelemetry interface {
 	RegisterConn(uint64, string)

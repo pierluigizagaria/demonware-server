@@ -1,7 +1,5 @@
 package ctr
 
-import ()
-
 // A nil backend retains the upstream JSON reference implementation. Runtime
 // installs SQLite; economyStore.mu covers each complete load/mutate/save.
 type economyBackend interface {

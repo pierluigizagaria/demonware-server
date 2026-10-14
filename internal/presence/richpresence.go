@@ -68,7 +68,7 @@ func (h *PresenceHandler) OnRichPresence(peer presencePeer, task byte, r *demonw
 		flag, err3 := r.Uint8()
 		data, err4 := r.Blob()
 		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
-			peer.Logf("richpresence SET illisible ctx=%q", ctx)
+			peer.Logf("[presence] richpresence SET illisible ctx=%q", ctx)
 			return h.TaskReply(task, 0, nil)
 		}
 		if id == 0 {
@@ -80,7 +80,7 @@ func (h *PresenceHandler) OnRichPresence(peer presencePeer, task byte, r *demonw
 		h.Presence.RichMu.Lock()
 		h.Presence.Rich[id] = RichPresence{plat, flag, data}
 		h.Presence.RichMu.Unlock()
-		peer.Logf("richpresence SET pid=%d ctx=%q %d bytes", id, ctx, len(data))
+		peer.Logf("[presence] richpresence SET pid=%d ctx=%q %d bytes", id, ctx, len(data))
 		return h.TaskReply(task, 0, nil)
 
 	case RpGet, RpGetAndSubscribe:
@@ -111,7 +111,7 @@ func (h *PresenceHandler) OnRichPresence(peer presencePeer, task byte, r *demonw
 			hits = append(hits, hit{id, p})
 		}
 		h.Presence.RichMu.Unlock()
-		peer.Logf("richpresence GET ctx=%q %d demande(s) -> %d presence(s)", ctx, len(ids), len(hits))
+		peer.Logf("[presence] richpresence GET ctx=%q %d demande(s) -> %d presence(s)", ctx, len(ids), len(hits))
 		return h.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
 			for _, h := range hits {
 				w.Uint64(h.id)

@@ -77,7 +77,7 @@ func (handler *utilityHandler) Handle(peer lobbypkg.TaskSession, request lobbypk
 	case service == lobbypkg.SvcTitleUtilities && task == lobbypkg.TaskGetServerTime:
 		now := uint32(peer.Now().Unix())
 		reply = handler.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 { w.Uint32(now); return 1 })
-		peer.Logf("task bdTitleUtilities.getServerTime -> %d", now)
+		peer.Logf("[ctr] task bdTitleUtilities.getServerTime -> %d", now)
 
 	case service == lobbypkg.SvcTitleUtilities && task == 9:
 		reply = handler.OnGetUserNames(peer, task, r)
@@ -123,7 +123,7 @@ func (handler *ctrContextHandler) Handle(peer lobbypkg.TaskSession, request lobb
 		} else if task == 14 {
 			reply = handler.OnFriendSessions(peer, task, r, "ctr:"+ctx)
 		} else {
-			peer.Logf("CTR matchmaking unimplemented task=%d context=%q", task, ctx)
+			peer.Logf("[ctr] matchmaking unimplemented task=%d context=%q", task, ctx)
 			reply = handler.TaskReply(task, lobbypkg.ErrUnhandled, nil)
 		}
 
@@ -161,7 +161,7 @@ func (handler *asyncHandler) Handle(peer lobbypkg.TaskSession, request lobbypkg.
 			handler.SetPlayerInfo(peer.ConnID(), doc)
 		}
 		reply = handler.TaskReply(task, 0, nil)
-		peer.Logf("task bdAsyncMatchMaking.setPlayerInfo -> success (%d bytes)", len(handler.PlayerInfo(peer.ConnID())))
+		peer.Logf("[ctr] task bdAsyncMatchMaking.setPlayerInfo -> success (%d bytes)", len(handler.PlayerInfo(peer.ConnID())))
 
 	case service == lobbypkg.SvcAsyncMatchMaking && task == lobbypkg.TaskSyncLobbyDocuments:
 		id, e1 := r.Uint64()
@@ -174,14 +174,14 @@ func (handler *asyncHandler) Handle(peer lobbypkg.TaskSession, request lobbypkg.
 			result.AfterReply = func(sendErr error) { SendCTRNotices(notices) }
 		}
 		reply = handler.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 { w.Bool(ok); return 1 })
-		peer.Logf("CTR sync lobby=%d version=%d accepted=%v", id, version, ok)
+		peer.Logf("[ctr] sync lobby=%d version=%d accepted=%v", id, version, ok)
 
 	case service == lobbypkg.SvcAsyncMatchMaking && task == lobbypkg.TaskGetPlayerToken:
 		// getMatchMakingPlayerToken -> bdUInt64Result (readUInt64). This is the
 		// requestPlayerToken step of CNetworkTaskAsyncMatchMakingRegistration: without a token the
 		// registration state machine cannot advance.
 		reply = handler.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 { w.Uint64(peer.PID()); return 1 })
-		peer.Logf("task bdAsyncMatchMaking.getMatchMakingPlayerToken -> %d", peer.PID())
+		peer.Logf("[ctr] task bdAsyncMatchMaking.getMatchMakingPlayerToken -> %d", peer.PID())
 
 	case service == lobbypkg.SvcAsyncMatchMaking && task == lobbypkg.TaskStartSearch:
 		raw, err := r.String()
@@ -194,7 +194,7 @@ func (handler *asyncHandler) Handle(peer lobbypkg.TaskSession, request lobbypkg.
 			err = handler.matchmaker.Reserve(search)
 		}
 		if err != nil {
-			peer.Logf("CTR search rejected: %v", err)
+			peer.Logf("[ctr] search rejected: %v", err)
 			reply = handler.TaskReply(task, lobbypkg.ErrUnhandled, nil)
 			break
 		}
@@ -206,7 +206,7 @@ func (handler *asyncHandler) Handle(peer lobbypkg.TaskSession, request lobbypkg.
 				return
 			}
 			notices := handler.matchmaker.Activate(search)
-			peer.Logf("CTR search id=%d registered; seats=%d filter=%s notifications=%d",
+			peer.Logf("[ctr] search id=%d registered; seats=%d filter=%s notifications=%d",
 				search.Id, search.Seats, search.filterID, len(notices))
 			SendCTRNotices(notices)
 		}
@@ -229,13 +229,13 @@ func (handler *asyncHandler) Handle(peer lobbypkg.TaskSession, request lobbypkg.
 		// All of these return a bdStringResult (readString).
 		id := strconv.FormatUint(peer.PID(), 10)
 		reply = handler.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 { w.String(id); return 1 })
-		peer.Logf("task bdAsyncMatchMaking task=%d -> string %q", task, id)
+		peer.Logf("[ctr] task bdAsyncMatchMaking task=%d -> string %q", task, id)
 
 	case service == lobbypkg.SvcAsyncMatchMaking &&
 		(task == lobbypkg.TaskQoSHostsReply || task == lobbypkg.TaskAckExpectGame):
 		// No result.
 		reply = handler.TaskReply(task, 0, nil)
-		peer.Logf("task bdAsyncMatchMaking task=%d -> empty success", task)
+		peer.Logf("[ctr] task bdAsyncMatchMaking task=%d -> empty success", task)
 
 	case service == lobbypkg.SvcAsyncMatchMaking && task == lobbypkg.TaskGetLobbyDocuments:
 		id, err := r.Uint64()
@@ -265,7 +265,7 @@ func (handler *httpProxyHandler) Handle(peer lobbypkg.TaskSession, request lobby
 		// fails deserialization -> bdRemoteTask error 4 -> the login sequence fails.
 		body := []byte(`{"expiresIn":3600,"ABToken":"nextendo","enrollments":[]}`)
 		reply = handler.HttpProxyReply(task, 200, body)
-		peer.Logf("task bdABTesting.enroll -> 200 (%d bytes)", len(body))
+		peer.Logf("[ctr] task bdABTesting.enroll -> 200 (%d bytes)", len(body))
 
 	default:
 		return lobbypkg.DefaultTask(handler.ReplyCounter, peer, request)
@@ -301,7 +301,7 @@ func (handler *EconomyHandler) Handle(peer lobbypkg.TaskSession, request lobbypk
 		reply = result.Reply
 		if reply == nil {
 			reply = handler.TaskReply(task, lobbypkg.ErrUnhandled, nil)
-			peer.Logf("task marketplace UNHANDLED task=%d args:\n%s", task, hex.Dump(payload))
+			peer.Logf("[ctr] task marketplace UNHANDLED task=%d args:\n%s", task, hex.Dump(payload))
 		}
 
 	default:

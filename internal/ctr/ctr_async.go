@@ -169,9 +169,9 @@ func (n ctrNotice) Write(w *demonwarepkg.Writer) {
 func SendCTRNotices(notices []ctrNotice) {
 	for _, n := range notices {
 		if err := n.Conn.SendPush(n.Event, n.Write); err != nil {
-			n.Conn.Logf("CTR matchmaking push event=%d failed: %v", n.Event, err)
+			n.Conn.Logf("[ctr] matchmaking push event=%d failed: %v", n.Event, err)
 		} else {
-			n.Conn.Logf("CTR matchmaking push event=%d", n.Event)
+			n.Conn.Logf("[ctr] matchmaking push event=%d", n.Event)
 		}
 	}
 }
@@ -329,7 +329,7 @@ func (m *CtrMatchmaker) Activate(reserved *CtrSearch) []ctrNotice {
 	defer m.mu.Unlock()
 	s := m.Pending[reserved.Id]
 	if s == nil {
-		reserved.Conn.Logf("CTR search id=%d withdrawn before activation", reserved.Id)
+		reserved.Conn.Logf("[ctr] search id=%d withdrawn before activation", reserved.Id)
 		return nil
 	}
 	delete(m.Pending, s.Id)
@@ -371,7 +371,7 @@ func (m *CtrMatchmaker) Activate(reserved *CtrSearch) []ctrNotice {
 		case r.Occupancy()+s.Seats > s.Doc.Slots.Max:
 			reason = "search-capacity"
 		}
-		s.Conn.Logf("CTR candidate search=%d seats=%d filter=%s room=%d room_filter=%s open=%t occupied=%d connected=%d capacity=%d search_max=%d reason=%s", s.Id, s.Seats, s.filterID, r.Id, r.Host.filterID, open, r.Occupancy(), r.connected(), r.Capacity, s.Doc.Slots.Max, reason)
+		s.Conn.Logf("[ctr] candidate search=%d seats=%d filter=%s room=%d room_filter=%s open=%t occupied=%d connected=%d capacity=%d search_max=%d reason=%s", s.Id, s.Seats, s.filterID, r.Id, r.Host.filterID, open, r.Occupancy(), r.connected(), r.Capacity, s.Doc.Slots.Max, reason)
 		if reason == "selected" {
 			// A retry must not inherit its previous failed state in this room.
 			if states, ok := r.HostDoc["player_state"].(map[string]any); ok {
@@ -642,9 +642,9 @@ func (m *CtrMatchmaker) SyncDoc(conn CtrPeer, id, version uint64, raw string) (b
 	}
 	r.Players = kept
 	if released > 0 {
-		conn.Logf("CTR released failed reservations room=%d seats=%d", r.Id, released)
+		conn.Logf("[ctr] released failed reservations room=%d seats=%d", r.Id, released)
 	}
-	conn.Logf("CTR room-state room=%d version=%d open=%v occupied=%d connected=%d searches=%d", r.Id, r.Version, doc["lobby_open"], r.Occupancy(), r.connected(), len(r.Players))
+	conn.Logf("[ctr] room-state room=%d version=%d open=%v occupied=%d connected=%d searches=%d", r.Id, r.Version, doc["lobby_open"], r.Occupancy(), r.connected(), len(r.Players))
 	// 2006 asks the host to produce a new document; it is not an ACK to
 	// broadcast. Echoing it on every sync causes an endless sync/push loop.
 	// Release pending guests only after the host has supplied its document.
@@ -676,7 +676,7 @@ func (m *CtrMatchmaker) SyncDoc(conn CtrPeer, id, version uint64, raw string) (b
 			r.Players = append(r.Players, p)
 			r.Capacity = min(r.Capacity, p.Doc.Slots.Max)
 			added++
-			conn.Logf("CTR backfill waiting search=%d seats=%d room=%d", p.Id, p.Seats, r.Id)
+			conn.Logf("[ctr] backfill waiting search=%d seats=%d room=%d", p.Id, p.Seats, r.Id)
 		}
 		m.Waiting = remaining
 		if added > 0 {

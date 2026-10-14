@@ -1,253 +1,100 @@
-# diablo-3
+# CTR:NF PS4 publisher server
 
-## This fork: Crash Team Racing Nitro-Fueled on PS4 (experimental)
+A detached fork of Nextendo for Crash Team Racing Nitro-Fueled on PS4
+(CUSA13795 01.21, Demonware title **5760**), used with shadPS4. One Go module
+and executable provide publisher authentication, encrypted lobby tasks,
+matchmaking, economy, leaderboards, NAT and the existing dashboard API.
+There are no additional services introduced by the architecture refactor.
 
-This is an unofficial fork that serves only Crash Team Racing Nitro-Fueled on
-PS4 (CUSA13795, Demonware title 5760), running in the
-[shadPS4](https://github.com/shadps4-emu/shadPS4) emulator. By default, players sign in to a
-separate [shadNet](https://github.com/shadps4-emu/shadNet) service; this server
-verifies its ID tokens against shadNet's public keys and then serves the same
-Demonware protocol, matchmaking and CTR services as for Switch. It is not
-affiliated with Sony, Activision, Demonware, Nintendo, Nextendo Network or the
-shadPS4 project.
+Normal instances verify ID tokens from an independent shadNet service through
+its configured public JWKS endpoint. An explicit anonymous provider is available
+only with `CTR_ADMISSION=guest` and `CTR_UNLOCK_ALL=1`. Normal and unlock-all
+instances keep separate databases, listeners and matchmaking state. Unlock-all
+does not control save-owned single-player unlocks. See [FORK.md](FORK.md) for
+admission, client prerequisites, economy policy and the two-instance setup.
 
-An unlock-all instance can explicitly select `CTR_ADMISSION=guest` with
-`CTR_UNLOCK_ALL=1`. It requires no shadNet service or account and assigns a fresh
-random publisher ID and nickname on each authentication. It needs a separate
-database and an anonymous game patch; server configuration alone cannot bypass
-CTR's platform sign-in checks. On 2026-10-14 the user confirmed a complete
-anonymous two-client race on the 28-edit candidate, followed by a shared-lobby
-and peer-name check on the 27-edit candidate. Stock-emulator qualification
-remains pending. These results precede the protocol extraction described below.
-The normal progression instance continues to require verified shadNet tokens.
+This project is unofficial and is not affiliated with Sony, Activision,
+Demonware, Nintendo, Nextendo Network or the shadPS4 project.
 
-**Status: experimental research code.** Validated only on one local machine,
-with earlier builds: sign-in through shadNet and the publisher, and one complete
-two-player race.
-Not validated: the Pit Stop and main-menu news ticker in game, parties, rejoining
-and lobby merges after the latest changes, LAN/WAN play, capacity, and running a
-public server.
-Race rewards rely on what the client reports.
+## Status and evidence
 
-Architecture, configuration (one env file per instance, documented in
-[example.env](example.env): `SHADNET_*`, `CTR_AUTH_SIGNING_KEY`, `DATA_DIR`,
-`CTR_ADMISSION`, `CTR_UNLOCK_ALL`, `CTR_NEWS`, `CTR_NEWS_<CODE>`, ...) and the changes to the
-original code are in [FORK.md](FORK.md). The authenticated path also needs shadNet and shadPS4
-changes that are still under review upstream, and the
-[CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch):
-see [Client side](FORK.md#client-side).
+The user accepted protocol baseline `33dc1c6` on 2026-10-14 with shadNet A/B:
+shared lobby and races through results, with matching server-log evidence for
+matchmaking, lobby sync, leaderboard uploads and persisted rewards, without
+MAC errors. Guest C/D remained on the previous build. Profile B crashed once
+on `Game:Main` (`0xc0000005`) shortly after a match notification; it did not recur
+after restart and the cause remains unattributed.
 
-The shared wire implementation is now an internal package in this executable.
-[Demonware contracts and compatibility evidence](docs/DEMONWARE_PROTOCOL.md)
-distinguishes common CTR/Diablo behavior from CTR economy and unverified reuse.
-The refactor has not been installed or qualified in game.
+The architecture work is local on `refactor/ctrnf-architecture`, from
+`feat/ps4-platform` at `33dc1c6`. It has **not been installed or accepted in game**.
+Review and later acceptance of both A/B (normal) and C/D (guest unlock-all)
+remain separate. LAN/WAN, capacity and public hosting are unqualified.
 
-The PS4 code is on the `feat/ps4-platform` branch of this fork; build it with
-Go 1.25 or newer:
+- [Binding plan, inventory and fixture ledger](docs/ARCHITECTURE_REFACTOR.md)
+- [Final implementation and validation report](docs/ARCHITECTURE_REFACTOR_REPORT.md)
+- [Demonware wire contracts and evidence](docs/DEMONWARE_PROTOCOL.md)
 
-    git clone -b feat/ps4-platform https://github.com/pierluigizagaria/nextendo-demonware.git
-    cd nextendo-demonware
-    go build -o server .
-    go test ./...
+## Build and configuration
 
-(The clone URL in [Install](#install) is the original Diablo III repository.)
-The license is unchanged (PolyForm Shield 1.0.0, see [License](#license)); read
-its Noncompete section before running a service.
+From the repository directory, with Go 1.25 or newer and the pinned module
+dependencies already available:
 
-The rest of this file is the original documentation for Diablo III and
-Crash Team Racing on Switch, which this fork no longer serves: it accepts only
-PS4 clients through the configured admission provider.
-
-Game server for **Diablo III** nxmod [creator of the original Diablo-3 repo](https://github.com/nx-mod/nextendo-demonware) & the original developer of the backend for Demonware support for [Nextendo Network](https://nextendo.network), and also with **Crash Team Racing Nitro-Fueled** support contributed by [CollectingW](https://github.com/CollectingW) (see [Crash Team Racing](#crash-team-racing)). Source only, no binaries, no certs, no game assets. Not affiliated with Blizzard, Activision, Demonware or Nintendo.
-
-Diablo III does not use NEX: its online layer is **Demonware**. This server speaks it end to end (auth, the encrypted lobby, remote tasks, matchmaking, NAT discovery) and plugs into the Nextendo stack like the other game servers: a route in sni-router, the account gates and presence of nextendo-account, and `/api/stats` for nextendo-dashboard.
-
-## What works
-
-- Login and "connected to the Diablo network".
-- Season and community events served from `pubfiles.json` ([PUBFILES.md](PUBFILES.md)), with optional monthly season rotation and weekly Challenge Rifts (see [Optional features](#optional-features)).
-- Public games: create, find, join, player counts, NAT introductions.
-- Co-op between a Switch and an emulator. Tested: game builds 2.7.6 (CFW Switch) and 2.7.7 (Citron), both with season 37, working against this server and against each other.
-- Friend lookups inside the game and friend status, with presence reported to nextendo-account. Lightly tested: see [Known limits](#known-limits).
-- Crash Team Racing Nitro-Fueled (Demonware title 5775): login, async matchmaking, friend sessions and rich presence, all written by CollectingW. Tested on console & emulator with production already running this additional game.
-
-## Requirements
-
-This server runs behind the rest of the Nextendo stack. Two of the pieces need changes that are shipped as separate pull requests.
-
-| component | needed? | what it must provide |
-|---|---|---|
-| **sni-router** | required | A route sending `crimson-switch-auth3.*.demonware.net` to `BACKEND_D3` (default `127.0.0.1:8460`), with the PROXY protocol v1 header (`SNI_PROXY_PROTOCOL=1` on the router, `NEXTENDO_PROXY_PROTOCOL=1` here) so the auth sees the player's real address. Neither is in sni-router's `main` yet. The lobby (3074) does not go through the router. |
-| **nextendo-account** | for account gates and presence | `POST /internal/online-check` and `POST /internal/presence-batch`, authenticated with `X-Internal-Key`. Already in `main`. With `NEXTENDO_REQUIRE_ACCOUNT=0`, an unreachable account service is only logged. |
-| **nextendo-dashboard** | optional | A `d3` source polling `/api/stats` on port 8093 (`DASH_D3_URL`, `DASH_D3_TOKEN`). Without it the server works but is not on the shared dashboard. |
-| **DNS** | required | `crimson-switch-auth3.*.demonware.net`, `crimson-switch-lobby.*.demonware.net` and `stun.{us,eu,jp,au}.demonware.net` must resolve to the stack; the game must never reach the real Demonware. A console uses Atmosphere hosts entries, an emulator the resolver of its host: exact lines in [Hosts entries](#hosts-entries). |
-| **TLS certificate** | required | A certificate and key for the three `crimson-switch-auth3.*.demonware.net` names, from a CA your clients trust (`CERT_FILE`, `KEY_FILE`). Yours to provide; none is shipped and none is committed. |
-| **Game update on the client** | required | The client must run the current game update, or it finds updated games but can never join them. The client may also have to match the season being served: builds 2.7.6 and 2.7.7 were tested working with season 37, with this server and with each other. Later seasons have not been tested against those builds. |
-
-## Hosts entries
-
-Diablo III must reach these names on your stack and never on the real Demonware. The auth names go to the machine running sni-router; the lobby and STUN names go straight to the diablo-3 server (the lobby does not pass through the router), which is the address you set as `NEXTENDO_HOST`. They can be the same machine.
-
-```
-<ROUTER_IP> crimson-switch-auth3.prod.demonware.net
-<ROUTER_IP> crimson-switch-auth3.cert.demonware.net
-<ROUTER_IP> crimson-switch-auth3.dev.demonware.net
-<D3_IP>     crimson-switch-lobby.prod.demonware.net
-<D3_IP>     crimson-switch-lobby.cert.demonware.net
-<D3_IP>     crimson-switch-lobby.dev.demonware.net
-<D3_IP>     stun.us.demonware.net
-<D3_IP>     stun.eu.demonware.net
-<D3_IP>     stun.jp.demonware.net
-<D3_IP>     stun.au.demonware.net
+```text
+go build -o .cache/ctrnf-server ./cmd/ctrnf-server
+go vet ./...
+go test -count=1 ./...
 ```
 
-- **Switch (Atmosphere):** add the lines to the end of both `/atmosphere/hosts/emummc.txt` and `/atmosphere/hosts/sysmmc.txt` (the last matching line wins), make sure `enable_dns_mitm = u8!0x1` is set under `[atmosphere]` in `/atmosphere/config/system_settings.ini`, and reboot the console.
-- **Emulator:** the same lines in the hosts file of the machine whose resolver the emulator uses, or in the emulator's own redirect if it has one.
-- Without the STUN lines the console sends its NAT probes to Activision, and online games stay local only.
+The local Windows verification uses `.toolchain/go`, `GOCACHE=.cache/go-build`
+and `GOPROXY=off`; the final executable is kept under
+`.cache/architecture-refactor/ctrnf-server.exe`. It is not installed by these
+instructions. Existing OpenSSL on `PATH` is required for response signing.
 
-## Install
+All environment names and their validation remain unchanged; see
+[example.env](example.env). Each instance reads its own immutable configuration:
+`ctrnf-server -env normal.env`, with process environment taking precedence.
+Private env files, keys, credentials, databases and runtime captures are ignored.
+The client routing, TLS certificate and signature patch are separate prerequisites
+documented in [FORK.md](FORK.md#client-side).
 
-These steps follow the generic [deployment guide](https://github.com/NextendoNetwork/nextendo-docs/blob/main/DEPLOYMENT.md); every value is a placeholder for your own.
+`D3_PUBFILES_CONFIG` and `D3_RIFTDATA` remain accepted but are inactive.
+`D3_PUBFILES` still locates generic physical files for service 10/21, excluding
+the documented Diablo outputs and aliases. The `pubfiles` command validates
+configuration and exits without generating files. `/pubfiles/` is not registered.
+Diablo code and tests remain in `internal/diablo`; no admitted title reaches it.
 
-1. **Prerequisites.** Go 1.25 or newer, and a running nextendo-account and sni-router.
-2. **Build.**
+## Architecture and shutdown
 
-       git clone https://github.com/NextendoNetwork/diablo-3.git
-       cd diablo-3
-       go build -o server .
+`cmd/ctrnf-server` composes `config`, `auth`, platform providers, `lobby`, `ctr`,
+`store`, `presence`, `nat`, `relay`, `dashboard`, `httpserver` and `diagnostics`.
+`internal/demonware` remains independent of game rules. The lobby consumes a
+narrow dispatch contract; CTR owns its adapters and business rules, and SQLite
+implements the persistence interfaces consumed by CTR.
 
-   Two external modules: `modernc.org/sqlite` (pure Go, no cgo) stores the CTR economy and leaderboards, and `golang.org/x/sys` provides the per-database instance lock. `go test ./...` runs the tests.
-3. **Configure.** `cp example.env .env` and edit it; every variable is documented in that file. At minimum:
-   - `NEXTENDO_HOST`: the IPv4 address players reach this server on;
-   - `NEXTENDO_ACCOUNT_URL`: your nextendo-account;
-   - `NEXTENDO_INTERNAL_KEY` and `NEXTENDO_SECRET`: the **same values** nextendo-account uses, or the gates and presence calls are refused;
-   - `NEXTENDO_PROXY_PROTOCOL=1`, since sni-router sends the PROXY header;
-   - `NEXTENDO_REQUIRE_ACCOUNT=1` once your accounts are live (`0` only logs);
-   - `DASH_TOKEN`: a random value.
-4. **Certificate.** Point `CERT_FILE` and `KEY_FILE` at the certificate your deployment uses for its game servers. sni-router passes the TLS through untouched, so this is the certificate the client sees. It must cover `crimson-switch-auth3.prod.demonware.net`, `.cert.` and `.dev.`, and come from the CA your clients already trust.
-5. **sni-router.** Set `BACKEND_D3=127.0.0.1:8460` (or wherever the auth port is) and `SNI_PROXY_PROTOCOL=1`, then restart it.
-6. **DNS and firewall.** Add the [hosts entries](#hosts-entries), and open the ports below on the host firewall before the first run: a dismissed firewall prompt leaves a silent block rule.
-7. **Dashboard (optional).** On nextendo-dashboard set `DASH_D3_URL=http://127.0.0.1:8093` and `DASH_D3_TOKEN` to your `DASH_TOKEN`.
-8. **Run and check.**
+SIGINT/SIGTERM closes admission, interrupts idle/partial lobby reads and drains
+admitted handlers, replies, callbacks and background workers. Only then does
+SQLite close and release its instance lock. One 30-second budget includes
+`DB.Close`; expiry forces process exit without unlocking under active workers.
+Operator shutdown can abandon undelivered replies and pushes. Established
+sessions have no idle or elapsed-time cutoff.
 
-       ./server
+SQLite uses WAL and `synchronous=FULL`: atomicity and durability are per committed
+transaction. Success replies follow commits, but a commit may survive a lost
+reply. A task can contain several transactions (125/1 rewards, refresh and
+challenges); there is no exactly-once delivery promise. Schema version 1, SQL and
+transaction boundaries are unchanged, and existing databases open unchanged.
+Never delete the WAL manually.
 
-   The log shows `[D3 Auth] listening HTTPS`, `[D3 Lobby] listening TCP` and `[D3 NAT] listening UDP`. `curl http://127.0.0.1:8093/healthz` returns 200, and a game logging in logs `[D3 Auth] ... -> 200 code=700`.
+## Attribution and license
 
-| port | what |
-|---|---|
-| 8460 TCP (TLS) | Demonware auth, behind sni-router |
-| 3074 TCP | lobby (`LOBBY_PORTS` also opens 3075 to 3080) |
-| 3074 UDP | NAT discovery and introductions |
-| 8093 HTTP | `/api/stats?key=DASH_TOKEN`, `/healthz`, `/pubfiles/` |
+Derived from [nx-mod's original server](https://github.com/nx-mod/nextendo-demonware)
+and [NextendoNetwork/nextendo-demonware](https://github.com/NextendoNetwork/nextendo-demonware).
+The original CTR support and reverse engineering were contributed by
+[CollectingW](https://github.com/CollectingW). Original credits and historical
+Switch/Diablo evidence remain in [the archived documentation](docs/HISTORICAL_SWITCH_README.md).
+Useful upstream CTR fixes are reviewed and ported by hand; the reviewed commit
+is recorded in [FORK.md](FORK.md#following-upstream).
 
-## Publisher files
-
-The season, the community events with their multipliers, and the item blacklist come from `pubfiles.json`. Every setting is explained in [PUBFILES.md](PUBFILES.md) and the season themes in [SEASONS.md](SEASONS.md).
-
-    server pubfiles    # regenerate Config.txt / Seasons.txt / Blacklist.txt and exit
-
-The lobby reads them on every request, so a change needs no restart; players see it the next time they connect.
-
-## Crash Team Racing
-
-Crash Team Racing Nitro-Fueled (Demonware title 5775) speaks the same lobby protocol as Diablo III, so its support lives in this server instead of a fork. It was written by **[CollectingW](https://github.com/CollectingW)** (pull request #1 of `nx-mod/diablo-3`) and is merged here with the comments and log strings translated to English and a few lines of glue to fit our friend lookup. Every CTR-specific path is gated on the title the client announces; title 5745 (Diablo III) behaves as before.
-
-What it adds, from the pull request:
-
-- **Login.** The ticket carries the title the client announced instead of always 5745. For 5775 the online id is the player's stable Nextendo PID, which CTR needs to tie a game to its host. `extra_data` carries both `nso_subscription_status` and `extended_data`.
-- **Signed auth replies.** CTR checks an `X-Signature` header before it reads the ticket, so an unsigned reply cannot log in. Set `CTR_AUTH_SIGNING_KEY` to the path of an RSA-2048 private key (PEM, exponent 65537); `openssl` must be on the `PATH`. Replies for 5775 are signed with RSA-PSS/SHA-256, zero-length salt, each verified before it is sent. The server refuses to start if the key or `openssl` cannot produce a valid signature. The matching public key must be installed in the CTR client mod, which is not part of this repository, and no key is shipped.
-- **Umbrella tokens.** `/v1.0/tokens/lsg/` answers on its own and requires an unexpired ticket this server issued.
-- **Contextual sessions (service 138).** Create, update, delete, request an id and initialize, with owner checks and context separation; friend sessions (138/14) so friends show as joinable.
-- **Async matchmaking (service 145).** Search validation, a queue that pairs players on matching filters and capacity, host and backend documents, and host-document sync before a guest joins.
-- **Rich presence (service 68)** and the reply formats CTR's tasks need (`bdHTTPProxyResponse`, structured replies).
-- `CTR_MIGRATE=1` sends the lobby migration message CTR was first tried with. Off by default: it makes the game wait for a migration and close after about 12 seconds.
-
-The merge changed one thing for Diablo III: games whose host disconnects are now orphaned and removed when the host does not come back, instead of staying findable until the connection closes. A task the server cannot parse now gets an empty success instead of no answer.
-
-Checked by us: this merge builds and every test passes, including CollectingW's, and Diablo III was run on the merged build on a local stack (a CFW Switch and a Citron phone logged in, season 37 was served, and a game was created and found). CTR has also been verified operational across Prelude/Ryujinx/Citron users when Nextendo Demonware was officially ported to Prod.
-
-## Optional features
-
-Both are off or inert until you set them up. Season rotation changes the season for every save that plays on the server, and changing the season, up or down, can damage a savegame: see [PUBFILES.md](PUBFILES.md#settings). Neither has been tried on a running game yet; the code and settings are covered by tests.
-
-- **Monthly season rotation.** The season advances every month through the seasons listed in `pubfiles.json` (14 to 39; add more there) with each season's theme switched on, then starts over. Enable it with `"season_rotation": { "enabled": true }`. See [PUBFILES.md](PUBFILES.md#season-rotation).
-- **Weekly Challenge Rifts.** Put `challengerift_config.dat` and the `challengerift_NN.dat` files from d3hack's release zip (`config/d3hack-nx/rift_data/`) in `D3_RIFTDATA` (default `riftdata/`) and the server serves one per week, looping back to the first. The files are captured game data and are not in this repository. See [PUBFILES.md](PUBFILES.md#challenge-rifts).
-
-## Development notes
-
-- Runtime state (`sessions/`, `pubfiles/`, `dumps/`) is created next to the binary and ignored by git, as is `riftdata/`.
-- `D3_DUMPS=<dir>` records raw auth bodies and lobby frames; `D3_VERBOSE=1` logs every decrypted lobby message.
-- For co-op between a console running d3hack and a stock peer, keep d3hack's cheat sections off and set `MaxParagonLevel = 20000`. Gameplay-changing patches on one side desync the session and the game drops the join a few seconds later. Community buffs come from this server instead.
-
-## Known limits
-
-What this server does not do, and what has not been checked. Read this before relying on it.
-
-**Friends are lightly tested, and why.** Only two accounts on two devices, a CFW Switch and Citron on a local test stack, have ever been used, so there has never been a real friend graph to test against.
-- Citron friends resolve by Nextendo PID and were checked in both directions between those two accounts.
-- Console friends are identified by Nintendo ids, not PIDs. They resolve either from a local `baas-proxy` log (`BAASPROXY_LOG`, which exists only on a local stack) or by asking nextendo-account's `/internal/resolve`. The account lookup is covered by tests against a stand-in service only. It has never run against real friend ids, because a console's real friend list is built by nx-account, which is private.
-- **The in-game "friends online" indicator does not come from this server.** It comes from Nintendo friend presence (`nn::friends`), which Nextendo supplies. This server reports who is connected to nextendo-account (`/internal/presence-batch`); the devices read presence from the account service of their deployment. On a local test stack with real Nextendo accounts the two never meet: the local account service does not know those accounts and the devices do not ask it, so no friend has ever been seen shown as online, on either device. The server's answer to the friend lookup was checked in the log (the game was told the friend was online) and the game still showed nobody. Checking the indicator needs a deployment where the account service that receives this server's report is the one the devices ask.
-- Friend status (rich presence) uses CollectingW's `ctr_presence.go`, whose layout matches what Diablo III sends in our logs. It looks a friend up by the raw id the game asks about, so it matches a Citron PID but not yet a console's Nintendo id. It has not been seen working in a live Diablo III game.
-
-**Empty services.** The game asks for leaderboards and stats, hero upload, mail, counters and event logging, and the server accepts each request and answers with nothing. Leaderboard screens are empty and uploaded heroes are not stored.
-
-**No persistence.** Public games, user data and friend status live in memory and are lost on restart.
-
-**Matchmaking.** Games never expire (one whose host went away stays findable until it disconnects), search filters are ignored, and play is peer to peer only.
-
-**Security.** The lobby also accepts a fixed all-zero key, so a client with no ticket can complete the handshake. There is no rate limiting or moderation beyond the account gate (`NEXTENDO_REQUIRE_ACCOUNT`).
-
-**Seasons.** Only season 37 is tested, on game builds 2.7.6 and 2.7.7. Changing the served season, up or down, can damage a savegame (see [PUBFILES.md](PUBFILES.md#settings)). Season rotation and Challenge Rifts have not been tried on a running game.
-
-**Unknowns.** Whether the game reads `Config.txt` keys beyond the ones sent, what the blacklist's `0` and `1` mean, and the request and reply formats of the empty services.
-
-## To do
-
-- Leaderboards, stats and hero storage: read the request formats from the game and add storage.
-- Persist public games, user data and friend status.
-- Expire stale games and honor the search filters.
-- Refuse the all-zero lobby key; add rate limits.
-- Check console friends, friend status and the "friends online" indicator against real accounts on a real deployment.
-- Try Challenge Rifts and season rotation on a running game.
-- Let rich presence resolve a console friend id to a PID, as friend lookups already do (`onlinePlayerFor`).
-- Run Diablo III and Crash Team Racing on the merged server and confirm neither changed.
-- Find the `Config.txt` keys the game reads, and the meaning of the blacklist values.
-
-## Credits
-
-- **[Nextendo Network](https://nextendo.network)** ([NextendoNetwork](https://github.com/NextendoNetwork)):
-  the Switch online stack this server plugs into: NSA/BaaS accounts, dauth,
-  the SNI router that carries Demonware traffic, and the game-server pattern
-  (gates, presence, dashboard) this server follows.
-- **[CollectingW](https://github.com/CollectingW)**: wrote the Crash Team Racing Nitro-Fueled support in this server (pull request #1 of `nx-mod/diablo-3`): title-aware login, signed auth replies, umbrella tokens, contextual and async matchmaking, friend sessions and the rich presence service, with tests. The reverse engineering of CTR's Demonware behaviour is theirs.
-- **[D3Hack](https://github.com/god-jester/D3StudioFork)** by **jester**, on
-  [exlaunch](https://github.com/shadowninja108/exlaunch) by **Shadow**: used
-  as the instrumentation platform (hooks and logging inside the game) and as the
-  source of the publisher-file formats (`Config.txt`, `Seasons.txt`, `Blacklist.txt`).
-- **[nxmod](https://github.com/nx-mod)** creator of the original Diablo-3 repo & work
-  [original repo](https://github.com/nx-mod/nextendo-demonware) for their original
-  work and creation to make this entirely possible.
-
-- **[project-bo4/shield-development](https://github.com/project-bo4/shield-development)** (GPL-3.0):
-  Demonware STUN/NAT-discovery packet format (UDP 3074, types 20/21 and 30/31);
-  service ID table.
-- **[Laupetin/open-bitdemon-emulator](https://github.com/Laupetin/open-bitdemon-emulator)** (AGPL-3.0):
-  standalone Demonware backend; reference for service result layouts.
-- **[Ezz-lol/boiii-free](https://github.com/Ezz-lol/boiii-free)** (GPL-3.0):
-  Demonware lobby/service emulation of the same SDK generation; bdMatchMakingInfo layout.
-- **[Protarium-Network/bo2-wiiu-demonware](https://github.com/Protarium-Network/bo2-wiiu-demonware)**:
-  NAT traversal packet format (introductions).
-- **[skkuull/dwd3](https://github.com/skkuull/dwd3)** (GPL-3.0),
-  **[jordam/demonbugger](https://github.com/jordam/demonbugger)**,
-  **[hosseinpourziyaie/demonware-companion](https://github.com/hosseinpourziyaie/demonware-companion)**:
-  Demonware reverse-engineering tools.
-
-Everything specific to Diablo III (ticket layout, lobby handshake and crypto, task reply format, the service/task map) was reverse-engineered from the game binary; the addresses and layouts are documented in the source comments.
-
-Crash Team Racing Nitro-Fueled (title 5775): the server code for it is **[CollectingW](https://github.com/CollectingW)**'s, from the [`crash-team-racing` branch of CollectingW/diablo-3](https://github.com/CollectingW/diablo-3/tree/crash-team-racing) (pull request #1 of `nx-mod/diablo-3`). It is merged here as sent; its comments and log strings have since been translated to English throughout. The reverse engineering of CTR's Demonware behaviour is theirs.
-
-## License
-
-Released under the **[PolyForm Shield License 1.0.0](LICENSE.md)**, source-available: read, use,
-modify, and self-host, but do not use it to provide a product that competes with Nextendo Network.
+The [PolyForm Shield License 1.0.0](LICENSE.md) is unchanged. This is
+source-available software; consult the license, including its Noncompete terms,
+before any distribution or service decision.

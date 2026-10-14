@@ -13,8 +13,6 @@
 
 package platform
 
-import ()
-
 type PlayerID struct {
 	Username string `json:"username"`
 	PID      uint64 `json:"pid"`

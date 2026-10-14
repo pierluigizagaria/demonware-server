@@ -53,11 +53,11 @@ func BalanceUpdatePayload(pid uint64, amount int64) []byte {
 func (h *EconomyHandler) PushCurrentBalance(peer lobbypkg.TaskSession) {
 	a, err := h.Economy.Snapshot(peer.PID())
 	if err != nil {
-		peer.Logf("CTR balance push read: %v", err)
+		peer.Logf("[ctr] balance push read: %v", err)
 		return
 	}
 	if err := peer.SendPush(76, func(w *demonwarepkg.Writer) { w.Struct(BalanceUpdatePayload(peer.PID(), a.Balances[10])) }); err != nil {
-		peer.Logf("CTR balance push: %v", err)
+		peer.Logf("[ctr] balance push: %v", err)
 	}
 }
 

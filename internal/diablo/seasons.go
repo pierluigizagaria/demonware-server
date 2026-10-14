@@ -168,7 +168,7 @@ func (provider *PublisherFiles) generatedPubfile(name string, now time.Time) ([]
 	}
 	cfg, err := provider.loadPubConfig(provider.PubConfigPath)
 	if err != nil {
-		provider.DiagnosticLogf("[D3 Season] %s: %v", provider.PubConfigPath, err)
+		provider.DiagnosticLogf("[diablo] season %s: %v", provider.PubConfigPath, err)
 		return nil, "", false
 	}
 	eff := effectiveConfig(cfg, now)
@@ -179,7 +179,7 @@ func (provider *PublisherFiles) generatedPubfile(name string, now time.Time) ([]
 // logGenerated records what a generated file was served with.
 func (provider *PublisherFiles) logGenerated(name string, c pubConfig) {
 	if strings.Contains(name, "season") {
-		provider.DiagnosticLogf("[D3 Season] %s -> season %d, start %s, end %s", name, c.Season, c.SeasonStart, c.SeasonEnd)
+		provider.DiagnosticLogf("[diablo] season %s -> season %d, start %s, end %s", name, c.Season, c.SeasonStart, c.SeasonEnd)
 		return
 	}
 	var on []string
@@ -188,5 +188,5 @@ func (provider *PublisherFiles) logGenerated(name string, c pubConfig) {
 			on = append(on, e)
 		}
 	}
-	provider.DiagnosticLogf("[D3 Season] %s -> season %d, %d events on: %s", name, c.Season, len(on), strings.Join(on, " "))
+	provider.DiagnosticLogf("[diablo] season %s -> season %d, %d events on: %s", name, c.Season, len(on), strings.Join(on, " "))
 }

@@ -33,7 +33,7 @@ func (m *CtrMatchmaker) cancelMerge(dst *CtrRoom) []ctrNotice {
 	src.MergeTarget = 0
 	dst.Version++
 	dst.HostDoc["update_id"] = dst.Version
-	dst.Host.Conn.Logf("CTR merge cancelled source=%d destination=%d", src.Id, dst.Id)
+	dst.Host.Conn.Logf("[ctr] merge cancelled source=%d destination=%d", src.Id, dst.Id)
 	return []ctrNotice{dst.notice(dst.Host, CtrUpdateLobby)}
 }
 
@@ -109,7 +109,7 @@ func (m *CtrMatchmaker) StartMerge(dst *CtrRoom) []ctrNotice {
 	}
 	dst.Version++
 	dst.HostDoc["update_id"] = dst.Version
-	dst.Host.Conn.Logf("CTR merge reserved source=%d destination=%d incoming=%d total=%d version=%d", src.Id, dst.Id, src.Occupancy(), dst.Occupancy(), dst.Version)
+	dst.Host.Conn.Logf("[ctr] merge reserved source=%d destination=%d incoming=%d total=%d version=%d", src.Id, dst.Id, src.Occupancy(), dst.Occupancy(), dst.Version)
 	return []ctrNotice{dst.notice(dst.Host, CtrUpdateLobby)}
 }
 
@@ -149,6 +149,6 @@ func (m *CtrMatchmaker) finishMerge(dst *CtrRoom) []ctrNotice {
 		out = append(out, ctrNotice{p.Conn, CtrMergeLobby, []uint64{p.Id, src.Id, dst.Id}, h, b})
 		dst.notified[p.Conn.ConnID()] = true
 	}
-	dst.Host.Conn.Logf("CTR merge dispatched source=%d destination=%d searches=%d total=%d", src.Id, dst.Id, len(src.Players), dst.Occupancy())
+	dst.Host.Conn.Logf("[ctr] merge dispatched source=%d destination=%d searches=%d total=%d", src.Id, dst.Id, len(src.Players), dst.Occupancy())
 	return out
 }

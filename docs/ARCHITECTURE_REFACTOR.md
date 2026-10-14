@@ -386,3 +386,49 @@ and service 10/21 still serves a synthetic CTR physical file case-insensitively.
 
 This is an explicit source-based classification of those named Diablo paths,
 not a claim that all storage or contextual matchmaking is Diablo-only.
+
+## Phase 3 acceptance
+
+The mechanical extraction is commit `bd1f6a3`, after the dependency/visibility
+seams in `d271197`, `7d327fd`, `7e1a1ae` and `b48f6b8`. All root Go sources now
+belong to `cmd/ctrnf-server` or the responsibility packages above. Integration
+fixtures and the unchanged dispatcher JSON moved to `cmd/ctrnf-server/testdata`;
+Diablo generator tests and its embedded JSON moved to `internal/diablo`.
+CTR's four embedded JSON resources moved byte-for-byte to `internal/ctr`.
+The source paths in the Phase 0 inventory describe the baseline; the final
+package map is in [the implementation report](ARCHITECTURE_REFACTOR_REPORT.md).
+
+Production imports have no lobby-to-CTR or CTR-to-store dependency and no path
+from the executable to Diablo. Dashboard views copy data under their owners'
+locks. Matchmaking peers remain keyed by connection ID; notices are constructed
+under the engine lock and sent afterward. All 42 raw SQLite literals match
+`33dc1c6`; protocol sources, original vectors, module files and license are
+unchanged. Validation at extraction: 1,050 named tests/subtests, no failures or
+skips, with `gofmt` and `go vet ./...` passing.
+
+## Phase 4 acceptance and handoff
+
+Worker ownership (`b7e85d7`), lobby drain (`7a60fa7`) and HTTP/entrypoint shutdown
+(`dbd8e5d`) implement the lifecycle above. `internal/httpserver` owns the two
+existing HTTP transports; `internal/diagnostics` owns log/capture settings.
+Neither adds a service, process, module or network API. HTTP requests after
+admission closes receive 503 without entering application handlers. One
+30-second drain budget includes worker joins and `DB.Close`; expiry returns
+to the entrypoint's forced process exit, without deferred early unlock.
+Commit `670541f` keeps the shadNet provider available until admitted auth
+handlers finish, then cancels/joins background refresh before database close.
+
+Final validation: 1,072 named tests/subtests passed without failure or skip;
+`gofmt`, `go vet ./...`, the executable build under `.cache/` and a bounded
+15-second `FuzzWireParsers` run passed. Lifecycle fixtures cover partial lobby
+reads, reply success/failure, callback cardinality, HTTP admission/drain,
+PROXY handoff, NAT read errors, reaper/relay/JWKS ownership, failed startup,
+the overall deadline and lock ordering. No offline linter executable was
+available, so no linter configuration or dependency was added.
+
+The identity double read remains characterized and unchanged. No stop condition
+required changing a protected contract. No lab binary was installed, no service
+or game profile was launched and nothing was pushed. `feat/ps4-platform` stays
+at `33dc1c6` pending the final user/Claude review. See the
+[final report](ARCHITECTURE_REFACTOR_REPORT.md) for all commits, validation
+details and outstanding in-game acceptance.

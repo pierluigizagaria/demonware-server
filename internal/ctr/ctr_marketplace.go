@@ -77,13 +77,13 @@ func (h *EconomyHandler) OnMarketplace(peer lobbypkg.TaskSession, task byte, pay
 		}
 		a, err := h.Economy.Snapshot(peer.PID())
 		if err != nil {
-			peer.Logf("CTR economy read failed: %v", err)
+			peer.Logf("[ctr] economy read failed: %v", err)
 			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
 			return result
 		}
 		w := a.Balances
 		sb := GetPlayerBalancesResponse(w, max)
-		peer.Logf("CTR pitstop balances ctx=%q max=%d -> %d currencies", ctx, max, len(currencyIDs()))
+		peer.Logf("[ctr] pitstop balances ctx=%q max=%d -> %d currencies", ctx, max, len(currencyIDs()))
 		result.Reply = h.StructTaskReply(task, sb)
 		return result
 
@@ -115,12 +115,12 @@ func (h *EconomyHandler) OnMarketplace(peer lobbypkg.TaskSession, task byte, pay
 		}
 		a, err := h.Economy.Inventory(peer.PID())
 		if err != nil {
-			peer.Logf("CTR economy inventory failed: %v", err)
+			peer.Logf("[ctr] economy inventory failed: %v", err)
 			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
 			return result
 		}
 		items := InventoryPage(a, page, size)
-		peer.Logf("CTR pitstop inventory page=%d size=%d -> %d items", page, size, len(items))
+		peer.Logf("[ctr] pitstop inventory page=%d size=%d -> %d items", page, size, len(items))
 		result.Reply = h.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
 			for _, item := range items {
 				WriteInventoryItem(w, peer.PID(), item)
@@ -136,11 +136,11 @@ func (h *EconomyHandler) OnMarketplace(peer lobbypkg.TaskSession, task byte, pay
 		}
 		debit, err := h.Economy.Purchase(peer.PID(), skus)
 		if err != nil {
-			peer.Logf("CTR pitstop purchase rejected: %v", err)
+			peer.Logf("[ctr] pitstop purchase rejected: %v", err)
 			result.Reply = h.TaskReply(task, lobbypkg.ErrUnhandled, nil)
 			return result
 		}
-		peer.Logf("CTR pitstop purchase skus=%v debit=%d currency=10", skus, debit)
+		peer.Logf("[ctr] pitstop purchase skus=%v debit=%d currency=10", skus, debit)
 		result.AfterReply = func(_ error) { h.PushCurrentBalance(peer) }
 		result.Reply = h.TaskReply(task, 0, nil)
 		return result

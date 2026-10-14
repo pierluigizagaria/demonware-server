@@ -135,10 +135,10 @@ func (provider *PublisherFiles) riftFile(name string, now time.Time) ([]byte, st
 		number := riftChallengeNumber(cfg.ChallengeRifts, now)
 		out, err := patchChallengeConfig(src, number)
 		if err != nil {
-			provider.DiagnosticLogf("[D3 Rift] %s: %v", p, err)
+			provider.DiagnosticLogf("[diablo] rift %s: %v", p, err)
 			return nil, "", false
 		}
-		provider.DiagnosticLogf("[D3 Rift] config -> challenge %d (mode %q), times never expire", number, cfg.ChallengeRifts.Mode)
+		provider.DiagnosticLogf("[diablo] rift config -> challenge %d (mode %q), times never expire", number, cfg.ChallengeRifts.Mode)
 		return out, p, true
 	}
 	m := riftDataName.FindStringSubmatch(name)
@@ -150,9 +150,9 @@ func (provider *PublisherFiles) riftFile(name string, now time.Time) ([]byte, st
 	p := files[n%len(files)]
 	data, err := os.ReadFile(p)
 	if err != nil {
-		provider.DiagnosticLogf("[D3 Rift] %s: %v", p, err)
+		provider.DiagnosticLogf("[diablo] rift %s: %v", p, err)
 		return nil, "", false
 	}
-	provider.DiagnosticLogf("[D3 Rift] %s -> %s (%d of %d files)", name, filepath.Base(p), n%len(files)+1, len(files))
+	provider.DiagnosticLogf("[diablo] rift %s -> %s (%d of %d files)", name, filepath.Base(p), n%len(files)+1, len(files))
 	return data, p, true
 }

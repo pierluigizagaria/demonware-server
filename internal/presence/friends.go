@@ -107,7 +107,7 @@ func (h *PresenceHandler) OnGetUserNames(peer presencePeer, task byte, r *demonw
 			hits = append(hits, hit{id, name})
 		}
 	}
-	peer.Logf("friends getUserNames %d request(s) -> %d online %v", len(ids), len(hits), hits)
+	peer.Logf("[presence] friends getUserNames %d request(s) -> %d online %v", len(ids), len(hits), hits)
 	return h.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
 		for _, h := range hits {
 			w.Uint64(h.id)
@@ -124,13 +124,13 @@ func (h *PresenceHandler) OnUserData(peer presencePeer, task byte, r *demonwarep
 	case 1:
 		data, err := r.Blob()
 		if err != nil || peer.Identity() == nil {
-			peer.Logf("userdata SET ctx=%q ignored (%v, player=%v)", ctx, err, peer.Identity() != nil)
+			peer.Logf("[presence] userdata SET ctx=%q ignored (%v, player=%v)", ctx, err, peer.Identity() != nil)
 			return h.TaskReply(task, 0, nil)
 		}
 		h.Presence.userDataMu.Lock()
 		h.Presence.UserData[strings.ToLower(peer.Identity().Username)+"|"+ctx] = data
 		h.Presence.userDataMu.Unlock()
-		peer.Logf("userdata SET %s ctx=%q %d bytes", peer.Identity().Username, ctx, len(data))
+		peer.Logf("[presence] userdata SET %s ctx=%q %d bytes", peer.Identity().Username, ctx, len(data))
 		return h.TaskReply(task, 0, nil)
 	case 4:
 		if len(r.Remaining()) > 0 && r.Remaining()[0] == demonwarepkg.TagBool {
@@ -154,7 +154,7 @@ func (h *PresenceHandler) OnUserData(peer presencePeer, task byte, r *demonwarep
 				hits = append(hits, hit{id, d})
 			}
 		}
-		peer.Logf("userdata GET ctx=%q %d request(s) -> %d", ctx, len(ids), len(hits))
+		peer.Logf("[presence] userdata GET ctx=%q %d request(s) -> %d", ctx, len(ids), len(hits))
 		return h.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
 			for _, h := range hits {
 				w.Uint64(h.id)
@@ -197,7 +197,7 @@ func (h *PresenceHandler) OnGetUserIDs(peer presencePeer, task byte, r *demonwar
 	if h.Presence.PlayerNames != nil {
 		recorded, err := h.Presence.PlayerNames.NamedPlayers(names)
 		if err != nil {
-			peer.Logf("friends getUserIDs: player names: %v", err)
+			peer.Logf("[presence] friends getUserIDs: player names: %v", err)
 		} else {
 			known = recorded
 		}
@@ -213,7 +213,7 @@ func (h *PresenceHandler) OnGetUserIDs(peer presencePeer, task byte, r *demonwar
 			found = append(found, p)
 		}
 	}
-	peer.Logf("friends getUserIDs %d request(s) -> %d resolved", len(names), len(found))
+	peer.Logf("[presence] friends getUserIDs %d request(s) -> %d resolved", len(names), len(found))
 	return h.TaskReply(task, 0, func(w *demonwarepkg.Writer) uint32 {
 		for _, p := range found {
 			w.Uint64(p.PID)

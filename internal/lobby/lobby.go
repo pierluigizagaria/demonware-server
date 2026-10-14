@@ -51,7 +51,7 @@ func (server *LobbyServer) Start() error {
 		}
 		ln, err := net.Listen("tcp", net.JoinHostPort(server.Cfg.BindAddr, p))
 		if err != nil {
-			server.Diag.DiagnosticLogf("[D3 Lobby] port %s unavailable: %v", p, err)
+			server.Diag.DiagnosticLogf("[lobby] port %s unavailable: %v", p, err)
 			continue
 		}
 		if server.startListener(ln, dumps) {
@@ -61,7 +61,7 @@ func (server *LobbyServer) Start() error {
 	if opened == 0 {
 		return errors.New("lobby: no port could be opened")
 	}
-	server.Diag.DiagnosticLogf("[D3 Lobby] listening TCP %s (%d port(s), dumps=%v)", server.Cfg.LobbyPorts, opened, dumps != "")
+	server.Diag.DiagnosticLogf("[lobby] listening TCP %s (%d port(s), dumps=%v)", server.Cfg.LobbyPorts, opened, dumps != "")
 	return nil
 }
 

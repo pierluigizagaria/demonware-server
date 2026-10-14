@@ -13,8 +13,6 @@
 
 package lobby
 
-import ()
-
 // loadIdentity names the connection's player after the identity its ticket
 // was issued to; the handshake has already admitted that ticket.
 func (l *LobbySession) LoadIdentity(ticket []byte) {

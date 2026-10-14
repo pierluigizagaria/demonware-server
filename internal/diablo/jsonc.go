@@ -6,8 +6,6 @@
 
 package diablo
 
-import ()
-
 // stripJSONComments returns b without comments. Line breaks are kept, so error
 // positions still point at the right line.
 func stripJSONComments(b []byte) []byte {
