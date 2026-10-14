@@ -73,7 +73,7 @@ func main() {
 		log.Print("[D3] unlock-all: off")
 	}
 
-	go instance.monitor.startDashboard(instance.presence, instance.matchmaker, instance.registry, instance.diagnostics, instance.files)
+	go instance.monitor.startDashboard(newDashboardViews(instance.presence, instance.matchmaker, instance.registry), instance.diagnostics)
 	go instance.nat.serveNAT(cfg.natPort)
 	instance.relay.startCTRRelay(cfg.relayLow, cfg.relayHigh, cfg.publicIP, instance.presence.onlinePIDs)
 	go instance.registry.reapSessions()

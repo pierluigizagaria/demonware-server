@@ -55,8 +55,8 @@ func (server *lobbyServer) start() {
 				}
 				lc := server.newConn(c, dumps)
 				go func() {
-					server.monitor.registerConn(lc)
-					defer server.monitor.unregisterConn(lc)
+					server.monitor.registerConn(lc.n, lc.c.RemoteAddr().String())
+					defer server.monitor.unregisterConn(lc.n)
 					lc.run()
 				}()
 			}

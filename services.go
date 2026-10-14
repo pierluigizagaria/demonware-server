@@ -97,7 +97,7 @@ func (l *lobbyConn) processTask(payload []byte) {
 		}
 		return
 	}
-	l.telemetry.noteTask(l, service, task)
+	l.telemetry.noteTask(l.n, l.presence.connPID(l.n), service, task)
 
 	l.deliverResult(l.table.Handle(l, taskRequest{Service: service, Task: task, Args: r, Payload: payload}))
 }

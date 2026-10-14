@@ -57,40 +57,29 @@ type taskEvent struct {
 	action string
 }
 
-func (monitor *telemetry) registerConn(l *lobbyConn) {
+func (monitor *telemetry) registerConn(conn uint64, address string) {
 	now := time.Now()
 	monitor.statsMu.Lock()
-	monitor.connStats[l.n] = &connStat{addr: l.c.RemoteAddr().String(), first: now, last: now}
+	monitor.connStats[conn] = &connStat{addr: address, first: now, last: now}
 	monitor.statsMu.Unlock()
 }
 
-func (monitor *telemetry) unregisterConn(l *lobbyConn) {
+func (monitor *telemetry) unregisterConn(conn uint64) {
 	monitor.statsMu.Lock()
-	delete(monitor.connStats, l.n)
+	delete(monitor.connStats, conn)
 	monitor.statsMu.Unlock()
-}
-
-// connPID returns the Nextendo PID of a lobby connection's player (0 if unknown).
-func (state *presenceStore) connPID(conn uint64) uint64 {
-	state.onlineMu.Lock()
-	defer state.onlineMu.Unlock()
-	if p := state.online[conn]; p != nil {
-		return p.PID
-	}
-	return 0
 }
 
 // noteTask records one remote task for the dashboard (services.go onTask).
-func (monitor *telemetry) noteTask(l *lobbyConn, service, task byte) {
+func (monitor *telemetry) noteTask(conn, pid uint64, service, task byte) {
 	name := taskName(service, task)
 	monitor.tasksTotal.Add(1)
-	if service == svcMatchMaking && task == mmCreateSession {
+	if service == 21 && task == 1 {
 		monitor.gatheringsMade.Add(1)
 	}
-	pid := l.presence.connPID(l.n)
 	now := time.Now()
 	monitor.statsMu.Lock()
-	if cs := monitor.connStats[l.n]; cs != nil {
+	if cs := monitor.connStats[conn]; cs != nil {
 		cs.calls++
 		cs.last = now
 		cs.lastAction = name
@@ -207,32 +196,13 @@ type apiStats struct {
 	Methods        []apiMethod    `json:"methods"`
 }
 
-func (monitor *telemetry) buildStats(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry) apiStats {
-	return monitor.buildGameStats(presence, matchmaker, registry, "")
+func (monitor *telemetry) buildStats(views dashboardViews) apiStats {
+	return monitor.buildGameStats(views, "")
 }
 
-func (monitor *telemetry) buildGameStats(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry, game string) apiStats {
-	presence.onlineMu.Lock()
-	who := make(map[uint64]playerID, len(presence.online))
-	for n, p := range presence.online {
-		if (game == "ctr" && !isCTRTitle(p.Title)) || (game == "d3" && isCTRTitle(p.Title)) {
-			continue
-		}
-		who[n] = *p
-	}
-	presence.onlineMu.Unlock()
-
-	type sessSnap struct {
-		id                               [8]byte
-		owner                            uint64
-		gameType, maxPlayers, numPlayers uint32
-	}
-	registry.mu.Lock()
-	snaps := make([]sessSnap, 0, len(registry.sessions))
-	for _, s := range registry.sessions {
-		snaps = append(snaps, sessSnap{s.id, s.owner, s.gameType, s.maxPlayers, s.numPlayers})
-	}
-	registry.mu.Unlock()
+func (monitor *telemetry) buildGameStats(views dashboardViews, game string) apiStats {
+	who := views.online(game)
+	snaps := views.sessions()
 
 	hosting := map[uint64]apiGathering{} // host connection -> its public game
 	gs := make([]apiGathering, 0, len(snaps))
@@ -262,35 +232,9 @@ func (monitor *telemetry) buildGameStats(presence *presenceStore, matchmaker *ct
 		for _, p := range who {
 			names[p.PID] = p.Username
 		}
-		matchmaker.mu.Lock()
-		for _, room := range matchmaker.rooms {
-			if room.host == nil || names[room.host.pid] == "" {
-				continue
-			}
-			g := apiGathering{ID: uint32(room.id), HostPID: room.host.pid, HostName: names[room.host.pid], Type: "Public matchmaking", Max: uint16(room.capacity), State: "searching", Players: []apiLobbyP{}}
-			seen := map[uint64]bool{}
-			for _, search := range room.players {
-				for _, pid := range search.doc.Members {
-					if seen[pid] || names[pid] == "" || (pid != room.host.pid && room.state(pid) != 2) {
-						continue
-					}
-					seen[pid] = true
-					g.Players = append(g.Players, apiLobbyP{PID: pid, Name: names[pid], Host: pid == room.host.pid})
-				}
-			}
-			g.Count = len(g.Players)
-			if g.Count > 1 {
-				g.State = "matched"
-			}
-			if open, ok := room.hostDoc["lobby_open"].(bool); ok && !open {
-				g.State = "in game"
-			}
-			for _, p := range g.Players {
-				ctrMembership[p.PID] = g
-			}
-			gs = append(gs, g)
-		}
-		matchmaker.mu.Unlock()
+		rooms, membership := views.rooms(names)
+		gs = append(gs, rooms...)
+		ctrMembership = membership
 	}
 	sort.Slice(gs, func(i, j int) bool { return gs[i].ID < gs[j].ID })
 
@@ -368,7 +312,7 @@ func (monitor *telemetry) buildGameStats(presence *presenceStore, matchmaker *ct
 	}
 }
 
-func (monitor *telemetry) startDashboard(presence *presenceStore, matchmaker *ctrMatchmaker, registry *sessionRegistry, diag *diagnostics, files *publisherFiles) {
+func (monitor *telemetry) startDashboard(views dashboardViews, diag *diagnostics) {
 	port, token := strconv.Itoa(monitor.dashPort), monitor.dashToken
 
 	authed := func(w http.ResponseWriter, r *http.Request) bool {
@@ -386,7 +330,7 @@ func (monitor *telemetry) startDashboard(presence *presenceStore, matchmaker *ct
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(monitor.buildGameStats(presence, matchmaker, registry, r.URL.Query().Get("game")))
+		_ = json.NewEncoder(w).Encode(monitor.buildGameStats(views, r.URL.Query().Get("game")))
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 

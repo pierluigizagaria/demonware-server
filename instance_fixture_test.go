@@ -43,10 +43,10 @@ var testPresence = newPresenceStore(nil)
 
 func init() { testMatchmaker.onlinePIDs = testPresence.onlinePIDs }
 func testBuildStats() apiStats {
-	return testTelemetry.buildStats(testPresence, testMatchmaker, testRegistry)
+	return testTelemetry.buildStats(newDashboardViews(testPresence, testMatchmaker, testRegistry))
 }
 func testBuildGameStats(game string) apiStats {
-	return testTelemetry.buildGameStats(testPresence, testMatchmaker, testRegistry, game)
+	return testTelemetry.buildGameStats(newDashboardViews(testPresence, testMatchmaker, testRegistry), game)
 }
 
 func TestInstancePresenceAndPersistentNamesAreIsolated(t *testing.T) {
