@@ -76,6 +76,17 @@ The suite preserves exact dispatcher and JSON compatibility references, includin
 the SQLite JSON columns. See the [JSON inventory](docs/DEMONWARE_PROTOCOL.md#json-compatibility-references)
 before changing a serialized field or persisted data contract.
 
+Unit tests live beside their component implementations. `cmd/ctrnf-server`
+retains composed admission, dispatch, dashboard, instance and shutdown tests,
+including the immutable 648-snapshot dispatcher baseline. Component ownership
+and copied observation APIs are documented in the
+[state boundary notes](docs/ARCHITECTURE_REFACTOR.md#component-state-and-observation-apis).
+A bounded wire-parser fuzz run can be repeated with:
+
+```sh
+go test ./internal/demonware -run '^$' -fuzz '^FuzzWireParsers$' -fuzztime=15s
+```
+
 ## Configuration
 
 Start from [example.env](example.env). Configuration is validated once at

@@ -34,6 +34,13 @@ are retained in `internal/diablo` for compatibility tests and cannot be reached
 by an admitted client. Nintendo sign-in, account gates, presence reporting and
 console friend lookups remain removed.
 
+The code-quality cleanup uses package-scoped names, owner-package unit tests,
+private live state and explicit constructors. It preserves the dispatcher and
+JSON references, all existing operational strings, and the single-process
+architecture. Observation APIs contain copied metadata or counters, never keys,
+sockets or live maps; see the [state boundaries](docs/ARCHITECTURE_REFACTOR.md#component-state-and-observation-apis).
+This cleanup has not been installed or accepted in game.
+
 ## Design
 
 | Piece | Where | Behavior |

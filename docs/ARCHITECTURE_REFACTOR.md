@@ -432,3 +432,54 @@ or game profile was launched and nothing was pushed. `feat/ps4-platform` stays
 at `33dc1c6` pending the final user/Claude review. See the
 [final report](ARCHITECTURE_REFACTOR_REPORT.md) for all commits, validation
 details and outstanding in-game acceptance.
+
+## Component state and observation APIs
+
+`ctr.NewMatchmaker`, `nat.NewServer` and `lobby.NewServer` initialize their
+owners without starting workers or listeners. The NAT and lobby constructors
+receive the same per-instance connection allocator. Each lobby server retains
+one shared `*lobby.Options`; its atomics are never copied. Ticket, presence,
+registry and relay constructors initialize their private collections. SQLite
+keeps its SQL pool private; composed persistence tests independently open their
+temporary database files in read-only mode.
+
+Configuration dependencies and transferred data contracts remain explicit:
+`EconomyAccount`, `Stat`, requests, results and serialized documents are not
+blanket-privatized. `Matchmaker.Reserve` takes ownership of an accepted search;
+callers do not mutate it afterward. Unlock-all `Inventory` returns its own copy
+of the catalog item map without writing catalog ownership to persistence.
+
+| Observation API | Copied data / synchronization |
+| --- | --- |
+| `presence.Store.Snapshot` and `ConnectionPlayer` | Existing copied identities; registration also takes an identity copy. |
+| `presence.Store.Counts` | Online connections, user-data records and rich-presence records; each store is read under its existing lock, not as one cross-store instant. |
+| `lobby.SessionRegistry.Snapshot` | Existing monitoring view extended with context, owner PID, reservation flag and update time; no host addresses or key-bearing attributes. The returned slice owns its metadata. |
+| `ctr.Matchmaker.Snapshot` | FIFO waiting IDs, pending reservation count and room count under the engine lock; no search, peer or room pointers. |
+| `lobby.Session.ChannelSnapshot` | Established state and client/server sequence counters, read under the existing state/send locks; directional reads are separate observations. No keys or handshake bytes. |
+| `nat.Server.Introductions` | Atomic successful-introduction count; dashboard wiring uses the method. |
+| `store.SQLite.Activity` | A copied `total_changes()` count from the existing single-connection pool; read-only SQL, with errors propagated. |
+| `dashboard.Telemetry.BuildGameStats` | Existing aggregate view; `RecordLogin` replaces external access to the login atomic at the same issuance point. |
+
+Registry maintenance accepts an explicit observation time in
+`ReapSessionsOnce`; the production reaper supplies the current time and retains
+the original orphan grace predicate. Composed tests advance that observation
+instead of rewriting live sessions. They inspect key-bearing session attributes
+through actual protocol replies, not an observation accessor.
+
+`Session.DeliverResult` keeps the deferred, request-owned callback and passes
+that response's send error exactly once. It no longer stores `ReplyErr` or
+`AfterReplyActive`. Composed fixtures wrap task results to observe callback
+issuance and completion, and capture actual write errors. This retains the
+baseline's zero-valued observations as measured values. Raw router early
+returns remain outside `DeliverResult`. No-push assertions inspect the complete
+authenticated frame list. Session fixtures establish their synthetic channel
+through proof verification and keep independently derived client keys; they
+cannot read or replace the production session's private key or socket.
+
+The 135 owner-level tests formerly in `cmd/ctrnf-server` are now in `ctr` (66),
+`store` (20), `config` (13), `auth` (8), `lobby` (8), `presence` (5), `relay` (5),
+`platform/ps4` (3), `platform/guest` (2), `demonware` (2), `diagnostics` (2) and
+`dashboard` (1). Mixed files retain their composed tests in `cmd/ctrnf-server`.
+Names and subtest outcomes are compared across package moves, including skips.
+The JSON inventory and immutable encoding/decoding tests are documented in
+[DEMONWARE_PROTOCOL.md](DEMONWARE_PROTOCOL.md#json-compatibility-references).
