@@ -16,10 +16,12 @@ type issuedTicket struct {
 	id     playerID
 }
 
-var (
-	issuedMu      sync.Mutex
-	issuedTickets = map[[8]byte]issuedTicket{}
-)
+type ticketStore struct {
+	mu      sync.Mutex
+	entries map[[8]byte]issuedTicket
+}
+
+func newTicketStore() *ticketStore { return &ticketStore{entries: map[[8]byte]issuedTicket{}} }
 
 // An issued identity stays readable this long after its ticket stops
 // admitting, for a lobby that admitted it just before the window closed.
@@ -36,20 +38,20 @@ func ticketIssuedAt(ticket []byte) time.Time {
 
 // rememberTicket records a ticket issued to id and forgets those that can no
 // longer be read, so the store holds at most one window of issuance.
-func rememberTicket(ticket []byte, id playerID, now time.Time, window time.Duration) {
-	issuedMu.Lock()
-	defer issuedMu.Unlock()
-	for tag, t := range issuedTickets {
+func (s *ticketStore) rememberTicket(ticket []byte, id playerID, now time.Time, window time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for tag, t := range s.entries {
 		if now.Sub(ticketIssuedAt(t.ticket)) >= window+issuedIdentityGrace {
-			delete(issuedTickets, tag)
+			delete(s.entries, tag)
 		}
 	}
-	issuedTickets[ticketTag(ticket)] = issuedTicket{ticket: append([]byte(nil), ticket...), id: id}
+	s.entries[ticketTag(ticket)] = issuedTicket{ticket: append([]byte(nil), ticket...), id: id}
 }
 
 // issuedTicketPlayer admits a ticket only if this server issued exactly these
 // bytes within window and its identity matches the ticket's account.
-func issuedTicketPlayer(ticket []byte, now time.Time, window time.Duration) (*playerID, bool) {
+func (s *ticketStore) issuedTicketPlayer(ticket []byte, now time.Time, window time.Duration) (*playerID, bool) {
 	if len(ticket) != 128 || binary.LittleEndian.Uint32(ticket) != ticketMagic {
 		return nil, false
 	}
@@ -57,17 +59,17 @@ func issuedTicketPlayer(ticket []byte, now time.Time, window time.Duration) (*pl
 	if issued.After(now) || now.Sub(issued) >= window {
 		return nil, false
 	}
-	return issuedIdentity(ticket)
+	return s.issuedIdentity(ticket)
 }
 
 // issuedIdentity returns the identity a ticket was issued to; it is not admission.
-func issuedIdentity(ticket []byte) (*playerID, bool) {
+func (s *ticketStore) issuedIdentity(ticket []byte) (*playerID, bool) {
 	if len(ticket) != 128 {
 		return nil, false
 	}
-	issuedMu.Lock()
-	t, ok := issuedTickets[ticketTag(ticket)]
-	issuedMu.Unlock()
+	s.mu.Lock()
+	t, ok := s.entries[ticketTag(ticket)]
+	s.mu.Unlock()
 	if !ok || !bytes.Equal(t.ticket, ticket) || t.id.PID == 0 || t.id.PID != binary.LittleEndian.Uint64(ticket[17:25]) {
 		return nil, false
 	}

@@ -65,7 +65,7 @@ func TestShadNetPublisherInterop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := newPlatformAuthHandler(p, signer, "")
+	handler := testAuthHandler(p, signer, "")
 	for _, user := range f.Users {
 		parts := strings.Split(user.Token, ".")
 		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
@@ -107,7 +107,7 @@ func TestShadNetPublisherInterop(t *testing.T) {
 		if err != nil || response.AuthTask != "47" {
 			t.Fatal("unexpected publisher response")
 		}
-		id, ok := issuedTicketPlayer(ticket, time.Now(), ticketWindow)
+		id, ok := testTickets.issuedTicketPlayer(ticket, time.Now(), ticketWindow)
 		if !ok || id.PID != user.ID || id.Username != user.Name || id.Title != 5760 {
 			t.Fatal("issued ticket does not carry the verified identity")
 		}

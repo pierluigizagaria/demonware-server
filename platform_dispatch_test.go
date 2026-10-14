@@ -30,7 +30,7 @@ func (*platformWire) SetWriteDeadline(time.Time) error { return nil }
 func sharedPS4Lobby() (*lobbyConn, *platformWire) {
 	wire := &platformWire{}
 	k := demonware.DeriveKeys([]byte("synthetic transcript"), make([]byte, 24))
-	return &lobbyConn{n: 909090, c: wire, keys: &k, player: &playerID{PID: 17, Username: "fixture", Title: 5760, Kind: "shadnet", Sub: "shadnet:17"}}, wire
+	return &lobbyConn{tickets: testTickets, n: 909090, c: wire, keys: &k, player: &playerID{PID: 17, Username: "fixture", Title: 5760, Kind: "shadnet", Sub: "shadnet:17"}}, wire
 }
 func sharedTask(t *testing.T, l *lobbyConn, w *platformWire, p []byte) []byte {
 	t.Helper()
@@ -82,7 +82,7 @@ func TestSharedPS4AuthUsesInjectedVerifier(t *testing.T) {
 		}
 		return platform.Identity{AccountID: 17, Subject: "17", OnlineID: "fixture"}, nil
 	})}
-	handler := newPlatformAuthHandler(p, testCTRSigner(t), "")
+	handler := testAuthHandler(p, testCTRSigner(t), "")
 	call := func() *httptest.ResponseRecorder {
 		body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
 		w := httptest.NewRecorder()
@@ -98,7 +98,7 @@ func TestSharedPS4AuthUsesInjectedVerifier(t *testing.T) {
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	ticket, _ := base64.StdEncoding.DecodeString(response.ServerTicket)
-	if _, ok := issuedIdentity(ticket); !ok {
+	if _, ok := testTickets.issuedIdentity(ticket); !ok {
 		t.Fatal("ticket missing")
 	}
 	if len(ticket) != 128 || binary.LittleEndian.Uint32(ticket[5:9]) != 5760 || binary.LittleEndian.Uint64(ticket[25:33]) != 17 {

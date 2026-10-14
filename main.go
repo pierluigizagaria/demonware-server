@@ -123,13 +123,14 @@ func main() {
 		log.Print("[D3] unlock-all: off")
 	}
 
+	tickets := newTicketStore()
 	go startDashboard()
 	go serveNAT(natPort)
 	startCTRRelay(cfg.relayLow, cfg.relayHigh, nextendoHost)
 	go reapSessions()
-	startLobby()
+	startLobby(tickets)
 
-	if err := serveAuth(platform); err != nil {
+	if err := serveAuth(platform, tickets); err != nil {
 		log.Fatalf("[D3 Auth] stopped: %v", err)
 	}
 }

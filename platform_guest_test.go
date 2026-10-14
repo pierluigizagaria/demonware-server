@@ -122,7 +122,7 @@ func TestGuestNamespaceCannotReuseVerifiedAccountDatabase(t *testing.T) {
 
 func TestGuestTicketsReachLobbyAndUmbrella(t *testing.T) {
 	p := guestPlatform{random: guestEntropy(17, 29)}
-	handler := newPlatformAuthHandler(p, testCTRSigner(t), "")
+	handler := testAuthHandler(p, testCTRSigner(t), "")
 	body, _ := json.Marshal(psnAuthRequest(t, "TOKEN"))
 	for _, want := range []uint64{17, 29} {
 		w := httptest.NewRecorder()
@@ -142,7 +142,7 @@ func TestGuestTicketsReachLobbyAndUmbrella(t *testing.T) {
 		if err != nil || len(ticket) != 128 || binary.LittleEndian.Uint64(ticket[17:25]) != want || binary.LittleEndian.Uint64(ticket[25:33]) != want {
 			t.Fatal("guest ticket IDs disagree")
 		}
-		id, ok := issuedTicketPlayer(ticket, time.Now(), ticketWindow)
+		id, ok := testTickets.issuedTicketPlayer(ticket, time.Now(), ticketWindow)
 		if !ok || id.Kind != "guest" || id.PID != want {
 			t.Fatal("guest ticket lost its identity")
 		}

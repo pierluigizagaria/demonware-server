@@ -14,7 +14,7 @@ import (
 
 var connNum atomic.Uint64
 
-func startLobby() {
+func startLobby(tickets *ticketStore) {
 	dumps := runDumpDir("lobby")
 	opened := 0
 	for _, p := range strings.Split(lobbyPorts, ",") {
@@ -34,7 +34,7 @@ func startLobby() {
 				if err != nil {
 					return
 				}
-				lc := &lobbyConn{c: c, n: connNum.Add(1), dumpDir: dumps, pubDir: pubDir}
+				lc := &lobbyConn{tickets: tickets, c: c, n: connNum.Add(1), dumpDir: dumps, pubDir: pubDir}
 				go func() {
 					registerConn(lc)
 					defer unregisterConn(lc)

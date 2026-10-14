@@ -33,7 +33,7 @@ const ticketMagic uint32 = 0xEFBDADDE
 
 var authReqNum atomic.Uint64
 
-func serveAuth(platform publisherPlatform) error {
+func serveAuth(platform publisherPlatform, tickets *ticketStore) error {
 	ctrSigner, err := loadCTRAuthSigner(signingKeyFile)
 	if err != nil {
 		return err
@@ -44,7 +44,7 @@ func serveAuth(platform publisherPlatform) error {
 	diagnosticLogf("[CTR Auth] signed replies enabled (client trust mod required)")
 	dumps := runDumpDir("auth")
 
-	h := newPlatformAuthHandler(platform, ctrSigner, dumps)
+	h := newPlatformAuthHandler(tickets, platform, ctrSigner, dumps)
 
 	srv := &http.Server{
 		Addr:    net.JoinHostPort(bindAddr, strconv.Itoa(authPort)),
@@ -69,7 +69,7 @@ func serveAuth(platform publisherPlatform) error {
 	return srv.ServeTLS(ln, certFile, keyFile)
 }
 
-func newPlatformAuthHandler(platform publisherPlatform, ctrSigner *ctrAuthSigner, dumps string) http.Handler {
+func newPlatformAuthHandler(tickets *ticketStore, platform publisherPlatform, ctrSigner *ctrAuthSigner, dumps string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := authReqNum.Add(1)
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
@@ -80,7 +80,7 @@ func newPlatformAuthHandler(platform publisherPlatform, ctrSigner *ctrAuthSigner
 			return
 		}
 		if r.URL.Path == "/v1.0/tokens/lsg/" {
-			handleCTRUmbrella(w, r, body, n, dumps)
+			handleCTRUmbrella(tickets, w, r, body, n, dumps)
 			return
 		}
 
@@ -178,7 +178,7 @@ func newPlatformAuthHandler(platform publisherPlatform, ctrSigner *ctrAuthSigner
 
 		// The lobby finds the ticket echoed in the 0x82 by its 8-byte tag and
 		// takes the session key and the player's identity from it (tickets.go).
-		rememberTicket(clientTicket, id, time.Now(), ticketWindow)
+		tickets.rememberTicket(clientTicket, id, time.Now(), ticketWindow)
 		// 12/10 resolves friends by the names they were issued a ticket under.
 		if err := rememberPlayerName(id, time.Now()); err != nil {
 			diagnosticLogf("[D3 Auth] #%d player name not recorded: %v", n, err)

@@ -46,6 +46,7 @@ import (
 var serverIDs atomic.Uint64
 
 type lobbyConn struct {
+	tickets *ticketStore
 	clock   func() time.Time
 	entropy io.Reader
 	c       net.Conn
@@ -257,7 +258,7 @@ func (l *lobbyConn) candidates(raw []byte) []keyCand {
 		)
 	}
 	if t := demonware.FindTicket(raw); t != nil {
-		if _, ok := issuedTicketPlayer(t, time.Now(), ticketWindow); ok {
+		if _, ok := l.tickets.issuedTicketPlayer(t, time.Now(), ticketWindow); ok {
 			add("issued-ticket", t)
 		}
 	}

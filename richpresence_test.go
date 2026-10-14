@@ -83,7 +83,7 @@ func TestRichPresenceSetAndGet(t *testing.T) {
 	alice := &playerID{Username: "player1", PID: 1800000101}
 	bob := &playerID{Username: "player2", PID: 1800000102}
 	withOnline(t, map[uint64]*playerID{1: alice, 2: bob})
-	la, lb := &lobbyConn{n: 1, player: alice}, &lobbyConn{n: 2, player: bob}
+	la, lb := &lobbyConn{tickets: testTickets, n: 1, player: alice}, &lobbyConn{tickets: testTickets, n: 2, player: bob}
 
 	// player1 sets a presence, as the game does (id 0 = me)
 	la.onRichPresence(rpSet, demonware.NewReader(rpSetRequest("", 0, "", 1, []byte("hello"))))
@@ -109,7 +109,7 @@ func TestRichPresenceGoneWhenThePlayerLeaves(t *testing.T) {
 	alice := &playerID{Username: "player1", PID: 1800000101}
 	bob := &playerID{Username: "player2", PID: 1800000102}
 	withOnline(t, map[uint64]*playerID{1: alice, 2: bob})
-	la, lb := &lobbyConn{n: 1, player: alice}, &lobbyConn{n: 2, player: bob}
+	la, lb := &lobbyConn{tickets: testTickets, n: 1, player: alice}, &lobbyConn{tickets: testTickets, n: 2, player: bob}
 	la.onRichPresence(rpSet, demonware.NewReader(rpSetRequest("", 0, "", 1, []byte("x"))))
 
 	dropOnline(1)
@@ -129,7 +129,7 @@ func TestRichPresenceFromTheRealLog(t *testing.T) {
 	raw := []byte{0x10, 0x00, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x00, 0x03, 0x01, 0x13, 0x08, 0x04, 0, 0, 0, 0xde, 0xad, 0xbe, 0xef}
 	alice := &playerID{Username: "player1", PID: 1800000101}
 	withOnline(t, map[uint64]*playerID{1: alice})
-	l := &lobbyConn{n: 1, player: alice}
+	l := &lobbyConn{tickets: testTickets, n: 1, player: alice}
 	l.onRichPresence(rpSet, demonware.NewReader(raw))
 	richMu.Lock()
 	p, ok := rich[alice.PID]
@@ -141,7 +141,7 @@ func TestRichPresenceFromTheRealLog(t *testing.T) {
 
 func TestRichPresenceNeedsAPlayer(t *testing.T) {
 	withOnline(t, map[uint64]*playerID{})
-	guest := &lobbyConn{n: 9} // no identity
+	guest := &lobbyConn{tickets: testTickets, n: 9} // no identity
 	guest.onRichPresence(rpSet, demonware.NewReader(rpSetRequest("", 0, "", 1, []byte("x"))))
 	richMu.Lock()
 	n := len(rich)

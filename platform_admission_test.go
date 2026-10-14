@@ -108,7 +108,7 @@ func TestPS4LobbyAdmitsOnlyFreshIssuedTickets(t *testing.T) {
 }
 
 func TestPS4AuthRequiresResponseSigner(t *testing.T) {
-	h := newPlatformAuthHandler(fixturePSNPlatform(), nil, "")
+	h := testAuthHandler(fixturePSNPlatform(), nil, "")
 	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
 	before := issuedTicketCount()
 	w := httptest.NewRecorder()
@@ -125,7 +125,7 @@ func TestPS4UmbrellaUsesFreshIssuedTicket(t *testing.T) {
 	call := func(ticket []byte) int {
 		body, _ := json.Marshal(map[string]any{"ticket": ticket, "titleID": "5760"})
 		w := httptest.NewRecorder()
-		handleCTRUmbrella(w, httptest.NewRequest("POST", "/v1.0/tokens/lsg/", bytes.NewReader(body)), body, 1, "")
+		testUmbrellaHandler(w, httptest.NewRequest("POST", "/v1.0/tokens/lsg/", bytes.NewReader(body)), body, 1, "")
 		return w.Code
 	}
 	fresh, stale := psnTicket(time.Now()), psnTicket(time.Now().Add(-121*time.Second))
@@ -168,7 +168,7 @@ func TestCTRFollowerLeaveKeepsPartyAndNotifiesHost(t *testing.T) {
 	leader := r.players[1]
 	leader.doc.Members = []uint64{leader.pid, 30009}
 	leader.seats = 2
-	follower := &lobbyConn{n: 30009, player: &playerID{PID: 30009}}
+	follower := &lobbyConn{tickets: testTickets, n: 30009, player: &playerID{PID: 30009}}
 	version := r.version
 	out := m.leave(follower, 0)
 	if len(out) != 1 || out[0].conn != r.host.conn || out[0].event != ctrUpdateLobby || r.version != version+1 {
@@ -183,7 +183,7 @@ func TestCTRFollowerLeaveKeepsPartyAndNotifiesHost(t *testing.T) {
 }
 
 func TestAuthRefusesIncompleteBody(t *testing.T) {
-	h := newPlatformAuthHandler(fixturePSNPlatform(), testCTRSigner(t), "")
+	h := testAuthHandler(fixturePSNPlatform(), testCTRSigner(t), "")
 	before := issuedTicketCount()
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", iotest.ErrReader(io.ErrUnexpectedEOF)))

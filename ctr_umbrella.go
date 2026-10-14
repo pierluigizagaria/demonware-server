@@ -28,7 +28,7 @@ func (v *jsonUint32) UnmarshalJSON(b []byte) error {
 
 // Umbrella is a separate API from /auth/. CTR's bdUmbrellaUserAccount
 // parser expects umbrellaID, accessToken, expires and accounts.
-func handleCTRUmbrella(w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
+func handleCTRUmbrella(tickets *ticketStore, w http.ResponseWriter, r *http.Request, body []byte, n uint64, dumps string) {
 	deny := func(code int, reason string) {
 		preview := body
 		if len(preview) > 300 {
@@ -64,7 +64,7 @@ func handleCTRUmbrella(w http.ResponseWriter, r *http.Request, body []byte, n ui
 		return
 	}
 	// Accept only a ticket issued by this private server, not arbitrary claims.
-	id, ok := issuedTicketPlayer(ticket, time.Now(), ticketWindow)
+	id, ok := tickets.issuedTicketPlayer(ticket, time.Now(), ticketWindow)
 	if !ok {
 		deny(401, "ticket not issued here, too old or without identity")
 		return

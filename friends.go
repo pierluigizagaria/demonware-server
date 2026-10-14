@@ -41,7 +41,7 @@ var (
 // loadIdentity names the connection's player after the identity its ticket
 // was issued to; the handshake has already admitted that ticket.
 func (l *lobbyConn) loadIdentity(ticket []byte) {
-	id, ok := issuedIdentity(ticket)
+	id, ok := l.tickets.issuedIdentity(ticket)
 	if !ok {
 		l.logf("identity unknown")
 		return

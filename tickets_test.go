@@ -9,13 +9,13 @@ import (
 )
 
 func issueTestTicket(ticket []byte, id playerID) {
-	rememberTicket(ticket, id, time.Now(), ticketWindow)
+	testTickets.rememberTicket(ticket, id, time.Now(), ticketWindow)
 }
 
 func issuedTicketCount() int {
-	issuedMu.Lock()
-	defer issuedMu.Unlock()
-	return len(issuedTickets)
+	testTickets.mu.Lock()
+	defer testTickets.mu.Unlock()
+	return len(testTickets.entries)
 }
 
 func withTestPlayerNames(t *testing.T) *ctrSQLite {
@@ -34,24 +34,24 @@ func TestIssuedTicketsLeaveMemoryAfterTheirWindow(t *testing.T) {
 	expired := psnTicket(now.Add(-window - issuedIdentityGrace))
 	closing := psnTicket(now.Add(-window))
 	fresh := psnTicket(now)
-	rememberTicket(expired, id, now, window)
-	rememberTicket(closing, id, now, window)
-	rememberTicket(fresh, id, now, window)
-	if _, ok := issuedIdentity(expired); ok {
+	testTickets.rememberTicket(expired, id, now, window)
+	testTickets.rememberTicket(closing, id, now, window)
+	testTickets.rememberTicket(fresh, id, now, window)
+	if _, ok := testTickets.issuedIdentity(expired); ok {
 		t.Fatal("ticket past its window and grace kept in memory")
 	}
-	if _, ok := issuedTicketPlayer(closing, now, window); ok {
+	if _, ok := testTickets.issuedTicketPlayer(closing, now, window); ok {
 		t.Fatal("ticket admitted after its window")
 	}
-	if got, ok := issuedIdentity(closing); !ok || got.PID != 17 {
+	if got, ok := testTickets.issuedIdentity(closing); !ok || got.PID != 17 {
 		t.Fatal("identity of a just-admitted ticket lost before its grace ended")
 	}
-	if got, ok := issuedTicketPlayer(fresh, now, window); !ok || got.PID != 17 || got.Title != 5760 {
+	if got, ok := testTickets.issuedTicketPlayer(fresh, now, window); !ok || got.PID != 17 || got.Title != 5760 {
 		t.Fatal("fresh ticket not admitted with its identity")
 	}
 	altered := append([]byte(nil), fresh...)
 	altered[100] ^= 1
-	if _, ok := issuedTicketPlayer(altered, now, window); ok {
+	if _, ok := testTickets.issuedTicketPlayer(altered, now, window); ok {
 		t.Fatal("ticket with the same tag but other bytes admitted")
 	}
 }

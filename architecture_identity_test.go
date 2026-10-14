@@ -30,7 +30,7 @@ func TestArchitectureIdentityDoubleRead(t *testing.T) {
 	// This is the interval between the two reads in onClientAuth. Key proof
 	// verification itself has no additional ticket-directory dependency.
 	other := psnTicket(now.Add(ticketWindow + issuedIdentityGrace))
-	rememberTicket(other, playerID{PID: 17}, now.Add(ticketWindow+issuedIdentityGrace), ticketWindow)
+	testTickets.rememberTicket(other, playerID{PID: 17}, now.Add(ticketWindow+issuedIdentityGrace), ticketWindow)
 	k := demonware.DeriveKeys([]byte("synthetic verified transcript"), candidates[0].key24)
 	l.keys = &k
 	l.loadIdentity(ticket)
@@ -44,7 +44,7 @@ func TestArchitectureIdentityDoubleRead(t *testing.T) {
 
 func TestArchitectureAuthSignatureBeforeInspection(t *testing.T) {
 	signer := testCTRSigner(t)
-	h := newPlatformAuthHandler(fixturePSNPlatform(), signer, "")
+	h := testAuthHandler(fixturePSNPlatform(), signer, "")
 	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", bytes.NewReader(body)))
@@ -70,7 +70,7 @@ func TestArchitectureAuthSignatureBeforeInspection(t *testing.T) {
 	if err != nil || response["client_ticket"] != response["server_ticket"] {
 		t.Fatal("ticket copies changed")
 	}
-	if _, ok := issuedTicketPlayer(client, time.Now(), ticketWindow); !ok {
+	if _, ok := testTickets.issuedTicketPlayer(client, time.Now(), ticketWindow); !ok {
 		t.Fatal("signed ticket not admitted")
 	}
 }
