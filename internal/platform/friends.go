@@ -14,10 +14,11 @@
 package platform
 
 type PlayerID struct {
-	Username string `json:"username"`
-	PID      uint64 `json:"pid"`
-	Sub      string `json:"sub"`
-	Kind     string `json:"kind,omitempty"` // "shadnet" or "guest"
+	Username  string     `json:"username"`
+	PID       uint64     `json:"pid"`
+	Sub       string     `json:"sub"`
+	Kind      string     `json:"kind,omitempty"` // "shadnet", "steam" or "guest"
+	Admission *Admission `json:"-"`
 
 	// Demonware title from the ticket: 5760, Crash Team Racing on PS4.
 	Title uint32 `json:"-"`

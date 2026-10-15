@@ -156,6 +156,11 @@ func (l *Session) dump(tag string, b []byte) {
 
 func (l *Session) run() {
 	defer l.conn.Close()
+	defer func() {
+		if l.Player != nil {
+			l.Player.Admission.Close()
+		}
+	}()
 	defer l.Table.CloseSession(l)
 	defer l.Presence.DropOnline(l.N)
 	l.logf("==== CONNECT from=%s", l.conn.RemoteAddr())
@@ -245,13 +250,14 @@ func (l *Session) OnClientAuth(raw []byte) bool {
 			}
 			k := demonware.DeriveKeys(transcript, k24)
 			if hmac.Equal(k.ClientTag[:], tag) {
+				tk := demonware.FindTicket(raw)
+				if tk == nil || !l.LoadIdentity(tk) {
+					return false
+				}
 				l.stateMu.Lock()
 				l.keys = &k
 				l.stateMu.Unlock()
 				l.logf("0x82 AUTHENTICATED — key=%s rsa=%v", cand.name, wrapped)
-				if tk := demonware.FindTicket(raw); tk != nil {
-					l.LoadIdentity(tk)
-				}
 				if err := l.send(demonware.Frame(append([]byte{demonware.MsgServerOK}, k.ServerCheck[:]...))); err != nil {
 					l.logf("send 0x83: %v", err)
 					return false

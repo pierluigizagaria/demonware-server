@@ -49,6 +49,7 @@ func (s *TicketStore) RememberTicket(ticket []byte, id platform.PlayerID, now ti
 		}
 	}
 	s.entries[ticketTag(ticket)] = issuedTicket{ticket: append([]byte(nil), ticket...), id: id}
+	id.Admission.HoldUntil(ticketIssuedAt(ticket).Add(window))
 }
 
 // IssuedTicketPlayer admits a ticket only if this server issued exactly these
