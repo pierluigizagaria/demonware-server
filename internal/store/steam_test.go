@@ -34,7 +34,7 @@ func TestSteamReplayAndNameBindingPersistTogether(t *testing.T) {
 	for _, test := range []struct {
 		id   uint64
 		name string
-	}{{18, "playera"}, {17, "PlayerB"}} {
+	}{{18, "playera"}} {
 		if err := s.RecordSteamAdmission(other, test.id, test.name, time.Now()); err == nil {
 			t.Fatal("conflicting name binding accepted")
 		}
@@ -48,5 +48,28 @@ func TestSteamReplayAndNameBindingPersistTogether(t *testing.T) {
 	names, err := s.NamedPlayers([]string{"playera", "playerb"})
 	if err != nil || len(names) != 2 || names["playera"].PID != 17 || names["playerb"].PID != 18 {
 		t.Fatal("friend lookup not persisted")
+	}
+	if _, err := s.db.Exec(`INSERT INTO leaderboard (board, pid, score, driver, name, updated) VALUES (1000, 17, 5, 0, 'PlayerA', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	renamed := sha256.Sum256([]byte("credential-three"))
+	if err := s.RecordSteamAdmission(renamed, 17, "Pi\u00e9 Z.", time.Now()); err != nil {
+		t.Fatal("same Steam account could not follow its renamed persona:", err)
+	}
+	names, err = s.NamedPlayers([]string{"playera", "pi\u00e9 z."})
+	if err != nil || names["playera"] != nil || names["pi\u00e9 z."] == nil || names["pi\u00e9 z."].PID != 17 {
+		t.Fatal("rename did not move the friend lookup to the new name")
+	}
+	var board string
+	if err := s.db.QueryRow(`SELECT name FROM leaderboard WHERE board = 1000 AND pid = 17`).Scan(&board); err != nil || board != "Pi\u00e9 Z." {
+		t.Fatal("rename did not update the player's leaderboard name")
+	}
+	freed := sha256.Sum256([]byte("credential-four"))
+	if err := s.RecordSteamAdmission(freed, 19, "PlayerA", time.Now()); err != nil {
+		t.Fatal("name released by a rename stayed reserved:", err)
+	}
+	taken := sha256.Sum256([]byte("credential-five"))
+	if err := s.RecordSteamAdmission(taken, 18, "playera", time.Now()); err == nil {
+		t.Fatal("rename onto another account's name accepted")
 	}
 }

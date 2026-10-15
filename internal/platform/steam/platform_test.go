@@ -24,13 +24,22 @@ func TestTokenCanonicalIdentityAndReplayHash(t *testing.T) {
 	if err != nil || a.AccountID != 76561198000000001 || a.OnlineID != "PlayerA" {
 		t.Fatal("valid token refused")
 	}
+	for _, name := range []string{"Pierluigi Z.", "Pi\u00e9 \U0001F3CE", "!bad"} {
+		token := "osw1.1.00." + base64.RawURLEncoding.EncodeToString([]byte(name))
+		if parsed, err := ParseToken(token); err != nil || parsed.OnlineID != name {
+			t.Fatalf("Steam persona online ID %q refused", name)
+		}
+	}
 	b, err := ParseToken(strings.Replace(fixtureToken, "abcd", "ABCD", 1))
 	if err != nil || a.Hash != b.Hash {
 		t.Fatal("hex case bypasses replay identity")
 	}
 	for _, value := range []string{"", strings.Repeat("a", 4097), strings.Replace(fixtureToken, "7656", "07656", 1),
 		strings.Replace(fixtureToken, "0123abcd", "", 1), strings.Replace(fixtureToken, "0123abcd", "abc", 1),
-		fixtureToken + "=", fixtureToken + ".extra", "osw1.1.00." + base64.RawURLEncoding.EncodeToString([]byte("bad.name"))} {
+		fixtureToken + "=", fixtureToken + ".extra", "osw1.1.00." + base64.RawURLEncoding.EncodeToString([]byte("bad\x01name")),
+		"osw1.1.00." + base64.RawURLEncoding.EncodeToString([]byte(" Lead")),
+		"osw1.1.00." + base64.RawURLEncoding.EncodeToString([]byte("12345678901234567")),
+		"osw1.1.00." + base64.RawURLEncoding.EncodeToString([]byte{0xff})} {
 		if _, err := ParseToken(value); err == nil {
 			t.Fatal("invalid credential accepted")
 		}
