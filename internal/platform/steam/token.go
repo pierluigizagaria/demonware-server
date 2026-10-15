@@ -6,12 +6,24 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
-var onlineID = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{2,15}$`)
+// validOnlineID accepts the Steam persona derived by orbiSteamworks: 1-16
+// bytes of UTF-8 without control characters or surrounding spaces.
+func validOnlineID(name []byte) bool {
+	if len(name) == 0 || len(name) > 16 || !utf8.Valid(name) || name[0] == ' ' || name[len(name)-1] == ' ' {
+		return false
+	}
+	for _, r := range string(name) {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
 
 type Token struct {
 	AccountID uint64
@@ -38,7 +50,7 @@ func ParseToken(value string) (Token, error) {
 		return fail()
 	}
 	name, err := base64.RawURLEncoding.Strict().DecodeString(parts[3])
-	if err != nil || !onlineID.Match(name) || base64.RawURLEncoding.EncodeToString(name) != parts[3] {
+	if err != nil || !validOnlineID(name) || base64.RawURLEncoding.EncodeToString(name) != parts[3] {
 		return fail()
 	}
 	token.AccountID, token.OnlineID, token.Hash = id, string(name), sha256.Sum256(ticket)

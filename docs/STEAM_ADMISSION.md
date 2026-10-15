@@ -24,8 +24,10 @@ The original PS4 publisher envelope remains unchanged. The native helper
 checks the ticket using anonymous game-server authentication. The provider
 accepts only a matching validated SteamID and a nonzero owner, then atomically
 records the ticket's canonical SHA-256 hash and the SteamID/name binding.
-Names are bound at first admission, case-insensitively unique and immutable in
-this version. A name conflict, replay, unavailable store or helper failure
+Names are 1–16 bytes of UTF-8 without control characters or surrounding
+spaces (the client derives them from the Steam persona). They are
+case-insensitively unique. The same SteamID may present a new name on a later
+admission: the binding, the 12/10 name and its leaderboard rows follow it. A name conflict, replay, unavailable store or helper failure
 refuses admission. No unverified Steam mode is implemented.
 
 Consumed hashes persist without a short expiry. Native Steam determines
