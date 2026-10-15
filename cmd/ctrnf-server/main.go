@@ -19,6 +19,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/auth"
 	"github.com/pierluigizagaria/demonware-server/internal/config"
 	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/steam"
 	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
 
@@ -75,6 +76,9 @@ func runServer(ctx context.Context, cfg config.Config) error {
 		return finish(fmt.Errorf("CTR database: %w", err))
 	}
 	resources.closeDatabase = database.Close
+	if steamPlatform, ok := platform.(*steam.Platform); ok {
+		steamPlatform.Store = database
+	}
 	i := newInstance(cfg, database)
 	log.Printf("[server] unlock-all: %v", cfg.UnlockAll)
 	resources.admission = append(resources.admission, i.lobby.BeginShutdown)

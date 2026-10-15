@@ -75,6 +75,21 @@ func StartAuth(platform PublisherPlatform, tickets *TicketStore, presenceStore *
 func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Telemetry, tickets *TicketStore, presenceStore *presence.Store, platform PublisherPlatform, ctrSigner *CTRSigner, dumps string, umbrella AuxiliaryAuthHandler) http.Handler {
 	var authReqNum atomic.Uint64
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/orbi/steam/v1" {
+			discovery, ok := platform.(interface{ SteamDiscovery() map[string]string })
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			_ = json.NewEncoder(w).Encode(discovery.SteamDiscovery())
+			return
+		}
 		n := authReqNum.Add(1)
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		r.Body.Close()
@@ -122,6 +137,12 @@ func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Te
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
+		handedOff := false
+		defer func() {
+			if !handedOff {
+				id.Admission.Close()
+			}
+		}()
 		if ctrSigner == nil {
 			diag.DiagnosticLogf("[auth] #%d refused: responses must be signed", n)
 			http.Error(w, "authentication signing unavailable", http.StatusInternalServerError)
@@ -246,7 +267,8 @@ func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Te
 		diag.DiagnosticLogf("[auth] #%d %q pid=%d kind=%s -> 200 code=700 auth_task=%s", n, id.Username, id.PID, id.Kind, authTask)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(out)
+		_, writeErr := w.Write(out)
+		handedOff = writeErr == nil
 	})
 
 }

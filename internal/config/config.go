@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/pierluigizagaria/demonware-server/internal/platform/shadnet"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/steam"
 )
 
 var settingPrefixes = []string{"CTR_", "D3_", "DASH_", "NEXTENDO_", "SHADNET_"}
@@ -21,24 +22,25 @@ var settingPrefixes = []string{"CTR_", "D3_", "DASH_", "NEXTENDO_", "SHADNET_"}
 var testOnlySettings = map[string]bool{"SHADNET_INTEROP_FIXTURE": true}
 
 type Config struct {
-	PublicIP, BindAddr                 string
-	AuthPort, NATPort, DashPort        int
-	LobbyPorts                         string
-	ProxyProtocol                      bool
-	CertFile, KeyFile                  string
-	DashToken, SNIHost                 string
-	PubfilesConfig, PubfilesDir, Dumps string
-	Verbose                            bool
-	RiftData                           string
-	Shadnet                            shadnet.Policy
-	Admission                          string
-	JWKSURL                            string
-	SigningKey, DataDir                string
-	UnlockAll, Migrate, RedactLogs     bool
-	StartBalance                       int64
-	RelayLow, RelayHigh                int
-	RelayPIDs                          string
-	News                               News
+	PublicIP, BindAddr                    string
+	AuthPort, NATPort, DashPort           int
+	LobbyPorts                            string
+	ProxyProtocol                         bool
+	CertFile, KeyFile                     string
+	DashToken, SNIHost                    string
+	PubfilesConfig, PubfilesDir, Dumps    string
+	Verbose                               bool
+	RiftData                              string
+	Shadnet                               shadnet.Policy
+	Admission                             string
+	SteamHelper, SteamLibrary, SteamRealm string
+	JWKSURL                               string
+	SigningKey, DataDir                   string
+	UnlockAll, Migrate, RedactLogs        bool
+	StartBalance                          int64
+	RelayLow, RelayHigh                   int
+	RelayPIDs                             string
+	News                                  News
 }
 
 // Read loads envFile, if any, and reads the configuration. serving
@@ -107,12 +109,15 @@ func canonicalName(name string) string {
 func Load(lookup func(string) string, check []string, serving bool) (Config, error) {
 	r := &envReader{lookup: lookup, known: map[string]bool{}}
 	admission := r.text("CTR_ADMISSION", "shadnet")
-	if admission != "shadnet" && admission != "guest" {
-		r.fail("CTR_ADMISSION must be shadnet or guest")
+	if admission != "shadnet" && admission != "guest" && admission != "steam" {
+		r.fail("CTR_ADMISSION must be shadnet, guest or steam")
 	}
-	needsShadNet := serving && admission != "guest"
+	needsShadNet := serving && admission == "shadnet"
 	c := Config{
 		Admission:      admission,
+		SteamHelper:    r.required("CTR_STEAM_HELPER", serving && admission == "steam"),
+		SteamLibrary:   r.text("CTR_STEAM_LIBRARY", ""),
+		SteamRealm:     r.text("CTR_STEAM_REALM", ""),
 		PublicIP:       r.ipv4("NEXTENDO_HOST", "127.0.0.1"),
 		BindAddr:       r.ip("BIND_ADDR"),
 		AuthPort:       r.port("AUTH_PORT", 8460),
@@ -147,13 +152,20 @@ func Load(lookup func(string) string, check []string, serving bool) (Config, err
 		RedactLogs:   r.flag("NEXTENDO_REDACT_LOGS", true),
 		News:         r.news(),
 	}
-	if admission == "guest" {
-		if !c.UnlockAll {
+	if admission == "guest" || admission == "steam" {
+		if admission == "guest" && !c.UnlockAll {
 			r.fail("CTR_ADMISSION=guest requires CTR_UNLOCK_ALL=1")
 		}
 		if c.Shadnet.Issuer != "" || c.Shadnet.ClientID != "" || c.Shadnet.NPTitleID != "" || len(c.Shadnet.Scopes) != 0 || c.JWKSURL != "" {
-			r.fail("SHADNET_* must be empty for guest admission")
+			r.fail("SHADNET_* must be empty for %s admission", admission)
 		}
+	}
+	if admission == "steam" {
+		if _, err := steam.TrustID(c.SteamRealm); err != nil {
+			r.fail("CTR_STEAM_REALM: %v", err)
+		}
+	} else if c.SteamHelper != "" || c.SteamLibrary != "" || c.SteamRealm != "" {
+		r.fail("CTR_STEAM_* must be empty outside steam admission")
 	}
 	if needsShadNet && c.Shadnet.Issuer != "" && c.Shadnet.ClientID != "" && c.Shadnet.NPTitleID != "" &&
 		len(c.Shadnet.Scopes) != 0 && c.JWKSURL != "" {

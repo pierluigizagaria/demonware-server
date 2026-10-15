@@ -140,6 +140,16 @@ func (s *SQLite) initialize(unlockAll bool, trustID string) error {
 
 const ctrSchema = `
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE steam_bindings (
+	pid INTEGER PRIMARY KEY,
+	name TEXT NOT NULL,
+	name_key TEXT NOT NULL UNIQUE
+);
+CREATE TABLE steam_used_tickets (
+	digest BLOB PRIMARY KEY CHECK(length(digest) = 32),
+	pid INTEGER NOT NULL REFERENCES steam_bindings(pid),
+	recorded_at INTEGER NOT NULL
+) WITHOUT ROWID;
 CREATE TABLE accounts (
 	pid INTEGER PRIMARY KEY, -- uint64 bit pattern, as in leaderboard
 	created_at INTEGER NOT NULL

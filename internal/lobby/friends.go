@@ -15,13 +15,18 @@ package lobby
 
 // LoadIdentity names the connection's player after the identity its ticket
 // was issued to; the handshake has already admitted that ticket.
-func (l *Session) LoadIdentity(ticket []byte) {
+func (l *Session) LoadIdentity(ticket []byte) bool {
 	id, ok := l.Tickets.IssuedIdentity(ticket)
 	if !ok {
 		l.logf("identity unknown")
-		return
+		return false
+	}
+	if !id.Admission.Claim() {
+		l.logf("platform admission is closed or already claimed")
+		return false
 	}
 	l.Player = id
 	l.Presence.RegisterOnline(l.N, id)
 	l.logf("player %q pid=%d", id.Username, id.PID)
+	return true
 }
