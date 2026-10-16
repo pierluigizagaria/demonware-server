@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"unicode/utf8"
 
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
@@ -28,6 +30,7 @@ type Owner struct {
 }
 
 type Platform struct {
+	mu     sync.RWMutex
 	owner  platform.PlayerID
 	digest [32]byte
 	trust  string
@@ -61,7 +64,28 @@ func New(owner Owner) (*Platform, error) {
 }
 
 func (p *Platform) TrustID() string { return p.trust }
-func (p *Platform) PID() uint64     { return p.owner.PID }
+func (p *Platform) PID() uint64     { return p.Current().PID }
+func (p *Platform) Current() platform.PlayerID {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.owner
+}
+
+// Rename changes only the trusted display label. The exact bootstrap capability,
+// account identity and database namespace remain valid for existing sessions.
+func (p *Platform) Rename(steamID, name string) (platform.PlayerID, error) {
+	valid := len(name) > 0 && len(name) <= 16 && utf8.ValidString(name) && strings.Trim(name, " ") == name
+	for _, r := range name {
+		valid = valid && r >= 0x20 && r != 0x7f
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !valid || steamID != strconv.FormatUint(p.owner.PID, 10) {
+		return platform.PlayerID{}, errors.New("invalid local owner name")
+	}
+	p.owner.Username = name
+	return p.owner, nil
+}
 
 func (p *Platform) Authenticate(body []byte) (platform.PlayerID, error) {
 	value, ok := ps4.ReadPSNEnvelope(body)
@@ -79,7 +103,7 @@ func (p *Platform) Authenticate(body []byte) (platform.PlayerID, error) {
 	if subtle.ConstantTimeCompare(digest[:], p.digest[:]) != 1 {
 		return platform.PlayerID{}, OwnerCapabilityMismatch
 	}
-	return p.owner, nil
+	return p.Current(), nil
 }
 
 func (p *Platform) AuthData(id platform.PlayerID) map[string]string {

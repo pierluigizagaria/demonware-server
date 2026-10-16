@@ -33,6 +33,9 @@ func (state *Store) Snapshot(game string) map[uint64]platform.PlayerID {
 func (state *Store) RegisterOnline(conn uint64, id *platform.PlayerID) {
 	state.onlineMu.Lock()
 	identity := *id
+	if current := state.localOwnerName; current != nil && current.PID == identity.PID {
+		identity.Username = current.Username
+	}
 	state.online[conn] = &identity
 	state.onlineMu.Unlock()
 }

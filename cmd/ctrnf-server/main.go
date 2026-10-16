@@ -105,6 +105,21 @@ func runServer(ctx context.Context, cfg config.Config) error {
 		steamPlatform.Store = database
 	}
 	i := newInstance(cfg, database)
+	if owner, ok := platform.(*local.Platform); ok {
+		if err := i.presence.SetLocalOwnerName(owner.Current(), time.Now()); err != nil {
+			log.Printf("[server] local owner name persistence unavailable")
+		}
+		pipe.EnableOwnerNames(func(pid, name string) error {
+			id, err := owner.Rename(pid, name)
+			if err != nil {
+				return err
+			}
+			if err := i.presence.SetLocalOwnerName(id, time.Now()); err != nil {
+				log.Printf("[server] local owner name persistence unavailable")
+			}
+			return nil
+		})
+	}
 	if cfg.Matchmaking == "steam" {
 		backend, err := ctr.InstallP2P(ctx, i.lobby.Table, pipe, ownerPID)
 		if err != nil {

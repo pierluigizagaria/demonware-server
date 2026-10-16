@@ -39,18 +39,20 @@ type response struct {
 }
 
 type Pipe struct {
-	input   io.ReadCloser
-	output  io.WriteCloser
-	ctx     context.Context
-	cancel  context.CancelFunc
-	once    sync.Once
-	owner   chan local.Owner
-	events  chan Event
-	writes  chan []byte
-	mu      sync.Mutex
-	pending map[string]chan response
-	ids     atomic.Uint64
-	workers sync.WaitGroup
+	input            io.ReadCloser
+	output           io.WriteCloser
+	ctx              context.Context
+	cancel           context.CancelFunc
+	once             sync.Once
+	owner            chan local.Owner
+	events           chan Event
+	writes           chan []byte
+	mu               sync.Mutex
+	pending          map[string]chan response
+	ids              atomic.Uint64
+	workers          sync.WaitGroup
+	ownerName        func(string, string) error
+	nameUpdatesReady bool
 }
 
 func New(ctx context.Context, input io.ReadCloser, output io.WriteCloser) *Pipe {
@@ -84,7 +86,22 @@ func (p *Pipe) Owner(ctx context.Context) (local.Owner, error) {
 }
 
 func (p *Pipe) Ready(ctx context.Context) error {
-	return p.send(ctx, map[string]any{"v": 1, "event": "ready"})
+	p.mu.Lock()
+	p.nameUpdatesReady = p.ownerName != nil
+	capabilities := []string{}
+	if p.nameUpdatesReady {
+		capabilities = append(capabilities, "owner.name.v1")
+	}
+	p.mu.Unlock()
+	return p.send(ctx, map[string]any{"v": 1, "event": "ready", "capabilities": capabilities})
+}
+
+// EnableOwnerNames must precede Ready. It belongs to admission, independently
+// of central or peer matchmaking. The reader serializes trusted name updates.
+func (p *Pipe) EnableOwnerNames(apply func(string, string) error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.ownerName = apply
 }
 
 func (p *Pipe) Call(ctx context.Context, op string, fields map[string]any, result any) error {
@@ -171,6 +188,21 @@ func (p *Pipe) read() {
 			}
 			p.owner <- owner
 			first = false
+			continue
+		}
+		var eventName string
+		_ = json.Unmarshal(frame["event"], &eventName)
+		if eventName == "owner.name" {
+			var id, name string
+			if len(frame) != 4 || json.Unmarshal(frame["steam_id"], &id) != nil || json.Unmarshal(frame["online_id"], &name) != nil {
+				return
+			}
+			p.mu.Lock()
+			apply, enabled := p.ownerName, p.nameUpdatesReady
+			p.mu.Unlock()
+			if !enabled || apply == nil || apply(id, name) != nil {
+				return
+			}
 			continue
 		}
 		if value, ok := frame["id"]; ok {

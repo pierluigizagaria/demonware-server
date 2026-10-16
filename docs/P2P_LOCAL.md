@@ -17,6 +17,21 @@ The capability is a local credential, **not a validated Steam ticket**. It is
 never sent to a remote admission helper or peer. Fresh publisher tickets retain
 their existing connection-admission window; established sessions do not expire.
 
+The child advertises the optional `owner.name.v1` capability in its `ready`
+frame. A matching library may then send a private `owner.name` event containing
+only the existing owner ID and a validated UTF-8 online ID. The publisher
+updates the trusted authentication label, stored name and copied presence
+snapshots without replacing credentials, changing identity/database keys or
+disconnecting sessions. The exact original `osw1` capability remains valid;
+its embedded initial name cannot roll back a trusted rename. Late tickets and
+concurrent authentication cannot overwrite the current name in persistence or
+presence. Existing ticket/session identity objects remain immutable; no opaque
+game advertisement or room payload is rewritten to guess embedded names.
+Unknown, unnegotiated, foreign-owner or malformed name frames close the pipe.
+Older child versions advertise no capability; the library retains their
+initial name until the context is restarted. Explicit configured names remain
+fixed. This is a local replacement protocol, not a Steam-ticket claim.
+
 SQLite binds to a separate local namespace including backend, realm and owner.
 Lab and Steam identities cannot share a database. Normal/unlock-all remain
 fixed per instance and require separate databases and game saves. Build changes
@@ -187,3 +202,24 @@ exposed two independent defects: the publisher did not release a follower that
 had never sent a room request, and the library immediately rejoined an explicitly
 left selection. The publisher's directory-member diff and the library's explicit
 leave suppression together pass this end-to-end implementation regression.
+
+## Persona rename candidate validation (2026-10-16)
+
+The `owner.name.v1` addition was built separately as
+`bin/demonware-server-rename-candidate.exe`, SHA-256
+`0fc70159dad030a978f7126e25368fec4e911cc8d418980f7268fe290a027369`, from
+base `2d57a07464eb22a97c6cd71e8bd4614cb4780b73` plus the uncommitted rename
+changes. The full `go test ./...` suite, `go vet ./...` and build passed.
+Targeted `-race` tests for `internal/platform/local`, `internal/companion` and
+`internal/presence` also passed on the host; the Windows sanitizer's allocation
+failed inside the sandbox before test execution.
+
+New regressions cover negotiated pipe rename before first auth 46, the original
+capability after rename, invalid/unnegotiated/foreign-owner frames, immutable
+identity keys and existing session copies, concurrent authentication and late
+ticket registrations, and protection of current persisted/presence labels.
+The matching isolated library candidate passed all 36 tests; its SHA-256 is
+`508a135f34052108481c7427a3e8633b7d7b9a48794a071feef41ad2243e3786`.
+No candidate was installed, no live persona was changed and no live game or
+two-account acceptance is claimed. The earlier two-child probe evidence above
+remains pinned to its earlier binaries.

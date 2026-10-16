@@ -22,13 +22,14 @@ import (
 )
 
 type Store struct {
-	onlineMu    sync.Mutex
-	online      map[uint64]*platform.PlayerID
-	userDataMu  sync.Mutex
-	userData    map[string][]byte
-	richMu      sync.Mutex
-	rich        map[uint64]RichPresence
-	playerNames playerNameStore
+	onlineMu       sync.Mutex
+	online         map[uint64]*platform.PlayerID
+	localOwnerName *platform.PlayerID
+	userDataMu     sync.Mutex
+	userData       map[string][]byte
+	richMu         sync.Mutex
+	rich           map[uint64]RichPresence
+	playerNames    playerNameStore
 }
 
 func NewStore(names playerNameStore) *Store {
