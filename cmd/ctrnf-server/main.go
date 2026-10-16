@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"github.com/pierluigizagaria/demonware-server/internal/auth"
+	"github.com/pierluigizagaria/demonware-server/internal/companion"
 	"github.com/pierluigizagaria/demonware-server/internal/config"
 	"github.com/pierluigizagaria/demonware-server/internal/ctr"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/local"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/steam"
 	"github.com/pierluigizagaria/demonware-server/internal/store"
 )
@@ -45,6 +47,9 @@ func main() {
 		log.Print("[diablo] pubfiles is inactive in this CTR:NF server; no files generated")
 		return
 	}
+	if cfg.Admission == "local" {
+		log.SetOutput(os.Stderr)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := runServer(ctx, cfg); err != nil {
@@ -60,7 +65,25 @@ const shutdownLimit = 30 * time.Second
 func runServer(ctx context.Context, cfg config.Config) error {
 	var resources drainPlan
 	finish := func(cause error) error { return errors.Join(cause, drainWithin(shutdownLimit, resources)) }
-	platform, trustID, err := loadPublisherPlatform(cfg)
+	var pipe *companion.Pipe
+	var platform auth.PublisherPlatform
+	var trustID string
+	var err error
+	if cfg.Admission == "local" {
+		pipe = companion.New(ctx, os.Stdin, os.Stdout)
+		defer pipe.Close()
+		owner, ownerErr := pipe.Owner(ctx)
+		if ownerErr != nil {
+			return ownerErr
+		}
+		localPlatform, localErr := local.New(owner)
+		if localErr != nil {
+			return localErr
+		}
+		platform, trustID = localPlatform, localPlatform.TrustID()
+	} else {
+		platform, trustID, err = loadPublisherPlatform(cfg)
+	}
 	if err != nil {
 		return fmt.Errorf("publisher admission: %w", err)
 	}
@@ -109,8 +132,18 @@ func runServer(ctx context.Context, cfg config.Config) error {
 	}
 	resources.admission = append(resources.admission, authServer.BeginShutdown)
 	resources.wait = append(resources.wait, authServer.Wait)
+	var companionDone <-chan struct{}
+	if pipe != nil {
+		if err := pipe.Ready(ctx); err != nil {
+			return finish(err)
+		}
+		companionDone = pipe.Done()
+	}
 
 	select {
+	case <-companionDone:
+		log.Print("[server] companion closed: draining admitted work")
+		return finish(nil)
 	case <-ctx.Done():
 		log.Print("[server] operator shutdown: draining admitted work")
 		return finish(nil)

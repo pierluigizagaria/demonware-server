@@ -57,6 +57,7 @@ func newInstance(cfg config.Config, database *store.SQLite) *serverInstance {
 	i.relay = relay.NewTable(diag, cfg.BindAddr, cfg.RelayPIDs)
 	ids := &atomic.Uint64{}
 	i.nat = nat.NewServer(diag, cfg.BindAddr, cfg.PublicIP, ids)
+	i.nat.LocalOnly = cfg.Admission == "local"
 	i.monitor = dashboard.NewTelemetry(cfg, i.nat.Introductions)
 	replies := &lobby.ReplyCounter{}
 	table, _ := ctr.NewServiceTable(replies, i.ctr, i.presence, i.registry, i.matchmaker, cfg.PubfilesDir, i.relay)

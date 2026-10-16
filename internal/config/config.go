@@ -33,6 +33,9 @@ type Config struct {
 	RiftData                              string
 	Shadnet                               shadnet.Policy
 	Admission                             string
+	Matchmaking                           string
+	AuthHTTP                              bool
+	Companion                             string
 	SteamHelper, SteamLibrary, SteamRealm string
 	JWKSURL                               string
 	SigningKey, DataDir                   string
@@ -109,12 +112,15 @@ func canonicalName(name string) string {
 func Load(lookup func(string) string, check []string, serving bool) (Config, error) {
 	r := &envReader{lookup: lookup, known: map[string]bool{}}
 	admission := r.text("CTR_ADMISSION", "shadnet")
-	if admission != "shadnet" && admission != "guest" && admission != "steam" {
-		r.fail("CTR_ADMISSION must be shadnet, guest or steam")
+	if admission != "shadnet" && admission != "guest" && admission != "steam" && admission != "local" {
+		r.fail("CTR_ADMISSION must be shadnet, guest, steam or local")
 	}
 	needsShadNet := serving && admission == "shadnet"
 	c := Config{
 		Admission:      admission,
+		Matchmaking:    r.text("CTR_MATCHMAKING", "central"),
+		AuthHTTP:       r.flag("CTR_AUTH_HTTP", false),
+		Companion:      r.text("CTR_COMPANION", ""),
 		SteamHelper:    r.required("CTR_STEAM_HELPER", serving && admission == "steam"),
 		SteamLibrary:   r.text("CTR_STEAM_LIBRARY", ""),
 		SteamRealm:     r.text("CTR_STEAM_REALM", ""),
@@ -152,7 +158,7 @@ func Load(lookup func(string) string, check []string, serving bool) (Config, err
 		RedactLogs:   r.flag("NEXTENDO_REDACT_LOGS", true),
 		News:         r.news(),
 	}
-	if admission == "guest" || admission == "steam" {
+	if admission == "guest" || admission == "steam" || admission == "local" {
 		if admission == "guest" && !c.UnlockAll {
 			r.fail("CTR_ADMISSION=guest requires CTR_UNLOCK_ALL=1")
 		}
@@ -166,6 +172,31 @@ func Load(lookup func(string) string, check []string, serving bool) (Config, err
 		}
 	} else if c.SteamHelper != "" || c.SteamLibrary != "" || c.SteamRealm != "" {
 		r.fail("CTR_STEAM_* must be empty outside steam admission")
+	}
+	if c.Matchmaking != "central" && c.Matchmaking != "steam" {
+		r.fail("CTR_MATCHMAKING must be central or steam")
+	}
+	if admission == "local" && c.Companion != "stdio" {
+		r.fail("CTR_ADMISSION=local requires CTR_COMPANION=stdio")
+	} else if admission != "local" && c.Companion != "" {
+		r.fail("CTR_COMPANION is only supported with local admission")
+	}
+	if c.Matchmaking == "steam" && admission != "local" {
+		r.fail("CTR_MATCHMAKING=steam requires CTR_ADMISSION=local")
+	}
+	if admission == "local" || c.AuthHTTP {
+		if ip := net.ParseIP(c.BindAddr); ip == nil || !ip.IsLoopback() {
+			r.fail("local admission and CTR_AUTH_HTTP require a literal loopback BIND_ADDR")
+		}
+		if ip := net.ParseIP(c.PublicIP); ip == nil || !ip.IsLoopback() {
+			r.fail("local admission and CTR_AUTH_HTTP require a loopback NEXTENDO_HOST")
+		}
+		if c.ProxyProtocol {
+			r.fail("local admission and CTR_AUTH_HTTP forbid NEXTENDO_PROXY_PROTOCOL")
+		}
+	}
+	if admission == "local" && (c.RelayLow != 0 || c.RelayHigh != 0 || c.RelayPIDs != "") {
+		r.fail("local admission forbids the central UDP relay")
 	}
 	if needsShadNet && c.Shadnet.Issuer != "" && c.Shadnet.ClientID != "" && c.Shadnet.NPTitleID != "" &&
 		len(c.Shadnet.Scopes) != 0 && c.JWKSURL != "" {

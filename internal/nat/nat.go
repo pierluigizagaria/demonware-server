@@ -47,10 +47,13 @@ type Server struct {
 	workers sync.WaitGroup
 	*diagnostics.Diagnostics
 	BindAddr, NextendoHost string
-	connNum                *atomic.Uint64
-	natSeenMu              sync.Mutex
-	natSeen                map[string]int
-	natIntros              atomic.Int64
+	// LocalOnly answers only the two discovery shapes observed in CTR PS4.
+	// It never forwards introductions or responds to unknown flag variants.
+	LocalOnly bool
+	connNum   *atomic.Uint64
+	natSeenMu sync.Mutex
+	natSeen   map[string]int
+	natIntros atomic.Int64
 }
 
 // NewServer initializes NAT state without opening sockets or starting workers.
@@ -121,6 +124,15 @@ func (s *Server) servePacket(pc net.PacketConn, port int) {
 		}
 		ua, ok := addr.(*net.UDPAddr)
 		if !ok || ua.IP.To4() == nil {
+			continue
+		}
+		if s.LocalOnly {
+			resp := localDiscoveryReply(buf[:n], ua, serverIP, port)
+			if len(resp) != 0 {
+				_, _ = pc.WriteTo(resp, addr)
+			} else {
+				s.DiagnosticLogf("[nat] unsupported local discovery type=%d length=%d", buf[0], n)
+			}
 			continue
 		}
 		sig := fmt.Sprintf("%X", buf[:n])

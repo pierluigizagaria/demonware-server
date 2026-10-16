@@ -40,9 +40,16 @@ func StartAuth(platform PublisherPlatform, tickets *TicketStore, presenceStore *
 	if ctrSigner == nil {
 		return nil, fmt.Errorf("CTR_AUTH_SIGNING_KEY is required")
 	}
-	certificate, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
-	if err != nil {
-		return nil, err
+	var certificate tls.Certificate
+	if cfg.AuthHTTP {
+		if ip := net.ParseIP(cfg.BindAddr); ip == nil || !ip.IsLoopback() || cfg.ProxyProtocol {
+			return nil, fmt.Errorf("plain HTTP authentication requires a direct loopback listener")
+		}
+	} else {
+		certificate, err = tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+		if err != nil {
+			return nil, err
+		}
 	}
 	diag.DiagnosticLogf("[auth] signed replies enabled (client trust mod required)")
 	dumps := diag.RunDumpDir("auth")
@@ -68,8 +75,12 @@ func StartAuth(platform PublisherPlatform, tickets *TicketStore, presenceStore *
 	if cfg.ProxyProtocol {
 		ln = NewProxyListener(ln)
 	}
-	diag.DiagnosticLogf("[auth] listening HTTPS :%d (proxyProto=%v, cert=%s)", cfg.AuthPort, cfg.ProxyProtocol, cfg.CertFile)
-	return httpserver.Start(srv, ln, true), nil
+	if cfg.AuthHTTP {
+		diag.DiagnosticLogf("[auth] listening local HTTP :%d", cfg.AuthPort)
+	} else {
+		diag.DiagnosticLogf("[auth] listening HTTPS :%d (proxyProto=%v, cert=%s)", cfg.AuthPort, cfg.ProxyProtocol, cfg.CertFile)
+	}
+	return httpserver.Start(srv, ln, !cfg.AuthHTTP), nil
 }
 
 func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Telemetry, tickets *TicketStore, presenceStore *presence.Store, platform PublisherPlatform, ctrSigner *CTRSigner, dumps string, umbrella AuxiliaryAuthHandler) http.Handler {
