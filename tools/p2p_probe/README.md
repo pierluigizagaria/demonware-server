@@ -37,10 +37,14 @@ even when no remote request object was created on the owner's publisher.
 Failures also report fixed event-kind counts from each library context. This
 exposed automatic rejoining after an explicit follower departure; the library
 now suppresses that room selection until a new selection or participation change.
-Use a library build containing that fix (candidate SHA-256
-`c914489c651726a65cb19439c8ae5ac9aa6eca1a7794959e22641061932a6a10`
-passed the departure regression with publisher v3). The earlier `build/p2p`
-DLL is deliberately preserved while a human-operated game may still use it.
+Use a library build containing that fix. Both scenarios passed on 2026-10-16
+with publisher v4 built from clean commit
+`55ebb84a77535a37b636c62d8279bffd0486f77f`, SHA-256
+`0dcb7fc98b406b43602d6cc03addcb2ea262ea2451226a92dcd8c05ccb20df91`,
+and the final isolated library candidate, SHA-256
+`bc172ccc8beddf8f2045d4420407a660ce4484de12a3f456ab037c7663f110e1`.
+The earlier `build/p2p` DLL is deliberately preserved while a human-operated
+game may still use it.
 
 These are implementation fixtures (I), not live Steam, native game menu, actual
 race or two-PC acceptance. Party propagation inside CTR and embedded race
