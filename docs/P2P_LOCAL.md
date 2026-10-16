@@ -48,6 +48,10 @@ using the actual observed source endpoint and bound publisher address. Unknown
 flags, periodic packets and introductions receive no fabricated response and
 are never forwarded. Their diagnostics contain type/length only. Evidence:
 workspace `docs/PS4_PEER_TRANSPORT.md` (C); local responder implementation (I).
+The [paired-game NAT investigation](P2P_NAT_INVESTIGATION.md) records the
+original classifier fallback and the later NAT-specific failure diagnostic.
+It leaves the responder and CommonAddr NAT byte unchanged while the separate
+pre-party reverse-proxy correction is tested.
 
 ## Companion lifecycle
 
