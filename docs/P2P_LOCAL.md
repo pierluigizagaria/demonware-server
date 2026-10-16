@@ -180,6 +180,22 @@ returns the same success reply as central cancellation, but closes the P2P
 authority and discards its remaining searches. The central service survives
 another player's cancellation. This difference is intentional and tested.
 
+The notice comparison normalizes only the recipient's `listen_server.host_address`;
+the host PID, every other host-document field and the complete backend document
+must match the central engine. Distinct nonzero synthetic credentials exercise
+preservation of the host's DTLS security ID and key. The follower-departure case
+compares the complete owner update and the follower's empty notice sequence;
+waiting member/owner cancellations require empty sequences for both recipients.
+Fixture-only processing barriers drain generated cross-client events and check
+that no requests or acknowledgement timers remain before asserting there are no
+extra notices. These checks use no settling sleeps or production test hooks.
+An empty-queue regression also verifies repeated `Events()` evaluations cannot
+block independent consumer wakeups, and that a marker is acknowledged only
+after delivery and consumer return, exactly once.
+The targeted `TestP2P` tests and the same tests with Go's race detector pass on
+Windows. The race detector required host execution because its memory allocation
+failed inside the sandbox. These remain implementation evidence (I).
+
 An additional Windows integration fixture starts two actual hidden publisher
 children through the library's ABI 2 lab backend. It passes signed HTTP auth 46,
 encrypted Demonware handshakes/tasks, pre-party 138/14 advertisements, service 12
