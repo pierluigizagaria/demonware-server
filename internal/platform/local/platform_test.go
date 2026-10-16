@@ -8,7 +8,7 @@ import (
 )
 
 func ownerFixture() Owner {
-	return Owner{SteamID: "76561198000000001", OnlineID: "Giocàtore", Token: "osw1.76561198000000001.abcdef." + base64.RawURLEncoding.EncodeToString([]byte("Giocàtore")), Title: "5760", Build: "01.21", Realm: "normal", Backend: "lab"}
+	return Owner{SteamID: "76561198000000001", OnlineID: "Giocàtore", Token: "osw1.76561198000000001.abababababababababababababababababababababababababababababababab." + base64.RawURLEncoding.EncodeToString([]byte("Giocàtore")), Title: "5760", Build: "01.21", Realm: "normal", Backend: "lab"}
 }
 
 func envelope(token string) []byte {
@@ -28,7 +28,7 @@ func TestOwnerAdmissionUsesInheritedCredential(t *testing.T) {
 	if err != nil || id.PID != 76561198000000001 || id.Username != o.OnlineID || id.Kind != "local" {
 		t.Fatal("owner refused")
 	}
-	for _, token := range []string{"", strings.Replace(o.Token, "abcdef", "123456", 1), strings.Replace(o.Token, o.SteamID, "76561198000000002", 1)} {
+	for _, token := range []string{"", strings.Replace(o.Token, "ababab", "123456", 1), strings.Replace(o.Token, o.SteamID, "76561198000000002", 1)} {
 		if _, err := p.Authenticate(envelope(token)); err == nil {
 			t.Fatal("foreign or stale credential admitted")
 		}

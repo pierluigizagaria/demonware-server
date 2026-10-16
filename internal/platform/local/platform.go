@@ -8,6 +8,7 @@ import (
 	"errors"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
@@ -34,7 +35,8 @@ var buildPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
 func New(owner Owner) (*Platform, error) {
 	token, err := steam.ParseToken(owner.Token)
-	if err != nil || strconv.FormatUint(token.AccountID, 10) != owner.SteamID || token.OnlineID != owner.OnlineID || owner.Title != "5760" || !buildPattern.MatchString(owner.Build) || (owner.Backend != "steam" && owner.Backend != "lab") {
+	parts := strings.Split(owner.Token, ".")
+	if err != nil || len(parts) != 4 || len(parts[2]) != 64 || strconv.FormatUint(token.AccountID, 10) != owner.SteamID || token.OnlineID != owner.OnlineID || owner.Title != "5760" || !buildPattern.MatchString(owner.Build) || (owner.Backend != "steam" && owner.Backend != "lab") {
 		return nil, errors.New("invalid local owner")
 	}
 	if _, err := steam.TrustID(owner.Realm); err != nil {

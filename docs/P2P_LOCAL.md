@@ -64,10 +64,77 @@ The game's bind address must differ from the publisher's address (for example
 `127.0.0.11:3074` versus `127.0.0.10:3074`). No system firewall, hosts or network
 settings are changed. Existing publisher/economy functions remain local.
 
+## Room engine and peer boundary
+
+Set `CTR_MATCHMAKING=steam` to select the library directory. The existing
+`Matchmaker` and merge implementation run on the directory owner's machine.
+The adapter changes only service 145 routing; a remote peer has no handler for
+economy, statistics, leaderboards, news, storage or other publisher services.
+The room request allow-list is tasks 2, 8, 10, 13, 15 and 18 (player information,
+cancel, leave, documents, sync and search). Registration/bootstrap replies stay
+local. Unknown room operations fail closed. Task data is bounded to 16 KiB,
+the complete room envelope to 32 KiB, with 120 messages/second per authenticated
+member, 32 outbound pending requests and 64 pending acknowledgements.
+
+The version-1 peer envelope has a kind (`request`, `reply`, `ack`, `push`),
+decimal-string sender PID and connection ID, request ID, task/event and base64
+typed arguments. The library authenticates sender identity and membership;
+the publisher additionally requires sender == claimed PID, current room
+membership, owner-only replies/pushes and increasing request IDs per connection.
+An acknowledgement after the member's local game reply preserves the engine's
+existing reply-before-activation ordering. Each acknowledgement is bounded;
+that bound applies to a single request, never an idle room or race session.
+
+Directory metadata contains only a SHA-256 fingerprint of the existing search
+filter (`playlist`), `type=ctr-async-1` and available slots. Original player
+addresses and DTLS material travel only as member room messages. Party searches
+may claim only current directory members; committed platform-party followers
+are joined by the library and delivered as `room.selected`. Owner departure
+invalidates the room; there is no automatic engine migration. Cross-directory
+room merging is not implemented; the existing engine can merge only its own
+rooms. Global simultaneous room-creation races may therefore form separate
+rooms until players search again.
+
+Received host documents and document replies replace all eleven CommonAddr
+endpoints with the requesting player's local proxy endpoint for that host.
+The NAT byte, original host PID and actual DTLS data are preserved. This is a
+document adapter, not proof that race packets contain no embedded addresses.
+
+## Friends and local privacy
+
+Service 12 name lookups use the library's local Steam in-game friend cache.
+They do not ask another publisher for identity or progression. Original
+138/14 `Delta` queries occur before party membership, so party-only messaging
+cannot satisfy the known friend-page flow (C: workspace
+`docs/OFFICIAL_SHADNET_FRIENDS_TEST.md`, original result reader `0x401a00`).
+The selected replacement (I) uses the library's dedicated friend advertisement
+query channel. Only currently in-game, namespace-matching Steam friends may
+read the owner's currently live 138 record; no remote writes are exposed.
+The record is bounded to 4096 bytes, owner/context checked, and its common
+address is rewritten to an authorized friend proxy. Nothing is placed in public
+lobby data. Reserved, orphaned, stale-connection and deleted records are excluded.
+No publication means an honest empty 138/14 result, not invented joinability.
+
+Each local database is bound to one owner. Remote users are never registered in
+local persistent player names, stats or economy. Existing local handlers return
+only local data for cross-player reads; missing remote state remains absent.
+The existing composed instance-isolation tests cover independent balances,
+inventory, names and leaderboard stores; the P2P suite confirms no generic
+publisher handler is reachable from peer room messages.
+
 ## Evidence status
 
 Owner admission, configuration refusal, exact NAT shapes, pipe correlation and
-EOF are fixture-tested (S). The complete existing Go suite passes on the Windows
+EOF are fixture-tested (I). The complete existing Go suite passes on the Windows
 host, including the unchanged dispatcher baseline. Sandboxed TCP fixtures hang
 in the existing proxy-header test; host loopback execution passes. These results
 do not establish native Online-menu, shared-room or race acceptance.
+
+The two-publisher fixture compares create/join IDs, host/backend documents and
+DTLS values against the unchanged central engine, allowing only the expected
+recipient-specific proxy address. It also verifies reply/ack ordering, owner
+departure, foreign-PID/nonmember refusal, unsupported operations, friend-record
+serialization and local-only name resolution. These are implementation fixtures
+(I), not live Steam or game acceptance. Two-PC Steam racing, game party/follower
+propagation, invitations through the guest and race address embedding still
+require their respective acceptance gates.

@@ -68,10 +68,11 @@ func runServer(ctx context.Context, cfg config.Config) error {
 	var pipe *companion.Pipe
 	var platform auth.PublisherPlatform
 	var trustID string
+	var ownerPID uint64
 	var err error
 	if cfg.Admission == "local" {
 		pipe = companion.New(ctx, os.Stdin, os.Stdout)
-		defer pipe.Close()
+		defer func() { _ = pipe.Close(); pipe.Wait() }()
 		owner, ownerErr := pipe.Owner(ctx)
 		if ownerErr != nil {
 			return ownerErr
@@ -81,6 +82,7 @@ func runServer(ctx context.Context, cfg config.Config) error {
 			return localErr
 		}
 		platform, trustID = localPlatform, localPlatform.TrustID()
+		ownerPID = localPlatform.PID()
 	} else {
 		platform, trustID, err = loadPublisherPlatform(cfg)
 	}
@@ -103,6 +105,14 @@ func runServer(ctx context.Context, cfg config.Config) error {
 		steamPlatform.Store = database
 	}
 	i := newInstance(cfg, database)
+	if cfg.Matchmaking == "steam" {
+		backend, err := ctr.InstallP2P(ctx, i.lobby.Table, pipe, ownerPID)
+		if err != nil {
+			return finish(err)
+		}
+		resources.stop = append(resources.stop, backend.Close)
+		resources.wait = append(resources.wait, func() error { backend.Wait(); return nil })
+	}
 	log.Printf("[server] unlock-all: %v", cfg.UnlockAll)
 	resources.admission = append(resources.admission, i.lobby.BeginShutdown)
 	resources.stop = append(resources.stop, i.registry.StopReaper, i.nat.Close, i.relay.Close)

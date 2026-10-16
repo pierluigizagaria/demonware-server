@@ -17,7 +17,7 @@ func TestPipeOwnerRequestsAndEOF(t *testing.T) {
 	defer p.Close()
 	defer outR.Close()
 	go func() {
-		_ = json.NewEncoder(inW).Encode(map[string]any{"v": 1, "event": "owner", "steam_id": "76561198000000001", "online_id": "Player", "token": "osw1.76561198000000001.abcdef." + base64.RawURLEncoding.EncodeToString([]byte("Player")), "title": "5760", "build": "01.21", "realm": "normal", "backend": "lab"})
+		_ = json.NewEncoder(inW).Encode(map[string]any{"v": 1, "event": "owner", "steam_id": "76561198000000001", "online_id": "Player", "token": "osw1.76561198000000001.abababababababababababababababababababababababababababababababab." + base64.RawURLEncoding.EncodeToString([]byte("Player")), "title": "5760", "build": "01.21", "realm": "normal", "backend": "lab"})
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

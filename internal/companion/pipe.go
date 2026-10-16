@@ -21,13 +21,14 @@ const MaxFrame = 98304
 const RequestLimit = 30 * time.Second
 
 type Event struct {
-	Version int      `json:"v"`
-	Event   string   `json:"event"`
-	RoomID  string   `json:"room_id"`
-	Sender  string   `json:"sender"`
-	Owner   string   `json:"owner"`
-	Members []string `json:"members"`
-	Payload string   `json:"payload"`
+	Version  int            `json:"v"`
+	Event    string         `json:"event"`
+	RoomID   string         `json:"room_id"`
+	Sender   string         `json:"sender"`
+	Owner    string         `json:"owner"`
+	Members  []string       `json:"members"`
+	Payload  string         `json:"payload"`
+	Metadata map[string]any `json:"metadata"`
 }
 
 type response struct {
@@ -198,7 +199,7 @@ func (p *Pipe) read() {
 			return
 		}
 		switch e.Event {
-		case "peer.message", "room.changed", "room.closed", "error":
+		case "peer.message", "room.changed", "room.closed", "room.selected", "error":
 		default:
 			return
 		}
@@ -215,7 +216,7 @@ func (p *Pipe) write() {
 	for {
 		select {
 		case raw := <-p.writes:
-			if _, err := p.output.Write(raw); err != nil {
+			if n, err := p.output.Write(raw); err != nil || n != len(raw) {
 				return
 			}
 		case <-p.ctx.Done():
