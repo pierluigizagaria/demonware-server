@@ -63,7 +63,7 @@ prints request bodies, keys, tokens, persona strings or raw logs.
 
 Before either directory search, only the second client reads the first client's
 advertisement and immediately exchanges UDP in both directions through the
-returned proxy. The advertiser performs no reciprocal lookup or endpoint
+proxy obtained by routing its canonical endpoint. The advertiser performs no reciprocal lookup or endpoint
 request. With the default invocation this also precedes any platform party;
 `--party` has already created its synthetic party but still has no directory
 room at that point. This pre-room assertion prevents shared room membership
@@ -72,8 +72,8 @@ from hiding a missing unilateral friend bootstrap path.
 The default run searches separately from both publishers. `--party` creates a
 synthetic platform party, sends and accepts a simulated invitation, commits the
 second member, and searches once through the leader with both members. It then
-requires a follower `room.selected` event and uses the previously returned friend
-proxy for UDP. Fields for the other scenario are false because that step was not
+requires a follower `room.selected` event and routes the previously advertised friend
+endpoint for UDP. Fields for the other scenario are false because that step was not
 run, rather than a failed assertion. Every actual assertion must pass for exit 0.
 Both scenarios finally disconnect the second game's lobby socket and require
 an owner membership update with only its own seat. In the party scenario the

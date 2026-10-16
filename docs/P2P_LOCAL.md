@@ -184,10 +184,12 @@ room merging is not implemented; the existing engine can merge only its own
 rooms. Global simultaneous room-creation races may therefore form separate
 rooms until players search again.
 
-Received host documents and document replies replace all eleven CommonAddr
-endpoints with the requesting player's local proxy endpoint for that host.
-The NAT byte, original host PID and actual DTLS data are preserved. This is a
-document adapter, not proof that race packets contain no embedded addresses.
+Legacy owners without the virtual transport descriptor retain the earlier
+all-eleven-endpoint document adapter. That path is not qualified for the original
+game: the later identity investigation reproduced its CommonAddr rejection.
+Virtual owners instead validate the authenticated public endpoint and preserve
+the complete received host document, including every CommonAddr byte, original
+host PID and DTLS data. The generic host socket adapter owns proxy routing.
 
 ## Friends and local privacy
 
@@ -225,7 +227,7 @@ Local authentication refusals log one fixed category (`unsupported-task`,
 value, credential or request body. These diagnostics do not add support for
 renewal variants: the only admitted envelope remains the validated PS4 task 46.
 
-The two-publisher fixture compares create/join IDs, host/backend documents and
+The legacy-mode unit fixture compares create/join IDs, host/backend documents and
 DTLS values against the unchanged central engine, allowing only the expected
 recipient-specific proxy address. It also verifies reply/ack ordering, owner
 departure, foreign-PID/nonmember refusal, unsupported operations, friend-record
