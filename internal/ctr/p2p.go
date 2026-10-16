@@ -72,6 +72,8 @@ type P2PBackend struct {
 	ownerText     string
 	mu            sync.Mutex
 	selectMu      sync.Mutex
+	mutationMu    sync.Mutex // serializes engine mutations with room invalidation
+	generation    uint64
 	room          directoryRoom
 	filter        string
 	local         lobby.TaskSession
@@ -180,6 +182,7 @@ func (b *P2PBackend) Handle(peer lobby.TaskSession, request lobby.TaskRequest) l
 	}
 	b.mu.Lock()
 	room := b.room
+	generation := b.generation
 	b.mu.Unlock()
 	if room.ID == "" { // Nothing remote exists; preserve local cancellation semantics.
 		return b.engine.Handle(peer, taskRequest(request.Task, args))
@@ -189,7 +192,16 @@ func (b *P2PBackend) Handle(peer lobby.TaskSession, request lobby.TaskRequest) l
 	}
 	var result lobby.TaskResult
 	if room.Owner == b.ownerText {
+		b.mutationMu.Lock()
+		b.mu.Lock()
+		current := b.room.ID == room.ID && b.generation == generation
+		b.mu.Unlock()
+		if !current {
+			b.mutationMu.Unlock()
+			return b.failure(request.Task)
+		}
 		result = b.engine.Handle(&localRoomPeer{TaskSession: peer, backend: b}, taskRequest(request.Task, args))
+		b.mutationMu.Unlock()
 	} else {
 		if request.Task == TaskStartSearch {
 			w := &demonware.Writer{}
@@ -230,11 +242,23 @@ func (b *P2PBackend) Handle(peer lobby.TaskSession, request lobby.TaskRequest) l
 	}
 	after := result.AfterReply
 	result.AfterReply = func(err error) {
+		b.mutationMu.Lock()
+		b.mu.Lock()
+		current := b.room.ID == room.ID && b.generation == generation
+		b.mu.Unlock()
+		if !current {
+			b.mutationMu.Unlock()
+			return // clearRoom already discarded pending engine work for this room.
+		}
 		if after != nil {
 			after(err)
 		}
 		if leave {
-			b.leaveRoom()
+			b.clearRoomLocked()
+		}
+		b.mutationMu.Unlock()
+		if leave {
+			_ = b.transport.Call(b.ctx, "directory.leave", map[string]any{"room_id": room.ID}, nil)
 		} else if room.Owner == b.ownerText {
 			b.updateDirectory()
 		}
@@ -284,7 +308,7 @@ func validPlayerInfoArgs(args []byte) bool {
 	return true
 }
 
-func (b *P2PBackend) selectRoom(search *Search) error {
+func (b *P2PBackend) selectRoom(search *Search) (selectionError error) {
 	b.selectMu.Lock()
 	defer b.selectMu.Unlock()
 	sum := sha256.Sum256([]byte(search.Filter))
@@ -299,6 +323,9 @@ func (b *P2PBackend) selectRoom(search *Search) error {
 	if current.ID != "" {
 		b.leaveRoom()
 	}
+	b.mu.Lock()
+	selectionGeneration := b.generation
+	b.mu.Unlock()
 	metadata := map[string]any{"playlist": filter, "type": "ctr-async-1"}
 	var found struct {
 		Rooms []directoryRoom `json:"rooms"`
@@ -311,10 +338,13 @@ func (b *P2PBackend) selectRoom(search *Search) error {
 	}
 	var room directoryRoom
 	for _, candidate := range found.Rooms {
-		if !validDirectoryRoom(candidate) || candidate.Owner == b.ownerText {
+		// Steam exposes public owner metadata before joining, not membership.
+		if !validDecimal(candidate.ID) || !validDecimal(candidate.Owner) || candidate.Owner == b.ownerText || candidate.Metadata["playlist"] != filter || candidate.Metadata["type"] != "ctr-async-1" {
 			continue
 		}
-		if b.transport.Call(b.ctx, "directory.join", map[string]any{"room_id": candidate.ID}, &room) == nil {
+		var joined directoryRoom
+		if b.transport.Call(b.ctx, "directory.join", map[string]any{"room_id": candidate.ID}, &joined) == nil {
+			room = joined
 			break
 		}
 	}
@@ -324,13 +354,35 @@ func (b *P2PBackend) selectRoom(search *Search) error {
 			return err
 		}
 	}
-	if !validDirectoryRoom(room) || !containsMember(room.Members, b.ownerText) {
+	// Any failure after a successful library join/create must undo membership.
+	defer func() {
+		if selectionError == nil || !validDecimal(room.ID) {
+			return
+		}
+		b.mutationMu.Lock()
+		b.mu.Lock()
+		selected := b.room.ID == room.ID
+		b.mu.Unlock()
+		if selected {
+			b.clearRoomLocked()
+		}
+		b.mutationMu.Unlock()
+		_ = b.transport.Call(b.ctx, "directory.leave", map[string]any{"room_id": room.ID}, nil)
+	}()
+	if !validDirectoryRoom(room) || !containsMember(room.Members, b.ownerText) || room.Metadata["playlist"] != filter || room.Metadata["type"] != "ctr-async-1" {
 		return errors.New("invalid selected room")
 	}
+	b.mutationMu.Lock()
 	b.mu.Lock()
+	if b.generation != selectionGeneration || b.local == nil || b.local.ConnID() != search.Conn.ConnID() || b.ctx.Err() != nil {
+		b.mu.Unlock()
+		b.mutationMu.Unlock()
+		return errors.New("selection was cancelled")
+	}
 	b.room = room
 	b.filter = filter
 	b.mu.Unlock()
+	b.mutationMu.Unlock()
 	var currentMembers directoryRoom
 	if err := b.transport.Call(b.ctx, "directory.members", map[string]any{"room_id": room.ID}, &currentMembers); err != nil {
 		return err
@@ -339,6 +391,10 @@ func (b *P2PBackend) selectRoom(search *Search) error {
 		return errors.New("room membership changed during selection")
 	}
 	b.mu.Lock()
+	if b.room.ID != room.ID || b.generation != selectionGeneration {
+		b.mu.Unlock()
+		return errors.New("room closed during selection")
+	}
 	b.room.Members = append([]string(nil), currentMembers.Members...)
 	b.mu.Unlock()
 	return nil
@@ -398,7 +454,7 @@ func (b *P2PBackend) remoteCall(peer lobby.TaskSession, room directoryRoom, task
 	conn := strconv.FormatUint(peer.ConnID(), 10)
 	ch := make(chan roomPacket, 1)
 	b.mu.Lock()
-	if len(b.pending) >= 32 {
+	if b.room.ID != room.ID || b.room.Owner != room.Owner || len(b.pending) >= 32 {
 		b.mu.Unlock()
 		return lobby.TaskResult{}, errors.New("room request capacity")
 	}
@@ -442,6 +498,8 @@ func (b *P2PBackend) events() {
 }
 
 func (b *P2PBackend) receive(e companion.Event) {
+	b.mutationMu.Lock()
+	defer b.mutationMu.Unlock()
 	if e.Event == "room.selected" {
 		room := directoryRoom{ID: e.RoomID, Owner: e.Owner, Members: e.Members, Metadata: e.Metadata}
 		filter, ok := e.Metadata["playlist"].(string)
@@ -451,7 +509,7 @@ func (b *P2PBackend) receive(e companion.Event) {
 		if _, err := hex.DecodeString(filter); err != nil {
 			return
 		}
-		b.clearRoom()
+		b.clearRoomLocked()
 		b.mu.Lock()
 		b.room = room
 		b.filter = filter
@@ -466,12 +524,12 @@ func (b *P2PBackend) receive(e companion.Event) {
 	}
 	switch e.Event {
 	case "room.closed":
-		b.clearRoom()
+		b.clearRoomLocked()
 		return
 	case "room.changed":
 		updated := directoryRoom{ID: room.ID, Owner: e.Owner, Members: e.Members}
 		if !validDirectoryRoom(updated) || e.Owner != room.Owner || !containsMember(e.Members, b.ownerText) {
-			b.clearRoom()
+			b.clearRoomLocked()
 			return
 		}
 		b.mu.Lock()
@@ -517,6 +575,9 @@ func (b *P2PBackend) receive(e companion.Event) {
 			return
 		}
 		peer := b.remotePeer(e.Sender, packet.Conn)
+		if peer == nil {
+			return
+		}
 		requestID, _ := strconv.ParseUint(packet.ID, 10, 64)
 		b.mu.Lock()
 		if requestID <= peer.lastRequest || len(b.acks) >= 64 {
@@ -541,7 +602,7 @@ func (b *P2PBackend) receive(e companion.Event) {
 		ack.timer = time.AfterFunc(companion.RequestLimit, func() { defer b.ackWorkers.Done(); b.finishAck(key, ack, false) })
 		b.mu.Unlock()
 		if err := b.send(room.ID, e.Sender, roomPacket{Version: 1, Kind: "reply", ID: packet.ID, PID: b.ownerText, Conn: packet.Conn, Task: packet.Task, Data: result.Reply}); err != nil {
-			b.finishAck(key, ack, false)
+			b.finishAckLocked(key, ack, false)
 		}
 	case "ack":
 		if room.Owner != b.ownerText {
@@ -552,7 +613,7 @@ func (b *P2PBackend) receive(e companion.Event) {
 		ack := b.acks[key]
 		b.mu.Unlock()
 		if ack != nil && ack.conn == packet.Conn {
-			b.finishAck(key, ack, packet.OK)
+			b.finishAckLocked(key, ack, packet.OK)
 		}
 	case "reply":
 		if e.Sender != room.Owner {
@@ -587,6 +648,12 @@ func (b *P2PBackend) receive(e companion.Event) {
 }
 
 func (b *P2PBackend) finishAck(key string, ack *roomAck, ok bool) {
+	b.mutationMu.Lock()
+	defer b.mutationMu.Unlock()
+	b.finishAckLocked(key, ack, ok)
+}
+
+func (b *P2PBackend) finishAckLocked(key string, ack *roomAck, ok bool) {
 	b.mu.Lock()
 	if b.acks[key] != ack {
 		b.mu.Unlock()
@@ -629,6 +696,14 @@ func (b *P2PBackend) remotePeer(pid, conn string) *remoteRoomPeer {
 		b.mu.Unlock()
 		return old
 	}
+	if old != nil {
+		previous, _ := strconv.ParseUint(old.sourceConn, 10, 64)
+		next, _ := strconv.ParseUint(conn, 10, 64)
+		if next < previous {
+			b.mu.Unlock()
+			return nil
+		}
+	}
 	n, _ := strconv.ParseUint(pid, 10, 64)
 	peer := &remoteRoomPeer{backend: b, pid: n, id: (uint64(1) << 63) | b.remoteIDs.Add(1), sourceConn: conn}
 	b.remotes[pid] = peer
@@ -656,16 +731,24 @@ func (b *P2PBackend) CloseSession(peer lobby.TaskSession) {
 }
 
 func (b *P2PBackend) leaveRoom() {
+	b.mutationMu.Lock()
 	b.mu.Lock()
 	room := b.room
 	b.mu.Unlock()
-	b.clearRoom()
+	b.clearRoomLocked()
+	b.mutationMu.Unlock()
 	if room.ID != "" {
 		_ = b.transport.Call(b.ctx, "directory.leave", map[string]any{"room_id": room.ID}, nil)
 	}
 }
 
 func (b *P2PBackend) clearRoom() {
+	b.mutationMu.Lock()
+	defer b.mutationMu.Unlock()
+	b.clearRoomLocked()
+}
+
+func (b *P2PBackend) clearRoomLocked() {
 	b.mu.Lock()
 	remotes := b.remotes
 	acks := b.acks
@@ -675,6 +758,14 @@ func (b *P2PBackend) clearRoom() {
 	b.room = directoryRoom{}
 	b.filter = ""
 	b.activeRoom = 0
+	b.generation++
+	for _, pending := range b.pending {
+		select {
+		case pending <- roomPacket{}:
+		default:
+		}
+	}
+	b.pending = map[string]chan roomPacket{}
 	local := b.local
 	b.mu.Unlock()
 	for _, ack := range acks {

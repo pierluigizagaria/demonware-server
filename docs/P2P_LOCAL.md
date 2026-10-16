@@ -42,6 +42,10 @@ request/event/output queues are bounded. Operations have a 30-second bound.
 Logs use stderr; stdout contains protocol only. An explicit `ready` event
 follows storage and all listener startup. Stdin EOF initiates graceful shutdown.
 The native parent separately owns the child through its Windows Job Object.
+Local mode requires log redaction and additionally withholds 64-bit identity,
+session and connection identifiers. Raw captures cannot be enabled in this mode.
+The host explicitly supplies `CTR_COMPANION=stdio`; the library itself uses the
+title-independent marker `OSW_COMPANION_PROTOCOL=1`.
 
 Minimal P1 environment (all paths are private, operator supplied):
 
@@ -75,6 +79,9 @@ cancel, leave, documents, sync and search). Registration/bootstrap replies stay
 local. Unknown room operations fail closed. Task data is bounded to 16 KiB,
 the complete room envelope to 32 KiB, with 120 messages/second per authenticated
 member, 32 outbound pending requests and 64 pending acknowledgements.
+Engine mutations and room invalidation are serialized. Closing a room cancels
+pending member requests immediately, discards late activations, and rejects
+older connection generations. A failed membership snapshot leaves the directory.
 
 The version-1 peer envelope has a kind (`request`, `reply`, `ack`, `push`),
 decimal-string sender PID and connection ID, request ID, task/event and base64
@@ -86,7 +93,9 @@ existing reply-before-activation ordering. Each acknowledgement is bounded;
 that bound applies to a single request, never an idle room or race session.
 
 Directory metadata contains only a SHA-256 fingerprint of the existing search
-filter (`playlist`), `type=ctr-async-1` and available slots. Original player
+filter (`playlist`), `type=ctr-async-1` and available slots.
+Search results may omit members before joining, matching Steam visibility;
+joined records must contain a validated owner and the local member. Original player
 addresses and DTLS material travel only as member room messages. Party searches
 may claim only current directory members; committed platform-party followers
 are joined by the library and delivered as `room.selected`. Owner departure
@@ -138,3 +147,11 @@ serialization and local-only name resolution. These are implementation fixtures
 (I), not live Steam or game acceptance. Two-PC Steam racing, game party/follower
 propagation, invitations through the guest and race address embedding still
 require their respective acceptance gates.
+
+An additional Windows integration fixture starts two actual hidden publisher
+children through the library's ABI 2 lab backend. It passes signed HTTP auth 46,
+encrypted Demonware handshakes/tasks, pre-party 138/14 advertisements, service 12
+names, a foreign-statistics empty result, owner create/member join and opaque
+bidirectional UDP proxy delivery. Tokens exist only in process memory/stdin;
+runtime keys, databases and child logs stay in ignored `.cache/`. This is still
+simulated lab evidence (I), not a game race or two Steam accounts.

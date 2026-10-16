@@ -198,6 +198,9 @@ func Load(lookup func(string) string, check []string, serving bool) (Config, err
 	if admission == "local" && (c.RelayLow != 0 || c.RelayHigh != 0 || c.RelayPIDs != "") {
 		r.fail("local admission forbids the central UDP relay")
 	}
+	if admission == "local" && !c.RedactLogs {
+		r.fail("local admission requires NEXTENDO_REDACT_LOGS")
+	}
 	if needsShadNet && c.Shadnet.Issuer != "" && c.Shadnet.ClientID != "" && c.Shadnet.NPTitleID != "" &&
 		len(c.Shadnet.Scopes) != 0 && c.JWKSURL != "" {
 		if err := shadnet.Check(c.Shadnet, c.JWKSURL); err != nil {

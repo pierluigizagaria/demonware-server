@@ -10,7 +10,10 @@ import (
 
 // NEXTENDO_REDACT_LOGS, on unless set to 0 or false (config.go).
 type Diagnostics struct {
-	RedactLogs         bool
+	RedactLogs bool
+	// Local companions also withhold uint64 identifiers (SteamIDs, sessions and
+	// connection IDs). Central deployments retain their established diagnostics.
+	PrivateIdentity    bool
 	Verbose            bool
 	DumpRoot, RunStamp string
 }
@@ -23,7 +26,11 @@ func (d *Diagnostics) DiagnosticLogf(format string, args ...any) {
 	if d.RedactLogs {
 		safe := make([]any, len(args))
 		for i, arg := range args {
-			safe[i] = redactArg(arg)
+			if d.PrivateIdentity && reflect.ValueOf(arg).Kind() == reflect.Uint64 {
+				safe[i] = redacted{"<id>"}
+			} else {
+				safe[i] = redactArg(arg)
+			}
 		}
 		args = safe
 	}

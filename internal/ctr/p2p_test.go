@@ -28,6 +28,7 @@ type roomFixtureHub struct {
 	next           int
 	calls          map[string]int
 	advertisements map[string]string
+	failMembership bool
 }
 type roomFixtureTransport struct {
 	hub    *roomFixtureHub
@@ -57,6 +58,7 @@ func (t *roomFixtureTransport) Call(ctx context.Context, op string, args map[str
 		metadata := args["metadata"].(map[string]any)
 		for _, r := range h.rooms {
 			if r.Metadata["playlist"] == metadata["playlist"] {
+				r.Members = nil // Steam does not disclose membership before joining.
 				rooms = append(rooms, r)
 			}
 		}
@@ -84,7 +86,7 @@ func (t *roomFixtureTransport) Call(ctx context.Context, op string, args map[str
 		h.rooms[id] = room
 		result = room
 	case "directory.members":
-		if room.ID == "" || !containsMember(room.Members, t.pid) {
+		if h.failMembership || room.ID == "" || !containsMember(room.Members, t.pid) {
 			return errors.New("not member")
 		}
 		result = room
@@ -380,5 +382,77 @@ func TestP2PRejectsForeignIdentityAndNonRoomTasks(t *testing.T) {
 		if _, err := rewriteCommonAddress(base64.StdEncoding.EncodeToString(make([]byte, 67)), address, 3074); err == nil {
 			t.Fatal("nonloopback proxy accepted")
 		}
+	}
+}
+
+func TestP2PFailedMembershipSnapshotLeavesDirectory(t *testing.T) {
+	hub := newFixtureHub()
+	b, p := newRoomFixture(t, hub, 101)
+	deliverResult(t, b.Handle(p, taskRequest(2, stringArgs(roomInfo()))))
+	hub.failMembership = true
+	if successfulReply(b.Handle(p, taskRequest(18, searchArgs(101))).Reply) {
+		t.Fatal("failed membership snapshot accepted")
+	}
+	b.mu.Lock()
+	selected := b.room.ID != ""
+	b.mu.Unlock()
+	hub.mu.Lock()
+	rooms := len(hub.rooms)
+	hub.mu.Unlock()
+	if selected || rooms != 0 {
+		t.Fatal("failed selection left stale directory membership")
+	}
+}
+
+func TestP2PLeaveCancelsPendingAndRejectsOlderConnection(t *testing.T) {
+	hub := newFixtureHub()
+	a, pa := newRoomFixture(t, hub, 101)
+	b, pb := newRoomFixture(t, hub, 102)
+	deliverResult(t, a.Handle(pa, taskRequest(2, stringArgs(roomInfo()))))
+	deliverResult(t, a.Handle(pa, taskRequest(18, searchArgs(101))))
+	deliverResult(t, b.Handle(pb, taskRequest(2, stringArgs(roomInfo()))))
+	raw, _ := demonware.NewReader(searchArgs(102)).String()
+	search, err := NewMatchmaker(nil).ParseSearch(pb, raw, roomInfo())
+	if err != nil || b.selectRoom(search) != nil {
+		t.Fatal("fixture join failed")
+	}
+	b.mu.Lock()
+	room := b.room
+	b.mu.Unlock()
+	// Prevent the owner from processing the new request while the member leaves.
+	a.mutationMu.Lock()
+	done := make(chan error, 1)
+	go func() { _, err := b.remoteCall(pb, room, 2, stringArgs(roomInfo())); done <- err }()
+	end := time.Now().Add(time.Second)
+	for {
+		b.mu.Lock()
+		pending := len(b.pending)
+		b.mu.Unlock()
+		if pending != 0 {
+			break
+		}
+		if time.Now().After(end) {
+			a.mutationMu.Unlock()
+			t.Fatal("request was not queued")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	b.leaveRoom()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("closed request succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Error("closed request waited for network timeout")
+	}
+	a.mutationMu.Unlock()
+	// The same remote PID may replace its connection only with a newer generation.
+	a.mutationMu.Lock()
+	current := a.remotePeer("102", "9")
+	stale := a.remotePeer("102", "8")
+	a.mutationMu.Unlock()
+	if current == nil || stale != nil {
+		t.Fatal("older remote connection replaced current one")
 	}
 }

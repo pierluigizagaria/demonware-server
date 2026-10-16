@@ -7,7 +7,7 @@ func TestLocalModeValidation(t *testing.T) {
 	if c, err := Load(lookupFrom(base), nil, true); err != nil || !c.AuthHTTP || c.Matchmaking != "steam" {
 		t.Fatal(err)
 	}
-	for _, bad := range []map[string]string{{"BIND_ADDR": ""}, {"BIND_ADDR": "0.0.0.0"}, {"NEXTENDO_HOST": "192.168.1.1"}, {"NEXTENDO_PROXY_PROTOCOL": "1"}, {"CTR_ADMISSION": "guest", "CTR_UNLOCK_ALL": "1"}, {"CTR_MATCHMAKING": "other"}, {"CTR_RELAY_PORT_LOW": "4000", "CTR_RELAY_PORT_HIGH": "4010"}, {"SHADNET_ISSUER": "unrelated"}} {
+	for _, bad := range []map[string]string{{"BIND_ADDR": ""}, {"BIND_ADDR": "0.0.0.0"}, {"NEXTENDO_HOST": "192.168.1.1"}, {"NEXTENDO_PROXY_PROTOCOL": "1"}, {"CTR_ADMISSION": "guest", "CTR_UNLOCK_ALL": "1"}, {"CTR_MATCHMAKING": "other"}, {"CTR_RELAY_PORT_LOW": "4000", "CTR_RELAY_PORT_HIGH": "4010"}, {"SHADNET_ISSUER": "unrelated"}, {"NEXTENDO_REDACT_LOGS": "0"}} {
 		e := map[string]string{}
 		for k, v := range base {
 			e[k] = v

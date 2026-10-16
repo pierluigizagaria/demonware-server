@@ -46,6 +46,7 @@ func newInstance(cfg config.Config, database *store.SQLite) *serverInstance {
 		cfg.News.Languages[language] = message
 	}
 	diag := &diagnostics.Diagnostics{RedactLogs: cfg.RedactLogs, Verbose: cfg.Verbose, DumpRoot: cfg.Dumps, RunStamp: time.Now().Format("20060102-150405")}
+	diag.PrivateIdentity = cfg.Admission == "local"
 	i := &serverInstance{cfg: cfg, database: database, diagnostics: diag}
 
 	i.tickets = auth.NewTicketStore()

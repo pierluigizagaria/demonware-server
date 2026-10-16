@@ -38,3 +38,16 @@ func TestRedactedLogsKeepNumbersAndHideSecrets(t *testing.T) {
 		t.Fatal("structured values or error text leaked: " + got)
 	}
 }
+
+func TestLocalDiagnosticsHideUint64Identities(t *testing.T) {
+	d := &Diagnostics{RedactLogs: true, PrivateIdentity: true, DumpRoot: "off"}
+	var out bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&out)
+	defer log.SetOutput(old)
+	d.DiagnosticLogf("pid=%d session=%X task=%d ok=%t nil=%v", uint64(123456), uint64(987654), uint32(145), true, nil)
+	got := out.String()
+	if !strings.Contains(got, "pid=<id> session=<id> task=145 ok=true nil=<redacted>") {
+		t.Fatal("local identity redaction failed")
+	}
+}
