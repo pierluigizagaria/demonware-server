@@ -25,6 +25,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/dashboard"
 	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	"github.com/pierluigizagaria/demonware-server/internal/httpserver"
+	"github.com/pierluigizagaria/demonware-server/internal/platform/local"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 	"github.com/pierluigizagaria/demonware-server/internal/presence"
 )
@@ -143,6 +144,16 @@ func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Te
 		// The instance's admission provider supplies identity before ticket issuance.
 		id, identityErr := platform.Authenticate(body)
 		if identityErr != nil {
+			// Each format is a source constant: diagnostics never disclose an
+			// input field or error text, even when identity redaction is active.
+			switch identityErr {
+			case local.MalformedEnvelope:
+				diag.DiagnosticLogf("[auth] local refusal: malformed-envelope")
+			case local.UnsupportedTask:
+				diag.DiagnosticLogf("[auth] local refusal: unsupported-task")
+			case local.OwnerCapabilityMismatch:
+				diag.DiagnosticLogf("[auth] local refusal: owner-capability-mismatch")
+			}
 			reason := "platform verification failed"
 			diag.DiagnosticLogf("[auth] #%d %q pid=%d kind=%s REFUSED (%s)", n, id.Username, id.PID, id.Kind, reason)
 			http.Error(w, "forbidden", http.StatusForbidden)

@@ -60,3 +60,25 @@ func TestInvalidOwnerRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestAdmissionRefusalCategoriesContainNoInput(t *testing.T) {
+	p, _ := New(ownerFixture())
+	valid := string(envelope(ownerFixture().Token))
+	for _, test := range []struct {
+		body string
+		want AdmissionError
+	}{
+		{`{"auth_task":"45"}`, UnsupportedTask},
+		{`{"auth_task":"private-arbitrary-input"}`, UnsupportedTask},
+		{`{"auth_task":"46"}`, MalformedEnvelope},
+		{`{"auth_task":"45","auth_task":"46"}`, MalformedEnvelope},
+		{`{"auth_task":null}`, MalformedEnvelope},
+		{strings.Replace(valid, `"title_id":"5760"`, `"title_id":"5775"`, 1), MalformedEnvelope},
+		{string(envelope("private-arbitrary-input")), OwnerCapabilityMismatch},
+	} {
+		id, err := p.Authenticate([]byte(test.body))
+		if err != test.want || id.PID != 0 || err.Error() != "local owner admission refused" {
+			t.Fatal("refusal category or redaction changed")
+		}
+	}
+}

@@ -139,6 +139,11 @@ host, including the unchanged dispatcher baseline. Sandboxed TCP fixtures hang
 in the existing proxy-header test; host loopback execution passes. These results
 do not establish native Online-menu, shared-room or race acceptance.
 
+Local authentication refusals log one fixed category (`unsupported-task`,
+`malformed-envelope` or `owner-capability-mismatch`). They never log the task
+value, credential or request body. These diagnostics do not add support for
+renewal variants: the only admitted envelope remains the validated PS4 task 46.
+
 The two-publisher fixture compares create/join IDs, host/backend documents and
 DTLS values against the unchanged central engine, allowing only the expected
 recipient-specific proxy address. It also verifies reply/ack ordering, owner

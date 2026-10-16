@@ -5,6 +5,7 @@ package local
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/steam"
+	"github.com/pierluigizagaria/demonware-server/internal/strictjson"
 )
 
 type Owner struct {
@@ -30,6 +32,17 @@ type Platform struct {
 	digest [32]byte
 	trust  string
 }
+
+// AdmissionError carries only a fixed diagnostic category, never input data.
+type AdmissionError uint8
+
+const (
+	MalformedEnvelope AdmissionError = iota + 1
+	UnsupportedTask
+	OwnerCapabilityMismatch
+)
+
+func (AdmissionError) Error() string { return "local owner admission refused" }
 
 var buildPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
@@ -53,8 +66,18 @@ func (p *Platform) PID() uint64     { return p.owner.PID }
 func (p *Platform) Authenticate(body []byte) (platform.PlayerID, error) {
 	value, ok := ps4.ReadPSNEnvelope(body)
 	digest := sha256.Sum256([]byte(value))
-	if !ok || subtle.ConstantTimeCompare(digest[:], p.digest[:]) != 1 {
-		return platform.PlayerID{}, errors.New("local owner admission refused")
+	if !ok {
+		// Classification changes no admission rule. In particular, an unknown
+		// task is not interpreted as a refresh or supplied another credential.
+		var fields map[string]json.RawMessage
+		var task string
+		if len(body) <= 16384 && strictjson.Decode(string(body), &fields) && json.Unmarshal(fields["auth_task"], &task) == nil && task != "" && task != "46" {
+			return platform.PlayerID{}, UnsupportedTask
+		}
+		return platform.PlayerID{}, MalformedEnvelope
+	}
+	if subtle.ConstantTimeCompare(digest[:], p.digest[:]) != 1 {
+		return platform.PlayerID{}, OwnerCapabilityMismatch
 	}
 	return p.owner, nil
 }
