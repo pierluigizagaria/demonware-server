@@ -283,6 +283,53 @@ had never sent a room request, and the library immediately rejoined an explicitl
 left selection. The publisher's directory-member diff and the library's explicit
 leave suppression together pass this end-to-end implementation regression.
 
+## Optional local timing diagnostics
+
+`CTR_P2P_TIMING=1` enables timing only when `CTR_MATCHMAKING=steam`; it is off
+by default. The publisher installs the sink before its P2P worker starts and
+writes compact `[p2p-timing]` records to its existing private stderr log. It
+does not enable payload dumps or change the pipe, peer protocol, deadlines,
+matching engine, metadata policy or callback ownership.
+
+Every record contains `utc_us`, `mono_us`, `seq`, `stage`, `op`, `code`, `phase`,
+`elapsed_us` and `outcome`. A process-local diagnostic sequence pairs `start`
+and `end`; it is unrelated to any account, connection, lobby or wire request.
+UTC timestamps align local processes, while monotonic microseconds measure
+durations. Operations, stages and outcomes are closed labels; task/event codes
+are allowlisted. Unknown operation names become `none` and unknown codes become
+zero. No arguments, results, addresses, identity fields or error text are logged.
+
+- `call` measures companion operations, including directory selection/update,
+  endpoint allocation and peer-send acknowledgement.
+- `task` measures the local game task handler. For an existing `AfterReply`
+  callback, `reply` ends when the router reports completion of the game reply
+  write, then `after_reply` measures the original callback. A nil callback stays
+  nil. Its outcome describes the input write error; the callback has no return
+  value, so this is not a report of every operation it performs.
+- `remote` measures the complete publisher-to-owner request/reply roundtrip;
+  `peer.send` alone measures only the companion acknowledgement.
+- `ack` measures from preparation of the owner's response to the existing game
+  delivery ACK, timeout, cancellation or send failure. It does not activate work
+  or alter the existing acknowledgement ownership.
+- `push_prepare` measures document validation and endpoint preparation, then
+  `push_write` reports the actual local game-socket write. A successful write
+  does not establish that the game has processed the event or joined the lobby.
+
+These timestamps complement existing player-info/search, CreateLobby (2005),
+SyncDoc and connected-count logs. JoinLobby (2001) delivery is now observable
+without enabling remote-peer identity logging. No shared tracing identifier is
+added between processes; concurrent attempts cannot be paired across peers
+solely by their local sequence numbers.
+
+There is one synchronous write per record and no diagnostic queue, worker or
+explicit flush. A start-record write is included in its span. The end timestamp
+is taken before writing the end record, so that write is outside its own span
+(and inside any enclosing span). Timing is therefore diagnostic evidence, not
+a zero-overhead measurement. Behavioral fixtures compare identical tracing-off
+and tracing-on task/push bytes, hold remote replies and game-delivery ACKs,
+exercise failed delivery rollback, and verify that sensitive fixture markers
+cannot enter records. They do not establish live game latency.
+
 ## Persona rename candidate validation (2026-10-16)
 
 The `owner.name.v1` addition was built separately as

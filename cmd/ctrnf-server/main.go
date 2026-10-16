@@ -139,7 +139,11 @@ func runServer(ctx context.Context, cfg config.Config) error {
 			canonical = endpoint
 			pipe.EnableVirtualEndpoints()
 		}
-		backend, err := ctr.InstallP2P(ctx, i.lobby.Table, pipe, ownerPID, canonical)
+		var timing *ctr.P2PTiming
+		if cfg.P2PTiming {
+			timing = ctr.NewP2PTiming(os.Stderr)
+		}
+		backend, err := ctr.InstallP2P(ctx, i.lobby.Table, pipe, ownerPID, canonical, timing)
 		if err != nil {
 			return finish(err)
 		}

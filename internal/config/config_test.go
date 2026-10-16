@@ -160,8 +160,20 @@ func TestConfigDefaultsNeedNoEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.PublicIP != "127.0.0.1" || c.AuthPort != 8460 || c.LobbyPorts != "3074,3075,3076,3077,3078,3079,3080" || c.DataDir != "data" ||
-		c.DashPort != 8093 || !c.RedactLogs || c.UnlockAll || c.StartBalance != 0 || c.RelayLow != 0 {
+		c.DashPort != 8093 || !c.RedactLogs || c.UnlockAll || c.P2PTiming || c.StartBalance != 0 || c.RelayLow != 0 {
 		t.Fatalf("unexpected defaults: %+v", c)
+	}
+}
+
+func TestP2PTimingIsExplicitAndStrict(t *testing.T) {
+	for _, value := range []string{"1", "true"} {
+		c, err := Load(lookupFrom(map[string]string{"CTR_P2P_TIMING": value}), []string{"CTR_P2P_TIMING"}, false)
+		if err != nil || !c.P2PTiming {
+			t.Fatal("explicit timing flag was not accepted")
+		}
+	}
+	if _, err := Load(lookupFrom(map[string]string{"CTR_P2P_TIMING": "payloads"}), nil, false); err == nil {
+		t.Fatal("invalid timing flag was accepted")
 	}
 }
 

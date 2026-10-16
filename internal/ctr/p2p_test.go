@@ -311,6 +311,10 @@ func (p *roomFixturePeer) SendPush(event uint32, write func(*demonware.Writer)) 
 }
 
 func newRoomFixture(t *testing.T, hub *roomFixtureHub, pid uint64, decorate ...func(RoomTransport) RoomTransport) (*P2PBackend, *roomFixturePeer) {
+	return newTimedRoomFixture(t, hub, pid, nil, decorate...)
+}
+
+func newTimedRoomFixture(t *testing.T, hub *roomFixtureHub, pid uint64, timing *P2PTiming, decorate ...func(RoomTransport) RoomTransport) (*P2PBackend, *roomFixturePeer) {
 	t.Helper()
 	id := strconv.FormatUint(pid, 10)
 	transport := &roomFixtureTransport{hub: hub, pid: id, events: make(chan companion.Event), queued: make(chan roomFixtureEvent, 256), next: make(chan struct{}), done: make(chan struct{}), stopped: make(chan struct{})}
@@ -329,7 +333,7 @@ func newRoomFixture(t *testing.T, hub *roomFixtureHub, pid uint64, decorate ...f
 	for _, wrap := range decorate {
 		roomTransport = wrap(roomTransport)
 	}
-	b, err := InstallP2P(context.Background(), table, roomTransport, pid, netip.AddrPort{})
+	b, err := InstallP2P(context.Background(), table, roomTransport, pid, netip.AddrPort{}, timing)
 	if err != nil {
 		t.Fatal(err)
 	}

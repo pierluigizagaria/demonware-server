@@ -52,10 +52,11 @@ type roomPacket struct {
 }
 
 type roomAck struct {
-	peer  string
-	conn  string
-	after func(error)
-	timer *time.Timer
+	peer   string
+	conn   string
+	after  func(error)
+	timer  *time.Timer
+	timing *timingSpan
 }
 type roomRate struct {
 	at    time.Time
@@ -90,16 +91,21 @@ type P2PBackend struct {
 	ackWorkers         sync.WaitGroup
 	activeRoom         uint64
 	advertisement      *friendAdvertisementHandler
+	timing             *P2PTiming
 }
 
-func InstallP2P(ctx context.Context, table *lobby.ServiceTable, transport RoomTransport, owner uint64, canonical netip.AddrPort) (*P2PBackend, error) {
+func InstallP2P(ctx context.Context, table *lobby.ServiceTable, transport RoomTransport, owner uint64, canonical netip.AddrPort, timing *P2PTiming) (*P2PBackend, error) {
 	engine, ok := table.Handlers[SvcAsyncMatchMaking].(*asyncHandler)
 	if !ok || transport == nil || owner == 0 || (canonical.IsValid() && !validCanonicalEndpoint(canonical)) {
 		return nil, errors.New("invalid P2P dependencies")
 	}
 	ctx, cancel := context.WithCancel(ctx)
+	if timing != nil {
+		transport = &timedRoomTransport{RoomTransport: transport, timing: timing}
+	}
 	b := &P2PBackend{ctx: ctx, cancel: cancel, transport: transport, engine: engine, owner: owner, ownerText: strconv.FormatUint(owner, 10), remotes: map[string]*remoteRoomPeer{}, pending: map[string]chan roomPacket{}, acks: map[string]*roomAck{}, rates: map[string]roomRate{}}
 	b.canonical = canonical
+	b.timing = timing
 	table.Handlers[SvcAsyncMatchMaking] = b
 	if fallback := table.Handlers[SvcTitleUtilities]; fallback != nil {
 		table.Handlers[SvcTitleUtilities] = &localNameHandler{backend: b, fallback: fallback}
@@ -135,7 +141,7 @@ func (b *P2PBackend) failure(task byte) lobby.TaskResult {
 	return lobby.TaskResult{Reply: b.engine.TaskReply(task, lobby.ErrUnhandled, nil)}
 }
 
-func (b *P2PBackend) Handle(peer lobby.TaskSession, request lobby.TaskRequest) lobby.TaskResult {
+func (b *P2PBackend) handle(peer lobby.TaskSession, request lobby.TaskRequest) lobby.TaskResult {
 	if peer.PID() != b.owner || request.Service != SvcAsyncMatchMaking {
 		return b.failure(request.Task)
 	}
@@ -465,7 +471,18 @@ func (b *P2PBackend) send(room, peer string, packet roomPacket) error {
 	return b.transport.Call(b.ctx, "peer.send", map[string]any{"room_id": room, "peer": peer, "payload": base64.StdEncoding.EncodeToString(raw)}, nil)
 }
 
-func (b *P2PBackend) remoteCall(peer lobby.TaskSession, room directoryRoom, task byte, args []byte) (lobby.TaskResult, error) {
+func (b *P2PBackend) remoteCall(peer lobby.TaskSession, room directoryRoom, task byte, args []byte) (result lobby.TaskResult, err error) {
+	span := b.timing.begin(timingRemote, "", uint32(task))
+	defer func() {
+		if span == nil {
+			return
+		}
+		if err == nil && !successfulReply(result.Reply) {
+			span.end(timingRefused)
+		} else {
+			span.endError(err)
+		}
+	}()
 	id := strconv.FormatUint(b.ids.Add(1), 10)
 	conn := strconv.FormatUint(peer.ConnID(), 10)
 	ch := make(chan roomPacket, 1)
@@ -491,6 +508,7 @@ func (b *P2PBackend) remoteCall(peer lobby.TaskSession, room directoryRoom, task
 			_ = b.send(room.ID, room.Owner, roomPacket{Version: 1, Kind: "ack", ID: id, PID: b.ownerText, Conn: conn, OK: sendErr == nil})
 		}}, nil
 	case <-timer.C:
+		span.end(timingTimeout)
 		return lobby.TaskResult{}, errors.New("room request timeout")
 	case <-b.ctx.Done():
 		return lobby.TaskResult{}, b.ctx.Err()
@@ -613,10 +631,11 @@ func (b *P2PBackend) receive(e companion.Event) {
 		b.mu.Unlock()
 		result := b.engine.Handle(peer, taskRequest(packet.Task, packet.Data))
 		key := e.Sender + ":" + packet.ID
-		ack := &roomAck{peer: e.Sender, conn: packet.Conn, after: result.AfterReply}
+		ack := &roomAck{peer: e.Sender, conn: packet.Conn, after: result.AfterReply, timing: b.timing.begin(timingAck, "", uint32(packet.Task))}
 		b.mu.Lock()
 		if len(b.acks) >= 64 || b.acks[key] != nil {
 			b.mu.Unlock()
+			ack.timing.end(timingError)
 			if result.AfterReply != nil {
 				result.AfterReply(errors.New("room acknowledgement capacity"))
 			}
@@ -663,11 +682,15 @@ func (b *P2PBackend) receive(e companion.Event) {
 		if peer == nil || packet.Conn != strconv.FormatUint(peer.ConnID(), 10) {
 			return
 		}
+		prepare := b.timing.begin(timingPushPrepare, "", packet.Event)
 		data, err := b.rewritePush(packet.Event, packet.Data)
+		prepare.endError(err)
 		if err != nil {
 			return
 		}
-		_ = peer.SendPush(packet.Event, func(w *demonware.Writer) { w.Raw(data) })
+		write := b.timing.begin(timingPushWrite, "", packet.Event)
+		err = peer.SendPush(packet.Event, func(w *demonware.Writer) { w.Raw(data) })
+		write.endError(err)
 		b.rememberRoom(packet.Event, packet.Data)
 	}
 }
@@ -675,6 +698,8 @@ func (b *P2PBackend) receive(e companion.Event) {
 func (b *P2PBackend) finishAck(key string, ack *roomAck, ok bool) {
 	b.mutationMu.Lock()
 	defer b.mutationMu.Unlock()
+	// This entry point is used only by the existing acknowledgement deadline.
+	ack.timing.end(timingTimeout)
 	b.finishAckLocked(key, ack, ok)
 }
 
@@ -695,6 +720,7 @@ func (b *P2PBackend) finishAckLocked(key string, ack *roomAck, ok bool) {
 	if !ok {
 		err = errors.New("room response not delivered")
 	}
+	ack.timing.endError(err)
 	if ack.after != nil {
 		ack.after(err)
 	}
@@ -799,6 +825,7 @@ func (b *P2PBackend) clearRoomLocked() {
 				b.ackWorkers.Done()
 			}
 		}
+		ack.timing.end(timingCanceled)
 		if ack.after != nil {
 			ack.after(errors.New("room closed"))
 		}
@@ -858,11 +885,16 @@ type localRoomPeer struct {
 func (p *localRoomPeer) SendPush(event uint32, write func(*demonware.Writer)) error {
 	w := &demonware.Writer{}
 	write(w)
+	prepare := p.backend.timing.begin(timingPushPrepare, "", event)
 	raw, err := p.backend.rewritePush(event, w.Bytes())
+	prepare.endError(err)
 	if err != nil {
 		return err
 	}
-	if err := p.TaskSession.SendPush(event, func(w *demonware.Writer) { w.Raw(raw) }); err != nil {
+	span := p.backend.timing.begin(timingPushWrite, "", event)
+	err = p.TaskSession.SendPush(event, func(w *demonware.Writer) { w.Raw(raw) })
+	span.endError(err)
+	if err != nil {
 		return err
 	}
 	p.backend.rememberRoom(event, w.Bytes())

@@ -34,6 +34,7 @@ type Config struct {
 	Shadnet                               shadnet.Policy
 	Admission                             string
 	Matchmaking                           string
+	P2PTiming                             bool
 	AuthHTTP                              bool
 	Companion                             string
 	SteamHelper, SteamLibrary, SteamRealm string
@@ -119,6 +120,7 @@ func Load(lookup func(string) string, check []string, serving bool) (Config, err
 	c := Config{
 		Admission:      admission,
 		Matchmaking:    r.text("CTR_MATCHMAKING", "central"),
+		P2PTiming:      r.flag("CTR_P2P_TIMING", false),
 		AuthHTTP:       r.flag("CTR_AUTH_HTTP", false),
 		Companion:      r.text("CTR_COMPANION", ""),
 		SteamHelper:    r.required("CTR_STEAM_HELPER", serving && admission == "steam"),
