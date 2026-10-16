@@ -535,11 +535,19 @@ func (b *P2PBackend) receive(e companion.Event) {
 		b.mu.Lock()
 		b.room.Members = append([]string(nil), e.Members...)
 		var dropped []*remoteRoomPeer
-		for pid, peer := range b.remotes {
-			if !containsMember(e.Members, pid) {
-				delete(b.remotes, pid)
-				dropped = append(dropped, peer)
+		for _, pid := range room.Members {
+			if containsMember(e.Members, pid) {
+				continue
 			}
+			peer := b.remotes[pid]
+			delete(b.remotes, pid)
+			if peer == nil {
+				// A party follower owns no search and may never send an RPC.
+				// Its authenticated directory departure still releases its seat.
+				id, _ := strconv.ParseUint(pid, 10, 64)
+				peer = &remoteRoomPeer{backend: b, pid: id, id: (uint64(1) << 63) | b.remoteIDs.Add(1)}
+			}
+			dropped = append(dropped, peer)
 		}
 		b.mu.Unlock()
 		for _, peer := range dropped {

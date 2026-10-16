@@ -148,6 +148,14 @@ serialization and local-only name resolution. These are implementation fixtures
 propagation, invitations through the guest and race address embedding still
 require their respective acceptance gates.
 
+Lifecycle fixtures also compare a valid member cancel and a party follower's
+departure against the central engine. A committed follower may never send a
+room request; its authenticated directory departure must still release the
+seat claimed by the leader. Cancelling the directory owner's waiting search
+returns the same success reply as central cancellation, but closes the P2P
+authority and discards its remaining searches. The central service survives
+another player's cancellation. This difference is intentional and tested.
+
 An additional Windows integration fixture starts two actual hidden publisher
 children through the library's ABI 2 lab backend. It passes signed HTTP auth 46,
 encrypted Demonware handshakes/tasks, pre-party 138/14 advertisements, service 12

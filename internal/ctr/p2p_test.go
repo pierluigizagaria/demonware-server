@@ -456,3 +456,146 @@ func TestP2PLeaveCancelsPendingAndRejectsOlderConnection(t *testing.T) {
 		t.Fatal("older remote connection replaced current one")
 	}
 }
+
+func TestP2PPartyFollowerDepartureMatchesCentral(t *testing.T) {
+	hub := newFixtureHub()
+	a, pa := newRoomFixture(t, hub, 101)
+	b, pb := newRoomFixture(t, hub, 102)
+	for _, fixture := range []struct {
+		backend *P2PBackend
+		peer    *roomFixturePeer
+	}{{a, pa}, {b, pb}} {
+		deliverResult(t, fixture.backend.Handle(fixture.peer, taskRequest(2, stringArgs(roomInfo()))))
+		raw, _ := demonware.NewReader(searchArgs(fixture.peer.PID())).String()
+		search, err := NewMatchmaker(nil).ParseSearch(fixture.peer, raw, roomInfo())
+		if err != nil || fixture.backend.selectRoom(search) != nil {
+			t.Fatal("fixture directory selection")
+		}
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		a.mu.Lock()
+		count := len(a.room.Members)
+		a.mu.Unlock()
+		if count == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("follower not observed")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	partyArgs := stringArgs(`{"members":[101,102],"lobby_slots":{"min":2,"max":8},"ruleset_payload":{"filter":{"playlist_id":0,"matchmaking_version":200}}}`)
+	deliverResult(t, a.Handle(pa, taskRequest(18, partyArgs)))
+	created := awaitRoomPush(t, pa)
+	if created.event != EventCreateLobby {
+		t.Fatal("party did not create room")
+	}
+	// A follower never sent a room RPC or owned a search. Its departure must
+	// nevertheless remove the seat claimed by the leader, as the central engine does.
+	b.leaveRoom()
+	updated := awaitRoomPush(t, pa)
+	if updated.event != EventUpdateLobby {
+		t.Fatal("follower departure did not notify leader")
+	}
+	_, _, gotBackend := pushDocuments(t, updated)
+	central := matchFixture{Matchmaker: *NewMatchmaker(func() []uint64 { return nil })}
+	central.Clock = func() time.Time { return time.Unix(1000, 0) }
+	leader := partySearchFor(&central, t, 101, 102)
+	central.Enqueue(leader)
+	follower := testCTRSearchFor(&central, t, 102, 0).Conn
+	notices := central.Leave(follower, 0)
+	if len(notices) != 1 || gotBackend != notices[0].Backend {
+		t.Fatal("P2P follower leave differs from central membership")
+	}
+}
+
+func searchResultID(t *testing.T, result lobby.TaskResult) uint64 {
+	t.Helper()
+	r := demonware.NewReader(result.Reply)
+	_, _ = r.Uint64()
+	_, _ = r.Uint32()
+	_, _ = r.Uint8()
+	_, _ = r.Uint32()
+	_, _ = r.Uint32()
+	raw, err := r.String()
+	var resultDoc struct {
+		ID uint64 `json:"mm_id"`
+	}
+	if err != nil || json.Unmarshal([]byte(raw), &resultDoc) != nil || resultDoc.ID == 0 {
+		t.Fatal("invalid search result")
+	}
+	return resultDoc.ID
+}
+
+func TestP2PValidCancelAndOwnerDeparturePolicy(t *testing.T) {
+	for _, ownerCancels := range []bool{false, true} {
+		name := "member"
+		if ownerCancels {
+			name = "owner"
+		}
+		t.Run(name, func(t *testing.T) {
+			hub := newFixtureHub()
+			a, pa := newRoomFixture(t, hub, 101)
+			b, pb := newRoomFixture(t, hub, 102)
+			searchIDs := []uint64{}
+			for _, fixture := range []struct {
+				backend *P2PBackend
+				peer    *roomFixturePeer
+			}{{a, pa}, {b, pb}} {
+				deliverResult(t, fixture.backend.Handle(fixture.peer, taskRequest(2, stringArgs(roomInfo()))))
+				args := stringArgs(fmt.Sprintf(`{"members":[%d],"lobby_slots":{"min":8,"max":8},"ruleset_payload":{"filter":{"playlist_id":0,"matchmaking_version":200}}}`, fixture.peer.PID()))
+				result := fixture.backend.Handle(fixture.peer, taskRequest(18, args))
+				searchIDs = append(searchIDs, searchResultID(t, result))
+				deliverResult(t, result)
+			}
+			central := matchFixture{Matchmaker: *NewMatchmaker(func() []uint64 { return nil })}
+			ca, cb := testCTRSearchFor(&central, t, 101, 0), testCTRSearchFor(&central, t, 102, 0)
+			ca.Doc.Slots.Min, cb.Doc.Slots.Min = 8, 8
+			central.Enqueue(ca)
+			central.Enqueue(cb)
+			backend, peer, id, centralSearch := b, pb, searchIDs[1], cb
+			if ownerCancels {
+				backend, peer, id, centralSearch = a, pa, searchIDs[0], ca
+			}
+			cancel := &demonware.Writer{}
+			cancel.Uint64(id)
+			result := backend.Handle(peer, taskRequest(8, cancel.Bytes()))
+			if !replyBool(result.Reply) || !central.Cancel(centralSearch.Conn, centralSearch.ID) {
+				t.Fatal("valid cancel differs from central result")
+			}
+			deliverResult(t, result)
+			deadline := time.Now().Add(time.Second)
+			for {
+				b.mu.Lock()
+				memberLeft := b.room.ID == ""
+				b.mu.Unlock()
+				a.engine.matchmaker.mu.Lock()
+				waiting := len(a.engine.matchmaker.waiting)
+				a.engine.matchmaker.mu.Unlock()
+				expected := 1
+				if ownerCancels {
+					expected = 0
+				}
+				if memberLeft && waiting == expected {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("cancel did not settle room membership")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			if len(central.waiting) != 1 {
+				t.Fatal("central reference unexpectedly discarded another search")
+			}
+			a.mu.Lock()
+			ownerRetained := a.room.ID != ""
+			a.mu.Unlock()
+			if ownerRetained == ownerCancels {
+				t.Fatal("owner departure policy differs")
+			}
+			// The deliberate P2P difference: cancelling the directory owner closes
+			// the entire authority. A central service survives another player leaving.
+		})
+	}
+}
