@@ -64,29 +64,30 @@ type roomRate struct {
 // P2PBackend leaves the engine unchanged. One directory owner executes room
 // tasks; every other publisher still serves its own economy and statistics.
 type P2PBackend struct {
-	ctx           context.Context
-	cancel        context.CancelFunc
-	transport     RoomTransport
-	engine        *asyncHandler
-	owner         uint64
-	ownerText     string
-	mu            sync.Mutex
-	selectMu      sync.Mutex
-	mutationMu    sync.Mutex // serializes engine mutations with room invalidation
-	generation    uint64
-	room          directoryRoom
-	filter        string
-	local         lobby.TaskSession
-	remotes       map[string]*remoteRoomPeer
-	pending       map[string]chan roomPacket
-	acks          map[string]*roomAck
-	rates         map[string]roomRate
-	ids           atomic.Uint64
-	remoteIDs     atomic.Uint64
-	workers       sync.WaitGroup
-	ackWorkers    sync.WaitGroup
-	activeRoom    uint64
-	advertisement *friendAdvertisementHandler
+	ctx                context.Context
+	cancel             context.CancelFunc
+	transport          RoomTransport
+	engine             *asyncHandler
+	owner              uint64
+	ownerText          string
+	mu                 sync.Mutex
+	selectMu           sync.Mutex
+	mutationMu         sync.Mutex // serializes engine mutations with room invalidation
+	generation         uint64
+	membershipRevision uint64
+	room               directoryRoom
+	filter             string
+	local              lobby.TaskSession
+	remotes            map[string]*remoteRoomPeer
+	pending            map[string]chan roomPacket
+	acks               map[string]*roomAck
+	rates              map[string]roomRate
+	ids                atomic.Uint64
+	remoteIDs          atomic.Uint64
+	workers            sync.WaitGroup
+	ackWorkers         sync.WaitGroup
+	activeRoom         uint64
+	advertisement      *friendAdvertisementHandler
 }
 
 func InstallP2P(ctx context.Context, table *lobby.ServiceTable, transport RoomTransport, owner uint64) (*P2PBackend, error) {
@@ -383,21 +384,33 @@ func (b *P2PBackend) selectRoom(search *Search) (selectionError error) {
 	b.filter = filter
 	b.mu.Unlock()
 	b.mutationMu.Unlock()
-	var currentMembers directoryRoom
-	if err := b.transport.Call(b.ctx, "directory.members", map[string]any{"room_id": room.ID}, &currentMembers); err != nil {
-		return err
-	}
-	if !validDirectoryRoom(currentMembers) || currentMembers.ID != room.ID || currentMembers.Owner != room.Owner || !containsMember(currentMembers.Members, b.ownerText) {
-		return errors.New("room membership changed during selection")
-	}
-	b.mu.Lock()
-	if b.room.ID != room.ID || b.generation != selectionGeneration {
+	for attempt := 0; attempt < 3; attempt++ {
+		b.mu.Lock()
+		revision := b.membershipRevision
 		b.mu.Unlock()
-		return errors.New("room closed during selection")
+		var currentMembers directoryRoom
+		if err := b.transport.Call(b.ctx, "directory.members", map[string]any{"room_id": room.ID}, &currentMembers); err != nil {
+			return err
+		}
+		if !validDirectoryRoom(currentMembers) || currentMembers.ID != room.ID || currentMembers.Owner != room.Owner || !containsMember(currentMembers.Members, b.ownerText) {
+			return errors.New("room membership changed during selection")
+		}
+		b.mu.Lock()
+		if b.room.ID != room.ID || b.generation != selectionGeneration {
+			b.mu.Unlock()
+			return errors.New("room closed during selection")
+		}
+		if b.membershipRevision != revision {
+			// A directory event raced with the RPC. Its ordering against this
+			// snapshot is unknown, so refresh instead of restoring stale members.
+			b.mu.Unlock()
+			continue
+		}
+		b.room.Members = append([]string(nil), currentMembers.Members...)
+		b.mu.Unlock()
+		return nil
 	}
-	b.room.Members = append([]string(nil), currentMembers.Members...)
-	b.mu.Unlock()
-	return nil
+	return errors.New("room membership did not stabilize during selection")
 }
 
 func validDecimal(s string) bool {
@@ -534,6 +547,7 @@ func (b *P2PBackend) receive(e companion.Event) {
 		}
 		b.mu.Lock()
 		b.room.Members = append([]string(nil), e.Members...)
+		b.membershipRevision++
 		var dropped []*remoteRoomPeer
 		for _, pid := range room.Members {
 			if containsMember(e.Members, pid) {

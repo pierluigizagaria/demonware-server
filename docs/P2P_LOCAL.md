@@ -82,6 +82,10 @@ member, 32 outbound pending requests and 64 pending acknowledgements.
 Engine mutations and room invalidation are serialized. Closing a room cancels
 pending member requests immediately, discards late activations, and rejects
 older connection generations. A failed membership snapshot leaves the directory.
+An event observed during a membership query invalidates that query's snapshot;
+selection refreshes it instead of overwriting the event. Three unstable snapshots
+fail closed and leave the directory. This is a local revision guard, not an
+inferred remote revision or wall-clock ordering.
 
 The version-1 peer envelope has a kind (`request`, `reply`, `ack`, `push`),
 decimal-string sender PID and connection ID, request ID, task/event and base64

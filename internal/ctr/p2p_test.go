@@ -163,7 +163,7 @@ func (p *roomFixturePeer) SendPush(event uint32, write func(*demonware.Writer)) 
 	return nil
 }
 
-func newRoomFixture(t *testing.T, hub *roomFixtureHub, pid uint64) (*P2PBackend, *roomFixturePeer) {
+func newRoomFixture(t *testing.T, hub *roomFixtureHub, pid uint64, decorate ...func(RoomTransport) RoomTransport) (*P2PBackend, *roomFixturePeer) {
 	t.Helper()
 	id := strconv.FormatUint(pid, 10)
 	transport := &roomFixtureTransport{hub: hub, pid: id, events: make(chan companion.Event, 256), done: make(chan struct{})}
@@ -175,7 +175,11 @@ func newRoomFixture(t *testing.T, hub *roomFixtureHub, pid uint64) (*P2PBackend,
 	state := presence.NewStore(nil)
 	contextHandler := &contextHandler{&lobby.ContextHandler{ReplyCounter: h.ReplyCounter, ReadInfo: ReadInfo, Registry: lobby.NewSessionRegistry(), Presence: state, Relay: relay.NewTable(&diagnostics.Diagnostics{RedactLogs: true}, "127.0.0.1", "")}}
 	table := lobby.NewServiceTable(h.ReplyCounter, map[byte]lobby.TaskHandler{145: h, 138: contextHandler, 12: &utilityHandler{&presence.Handler{Replies: h.ReplyCounter, Presence: state}}}, nil)
-	b, err := InstallP2P(context.Background(), table, transport, pid)
+	var roomTransport RoomTransport = transport
+	for _, wrap := range decorate {
+		roomTransport = wrap(roomTransport)
+	}
+	b, err := InstallP2P(context.Background(), table, roomTransport, pid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,7 +497,7 @@ func TestP2PPartyFollowerDepartureMatchesCentral(t *testing.T) {
 	}
 	// A follower never sent a room RPC or owned a search. Its departure must
 	// nevertheless remove the seat claimed by the leader, as the central engine does.
-	b.leaveRoom()
+	b.CloseSession(pb)
 	updated := awaitRoomPush(t, pa)
 	if updated.event != EventUpdateLobby {
 		t.Fatal("follower departure did not notify leader")
@@ -597,5 +601,79 @@ func TestP2PValidCancelAndOwnerDeparturePolicy(t *testing.T) {
 			// The deliberate P2P difference: cancelling the directory owner closes
 			// the entire authority. A central service survives another player leaving.
 		})
+	}
+}
+
+type membershipSnapshotRace struct {
+	RoomTransport
+	after func(directoryRoom)
+}
+
+func (r *membershipSnapshotRace) Call(ctx context.Context, op string, args map[string]any, out any) error {
+	err := r.RoomTransport.Call(ctx, op, args, out)
+	if err == nil && op == "directory.members" {
+		r.after(*out.(*directoryRoom))
+	}
+	return err
+}
+
+func TestP2PMembershipEventWinsOverOlderSnapshot(t *testing.T) {
+	hub := newFixtureHub()
+	var backend *P2PBackend
+	calls := 0
+	backend, peer := newRoomFixture(t, hub, 101, func(transport RoomTransport) RoomTransport {
+		return &membershipSnapshotRace{transport, func(snapshot directoryRoom) {
+			calls++
+			if calls > 1 {
+				return
+			}
+			// The pipe can wake the event consumer before the goroutine waiting
+			// on an older directory.members reply is scheduled again.
+			members := []string{"101", "102"}
+			hub.mu.Lock()
+			room := hub.rooms[snapshot.ID]
+			room.Members = members
+			hub.rooms[snapshot.ID] = room
+			hub.mu.Unlock()
+			backend.receive(companion.Event{Event: "room.changed", RoomID: snapshot.ID, Owner: "101", Members: members})
+		}}
+	})
+	deliverResult(t, backend.Handle(peer, taskRequest(2, stringArgs(roomInfo()))))
+	search := backend.Handle(peer, taskRequest(18, searchArgs(peer.PID())))
+	if !successfulReply(search.Reply) || calls != 2 {
+		t.Fatal("racing membership did not refresh before admission")
+	}
+	deliverResult(t, search)
+	backend.mu.Lock()
+	preserved := containsMember(backend.room.Members, "102")
+	backend.mu.Unlock()
+	if !preserved {
+		t.Fatal("older membership snapshot overwrote a newer directory event")
+	}
+}
+
+func TestP2PRepeatedMembershipChangesFailClosed(t *testing.T) {
+	hub := newFixtureHub()
+	var backend *P2PBackend
+	calls := 0
+	backend, peer := newRoomFixture(t, hub, 101, func(transport RoomTransport) RoomTransport {
+		return &membershipSnapshotRace{transport, func(snapshot directoryRoom) {
+			calls++
+			backend.receive(companion.Event{Event: "room.changed", RoomID: snapshot.ID, Owner: "101", Members: []string{"101"}})
+		}}
+	})
+	deliverResult(t, backend.Handle(peer, taskRequest(2, stringArgs(roomInfo()))))
+	search := backend.Handle(peer, taskRequest(18, searchArgs(peer.PID())))
+	if successfulReply(search.Reply) || calls != 3 {
+		t.Fatal("unstable membership was admitted or retried without a bound")
+	}
+	backend.mu.Lock()
+	left := backend.room.ID == ""
+	backend.mu.Unlock()
+	hub.mu.Lock()
+	left = left && len(hub.rooms) == 0
+	hub.mu.Unlock()
+	if !left {
+		t.Fatal("failed selection retained directory membership")
 	}
 }
