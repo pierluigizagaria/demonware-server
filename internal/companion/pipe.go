@@ -20,6 +20,65 @@ import (
 const MaxFrame = 98304
 const RequestLimit = 30 * time.Second
 
+// These categories describe local control flow, never peer-provided values or
+// underlying I/O errors. The first pipe failure is retained through teardown.
+type closeReason uint32
+
+const (
+	closeOpen closeReason = iota
+	closeRequested
+	closeContextCanceled
+	closeEOF
+	closeReadError
+	closeWriteError
+	closeFrameLimit
+	closeMalformedFrame
+	closeVersion
+	closeOwner
+	closeOwnerName
+	closeResponse
+	closeDuplicateResponse
+	closeEvent
+	closeEventQueueFull
+)
+
+func (r closeReason) String() string {
+	switch r {
+	case closeOpen:
+		return "open"
+	case closeRequested:
+		return "requested"
+	case closeContextCanceled:
+		return "context-canceled"
+	case closeEOF:
+		return "eof"
+	case closeReadError:
+		return "read-error"
+	case closeWriteError:
+		return "write-error"
+	case closeFrameLimit:
+		return "frame-limit"
+	case closeMalformedFrame:
+		return "malformed-frame"
+	case closeVersion:
+		return "version"
+	case closeOwner:
+		return "owner"
+	case closeOwnerName:
+		return "owner-name"
+	case closeResponse:
+		return "response"
+	case closeDuplicateResponse:
+		return "duplicate-response"
+	case closeEvent:
+		return "event"
+	case closeEventQueueFull:
+		return "event-queue-full"
+	default:
+		return "unknown"
+	}
+}
+
 type Event struct {
 	Version  int            `json:"v"`
 	Event    string         `json:"event"`
@@ -44,6 +103,7 @@ type Pipe struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	once             sync.Once
+	closedBy         atomic.Uint32
 	owner            chan local.Owner
 	events           chan Event
 	writes           chan []byte
@@ -67,9 +127,32 @@ func New(ctx context.Context, input io.ReadCloser, output io.WriteCloser) *Pipe 
 func (p *Pipe) Done() <-chan struct{} { return p.ctx.Done() }
 func (p *Pipe) Events() <-chan Event  { return p.events }
 func (p *Pipe) Close() error {
-	p.once.Do(func() { p.cancel(); _ = p.input.Close(); _ = p.output.Close() })
+	p.close(closeRequested)
 	return nil
 }
+
+func (p *Pipe) close(reason closeReason) {
+	p.once.Do(func() {
+		if p.ctx.Err() != nil {
+			reason = closeContextCanceled
+		}
+		p.closedBy.Store(uint32(reason))
+		p.cancel()
+		_ = p.input.Close()
+		_ = p.output.Close()
+	})
+}
+
+// CloseReason returns only a fixed diagnostic category. Parent cancellation
+// can close Done before either I/O worker observes it.
+func (p *Pipe) CloseReason() string {
+	reason := closeReason(p.closedBy.Load())
+	if reason == closeOpen && p.ctx.Err() != nil {
+		reason = closeContextCanceled
+	}
+	return reason.String()
+}
+
 func (p *Pipe) Wait() { p.workers.Wait() }
 
 func (p *Pipe) Owner(ctx context.Context) (local.Owner, error) {
@@ -159,31 +242,41 @@ func (p *Pipe) send(ctx context.Context, value any) error {
 }
 
 func (p *Pipe) read() {
-	defer p.Close()
+	reason := closeEOF
+	defer func() { p.close(reason) }()
 	scanner := bufio.NewScanner(p.input)
 	scanner.Buffer(make([]byte, 4096), MaxFrame)
 	first := true
 	for scanner.Scan() {
 		raw := scanner.Bytes()
 		var frame map[string]json.RawMessage
-		if len(raw)+1 > MaxFrame || !utf8.Valid(raw) || !strictjson.Decode(string(raw), &frame) || frame == nil {
+		if len(raw)+1 > MaxFrame {
+			reason = closeFrameLimit
+			return
+		}
+		if !utf8.Valid(raw) || !strictjson.Decode(string(raw), &frame) || frame == nil {
+			reason = closeMalformedFrame
 			return
 		}
 		var version int
 		if json.Unmarshal(frame["v"], &version) != nil || version != 1 {
+			reason = closeVersion
 			return
 		}
 		if first {
 			var event string
 			_ = json.Unmarshal(frame["event"], &event)
 			if event != "owner" {
+				reason = closeOwner
 				return
 			}
 			var owner local.Owner
 			if json.Unmarshal(raw, &owner) != nil {
+				reason = closeOwner
 				return
 			}
 			if _, err := local.New(owner); err != nil {
+				reason = closeOwner
 				return
 			}
 			p.owner <- owner
@@ -195,12 +288,14 @@ func (p *Pipe) read() {
 		if eventName == "owner.name" {
 			var id, name string
 			if len(frame) != 4 || json.Unmarshal(frame["steam_id"], &id) != nil || json.Unmarshal(frame["online_id"], &name) != nil {
+				reason = closeOwnerName
 				return
 			}
 			p.mu.Lock()
 			apply, enabled := p.ownerName, p.nameUpdatesReady
 			p.mu.Unlock()
 			if !enabled || apply == nil || apply(id, name) != nil {
+				reason = closeOwnerName
 				return
 			}
 			continue
@@ -208,10 +303,12 @@ func (p *Pipe) read() {
 		if value, ok := frame["id"]; ok {
 			var id string
 			if json.Unmarshal(value, &id) != nil || len(id) == 0 || len(id) > 64 {
+				reason = closeResponse
 				return
 			}
 			var r response
 			if json.Unmarshal(raw, &r) != nil {
+				reason = closeResponse
 				return
 			}
 			p.mu.Lock()
@@ -221,6 +318,7 @@ func (p *Pipe) read() {
 				select {
 				case ch <- r:
 				default:
+					reason = closeDuplicateResponse
 					return
 				}
 			}
@@ -228,27 +326,37 @@ func (p *Pipe) read() {
 		}
 		var e Event
 		if json.Unmarshal(raw, &e) != nil {
+			reason = closeEvent
 			return
 		}
 		switch e.Event {
 		case "peer.message", "room.changed", "room.closed", "room.selected", "error":
 		default:
+			reason = closeEvent
 			return
 		}
 		select {
 		case p.events <- e:
 		default:
+			reason = closeEventQueueFull
 			return
 		}
+	}
+	if err := scanner.Err(); errors.Is(err, bufio.ErrTooLong) {
+		reason = closeFrameLimit
+	} else if err != nil {
+		reason = closeReadError
 	}
 }
 
 func (p *Pipe) write() {
-	defer p.Close()
+	reason := closeContextCanceled
+	defer func() { p.close(reason) }()
 	for {
 		select {
 		case raw := <-p.writes:
 			if n, err := p.output.Write(raw); err != nil || n != len(raw) {
+				reason = closeWriteError
 				return
 			}
 		case <-p.ctx.Done():

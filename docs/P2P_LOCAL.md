@@ -60,6 +60,12 @@ The version-1 protocol is specified in the library's
 request/event/output queues are bounded. Operations have a 30-second bound.
 Logs use stderr; stdout contains protocol only. An explicit `ready` event
 follows storage and all listener startup. Stdin EOF initiates graceful shutdown.
+Companion shutdown logs one fixed `reason` category distinguishing EOF, I/O,
+frame/schema rejection, queue overflow and explicit/context cancellation.
+The pipe records its first cause before signaling shutdown; later cleanup
+cannot replace it. No frame contents, identity, credential, peer-provided
+error string or underlying OS error is included. Earlier executables without
+this diagnostic cannot distinguish these causes retrospectively.
 The native parent separately owns the child through its Windows Job Object.
 Local mode requires log redaction and additionally withholds 64-bit identity,
 session and connection identifiers. Raw captures cannot be enabled in this mode.

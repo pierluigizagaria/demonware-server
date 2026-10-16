@@ -167,7 +167,7 @@ func runServer(ctx context.Context, cfg config.Config) error {
 
 	select {
 	case <-companionDone:
-		log.Print("[server] companion closed: draining admitted work")
+		log.Printf("[server] companion closed: draining admitted work (reason=%s)", pipe.CloseReason())
 		return finish(nil)
 	case <-ctx.Done():
 		log.Print("[server] operator shutdown: draining admitted work")
