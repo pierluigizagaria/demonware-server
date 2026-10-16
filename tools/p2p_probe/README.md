@@ -24,6 +24,14 @@ UDP through the actual library proxies. Tokens are passed only in memory and
 stdin. The helper emits fixed step labels and aggregate booleans; it never
 prints request bodies, keys, tokens, persona strings or raw logs.
 
+Before either directory search, only the second client reads the first client's
+advertisement and immediately exchanges UDP in both directions through the
+returned proxy. The advertiser performs no reciprocal lookup or endpoint
+request. With the default invocation this also precedes any platform party;
+`--party` has already created its synthetic party but still has no directory
+room at that point. This pre-room assertion prevents shared room membership
+from hiding a missing unilateral friend bootstrap path.
+
 The default run searches separately from both publishers. `--party` creates a
 synthetic platform party, sends and accepts a simulated invitation, commits the
 second member, and searches once through the leader with both members. It then
@@ -45,6 +53,16 @@ and the final isolated library candidate, SHA-256
 `bc172ccc8beddf8f2045d4420407a660ce4484de12a3f456ab037c7663f110e1`.
 The earlier `build/p2p` DLL is deliberately preserved while a human-operated
 game may still use it.
+
+The unilateral pre-room assertion added later on 2026-10-16 fails with library
+`508a135f34052108481c7427a3e8633b7d7b9a48794a071feef41ad2243e3786`
+at the fixed step `unilateral pre-room delivery`. Both scenarios pass with
+`build/preparty-candidate/orbisteamworks.dll`, SHA-256
+`8623d614894d7ac7781e5e2c99ef67986c612211de968b087ff66faebcd8132e`,
+and the unchanged `bin/demonware-server-rename-candidate.exe`, SHA-256
+`0fc70159dad030a978f7126e25368fec4e911cc8d418980f7268fe290a027369`.
+Private logs are `.cache/p2p-probe/preparty-before-fix.log`,
+`preparty-after-fix-default.log` and `preparty-after-fix-party.log`.
 
 These are implementation fixtures (I), not live Steam, native game menu, actual
 race or two-PC acceptance. Party propagation inside CTR and embedded race

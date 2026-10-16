@@ -205,6 +205,21 @@ func main() {
 	friend := result(b.call(138, 14, lookup))
 	friendAddress, err := friend.Blob()
 	must(err == nil && len(friendAddress) == 67, "friend advertisement")
+	// Only B read A's advertisement. A has neither looked up B nor allocated
+	// a peer endpoint. Exercise the first datagram before any directory room.
+	preRoomProxy := &net.UDPAddr{IP: net.IP(friendAddress[:4]), Port: int(binary.LittleEndian.Uint16(friendAddress[4:6]))}
+	must(preRoomProxy.IP.IsLoopback(), "pre-room local proxy")
+	_, err = b.udp.WriteToUDP([]byte("pre-room"), preRoomProxy)
+	must(err == nil, "unilateral pre-room send")
+	a.udp.SetReadDeadline(time.Now().Add(5 * time.Second))
+	preRoomBytes := make([]byte, 128)
+	preRoomCount, reverseProxy, err := a.udp.ReadFromUDP(preRoomBytes)
+	must(err == nil && string(preRoomBytes[:preRoomCount]) == "pre-room" && reverseProxy.IP.IsLoopback(), "unilateral pre-room delivery")
+	_, err = a.udp.WriteToUDP([]byte("pre-room-return"), reverseProxy)
+	must(err == nil, "unilateral pre-room reply")
+	b.udp.SetReadDeadline(time.Now().Add(5 * time.Second))
+	preRoomCount, _, err = b.udp.ReadFromUDP(preRoomBytes)
+	must(err == nil && string(preRoomBytes[:preRoomCount]) == "pre-room-return", "unilateral pre-room return")
 	names := &demonware.Writer{}
 	names.Uint32(1)
 	names.String(cfg[0].Name)
@@ -301,6 +316,6 @@ func main() {
 		Players map[string]string `json:"players"`
 	}
 	must(err == nil && json.Unmarshal([]byte(backend), &membership) == nil && len(membership.Players) == 1 && membership.Players[strconv.FormatUint(cfg[0].PID, 10)] == "expected", "departed member seat released")
-	output, _ := json.Marshal(map[string]any{"ok": true, "evidence": "implementation fixture, simulated lab", "publishers": 2, "signed_auth": true, "encrypted_lobby": true, "friend_advertisement": true, "friend_ad_before_party": !cfg[0].Party, "local_names": true, "private_statistics": true, "owner_create_member_join": !cfg[0].Party, "committed_party_search": cfg[0].Party, "bidirectional_proxy": true, "member_departure": true})
+	output, _ := json.Marshal(map[string]any{"ok": true, "evidence": "implementation fixture, simulated lab", "publishers": 2, "signed_auth": true, "encrypted_lobby": true, "friend_advertisement": true, "friend_ad_before_party": !cfg[0].Party, "pre_room_bidirectional_proxy": true, "local_names": true, "private_statistics": true, "owner_create_member_join": !cfg[0].Party, "committed_party_search": cfg[0].Party, "bidirectional_proxy": true, "member_departure": true})
 	fmt.Println(string(output))
 }
