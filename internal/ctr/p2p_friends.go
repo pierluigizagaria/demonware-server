@@ -83,11 +83,13 @@ func (h *friendAdvertisementHandler) publish(peer lobby.TaskSession) {
 		if !validAdvertisement(a) {
 			return
 		}
-		raw, err := json.Marshal(a)
-		if err != nil || len(raw) > 4096 {
-			return
+		if !h.backend.canonical.IsValid() || validateCanonicalCommonAddress(session.Address, h.backend.canonical) {
+			raw, err := json.Marshal(a)
+			if err != nil || len(raw) > 4096 {
+				return
+			}
+			payload = base64.StdEncoding.EncodeToString(raw)
 		}
-		payload = base64.StdEncoding.EncodeToString(raw)
 	}
 	_ = h.backend.transport.Call(h.backend.ctx, "advertisement.set", map[string]any{"context": advertisementContext, "payload": payload}, nil)
 }
@@ -136,7 +138,7 @@ func (h *friendAdvertisementHandler) lookup(peer lobby.TaskSession, r *demonware
 		if b.transport.Call(ctx, "peer.endpoint", map[string]any{"peer": pid, "scope": "friend"}, &endpoint) != nil {
 			continue
 		}
-		address, err := rewriteCommonAddress(base64.StdEncoding.EncodeToString(ad.Session.Address), endpoint.Address, endpoint.Port)
+		address, err := b.peerCommonAddress(base64.StdEncoding.EncodeToString(ad.Session.Address), endpoint.Address, endpoint.Port)
 		if err != nil {
 			continue
 		}

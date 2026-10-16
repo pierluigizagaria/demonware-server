@@ -113,6 +113,7 @@ type Pipe struct {
 	workers          sync.WaitGroup
 	ownerName        func(string, string) error
 	nameUpdatesReady bool
+	virtualEndpoints bool
 }
 
 func New(ctx context.Context, input io.ReadCloser, output io.WriteCloser) *Pipe {
@@ -175,8 +176,19 @@ func (p *Pipe) Ready(ctx context.Context) error {
 	if p.nameUpdatesReady {
 		capabilities = append(capabilities, "owner.name.v1")
 	}
+	if p.virtualEndpoints {
+		capabilities = append(capabilities, "virtual.endpoints.v1")
+	}
 	p.mu.Unlock()
 	return p.send(ctx, map[string]any{"v": 1, "event": "ready", "capabilities": capabilities})
+}
+
+// EnableVirtualEndpoints acknowledges that NAT and publisher documents have
+// been configured for the inherited canonical endpoint. Call before Ready.
+func (p *Pipe) EnableVirtualEndpoints() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.virtualEndpoints = true
 }
 
 // EnableOwnerNames must precede Ready. It belongs to admission, independently

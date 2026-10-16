@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,13 +21,33 @@ import (
 )
 
 type Owner struct {
-	SteamID  string `json:"steam_id"`
-	OnlineID string `json:"online_id"`
-	Token    string `json:"token"`
-	Title    string `json:"title"`
-	Build    string `json:"build"`
-	Realm    string `json:"realm"`
-	Backend  string `json:"backend"`
+	SteamID   string            `json:"steam_id"`
+	OnlineID  string            `json:"online_id"`
+	Token     string            `json:"token"`
+	Title     string            `json:"title"`
+	Build     string            `json:"build"`
+	Realm     string            `json:"realm"`
+	Backend   string            `json:"backend"`
+	Transport *VirtualTransport `json:"transport,omitempty"`
+}
+
+// VirtualTransport is an optional, explicitly negotiated host socket mapping.
+// Canonical endpoints never become publisher listeners or forwarding targets.
+type VirtualTransport struct {
+	Mode        string `json:"mode"`
+	Address     string `json:"address"`
+	Port        uint16 `json:"port"`
+	GameAddress string `json:"game_address"`
+	GamePort    uint16 `json:"game_port"`
+}
+
+func (t VirtualTransport) Endpoints() (game, canonical netip.AddrPort, err error) {
+	ip, e1 := netip.ParseAddr(t.Address)
+	localIP, e2 := netip.ParseAddr(t.GameAddress)
+	if t.Mode != "virtual-v1" || e1 != nil || e2 != nil || !ip.Is4() || t.Port == 0 || !localIP.Is4() || !localIP.IsLoopback() || t.GamePort == 0 {
+		return game, canonical, errors.New("invalid virtual transport")
+	}
+	return netip.AddrPortFrom(localIP, t.GamePort), netip.AddrPortFrom(ip, t.Port), nil
 }
 
 type Platform struct {
@@ -50,6 +71,11 @@ func (AdmissionError) Error() string { return "local owner admission refused" }
 var buildPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
 func New(owner Owner) (*Platform, error) {
+	if owner.Transport != nil {
+		if _, _, err := owner.Transport.Endpoints(); err != nil {
+			return nil, err
+		}
+	}
 	token, err := steam.ParseToken(owner.Token)
 	parts := strings.Split(owner.Token, ".")
 	if err != nil || len(parts) != 4 || len(parts[2]) != 64 || strconv.FormatUint(token.AccountID, 10) != owner.SteamID || token.OnlineID != owner.OnlineID || owner.Title != "5760" || !buildPattern.MatchString(owner.Build) || (owner.Backend != "steam" && owner.Backend != "lab") {

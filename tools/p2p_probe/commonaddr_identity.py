@@ -7,12 +7,14 @@ librhash; this is not a complete execution of the game's hash implementation.
 """
 
 import argparse
+import base64
 import ctypes
 import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import struct
+import sys
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_64, UC_HOOK_CODE
 from unicorn.x86_const import (
@@ -29,6 +31,8 @@ def main():
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--inspector", required=True, type=Path)
     parser.add_argument("--rhash", required=True, type=Path)
+    parser.add_argument("--documents-stdin", action="store_true",
+                        help="also check synthetic self/advertised/other CommonAddr documents from stdin")
     args = parser.parse_args()
     data = args.image.read_bytes()
     if hashlib.sha256(data).hexdigest() != EXPECTED_IMAGE:
@@ -132,6 +136,19 @@ def main():
             identity(fallback), identity(fallback_auxiliary)),
         "nat_byte_preserved": rewritten[66] == auxiliary[66] == fallback_auxiliary[66] == 3,
     }
+    if args.documents_stdin:
+        documents = json.load(sys.stdin)
+        own, advertised, other = (base64.b64decode(documents[name], validate=True)
+                                  for name in ("self", "advertised", "other"))
+        assert all(len(value) == 67 for value in (own, advertised, other))
+        cases.update({
+            "actual_advertisement_byte_exact": own == advertised,
+            "actual_canonical_ids_distinct": identity(own) != identity(other),
+            "owned_receiver_accepts_actual_advertisement": original_receive_gate(
+                identity(own), identity(advertised)),
+            "owned_receiver_rejects_other_canonical": not original_receive_gate(
+                identity(own), identity(other)),
+        })
     print(json.dumps({"ok": all(cases.values()), **cases}, sort_keys=True))
     if not all(cases.values()):
         raise SystemExit(1)

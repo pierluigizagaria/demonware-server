@@ -44,14 +44,65 @@ signing is still required, as is the independently validated game signature
 patch. With no new settings the existing HTTPS/central behavior stays intact.
 
 Local NAT answers only the exact observed `1e 03 00` and `14 02 00 00` probes,
-using the actual observed source endpoint and bound publisher address. Unknown
+using the actual observed source endpoint and bound publisher address unless
+the optional virtual transport below is negotiated. Unknown
 flags, periodic packets and introductions receive no fabricated response and
 are never forwarded. Their diagnostics contain type/length only. Evidence:
 workspace `docs/PS4_PEER_TRANSPORT.md` (C); local responder implementation (I).
 The [paired-game NAT investigation](P2P_NAT_INVESTIGATION.md) records the
 original classifier fallback and the later NAT-specific failure diagnostic.
-It leaves the responder and CommonAddr NAT byte unchanged while the separate
-pre-party reverse-proxy correction is tested.
+It records the later original-game CommonAddr identity rejection and the
+canonical endpoint correction. The CommonAddr NAT byte remains unchanged.
+
+## Optional virtual endpoints
+
+This server builds and tests independently of any host or platform library.
+Production code uses only the inherited pipe contract; it does not link a
+native host, load Steam, calculate canonical addresses or inspect game binaries.
+The publisher owns CTR advertisement/CommonAddr validation and Demonware NAT
+discovery. The library owns generic endpoint identity, authorization and opaque
+peer transport. Each host owns its socket ABI and physical socket adaptation.
+
+The optional owner field has this exact shape (synthetic example):
+
+```json
+{"transport":{"mode":"virtual-v1","address":"198.18.1.2","port":12345,"game_address":"127.0.0.11","game_port":3074}}
+```
+
+`address` and `port` are the library-supplied canonical IPv4 endpoint;
+`game_address` and `game_port` are the actual local game's physical loopback
+endpoint. Both ports must be nonzero unsigned 16-bit values. The descriptor is
+immutable for that child. The publisher validates its shape and physical source
+binding; address allocation and collision policy belong to the library.
+This mode requires local admission and peer matchmaking. The publisher announces
+`virtual.endpoints.v1` in `ready` only after configuring it; the library must
+refuse an enabled virtual context if that capability is missing. An owner frame
+without `transport` retains the explicit legacy ABI-2 behavior. Existing central
+profiles do not enable this feature.
+
+Only discovery packets from the exact configured game IP **and** port receive
+the canonical endpoint in the observed-client field. Other loopback sources
+retain their actual observed endpoint. The alternate server field remains the
+physical bound publisher listener. Unknown discovery flags are still ignored;
+no remote destination is opened or forwarded by this change.
+
+In virtual mode `peer.endpoint` still authorizes/allocates the peer route, but
+returns that peer's canonical endpoint. The publisher checks that the public
+endpoint in the 67-byte CommonAddr matches it exactly, rejects the original
+invalid-address sentinel, and preserves **all 67 bytes**. Local candidates may
+legitimately use a different port; the host refuses unmapped candidates before
+OS I/O. Own advertisements are checked against the inherited owner endpoint;
+an incompatible update withdraws the private advertisement. A foreign or
+unavailable endpoint does not produce a usable friend record or host document.
+The complete accepted room host JSON, security ID/key, attributes and NAT byte
+remain unchanged. Protected game datagrams are never parsed or rewritten here.
+
+This is an explicit implementation choice (I), not physical NAT discovery or
+Steam FakeIP. The original CommonAddr hash and MAC evidence is documented in
+`P2P_NAT_INVESTIGATION.md`. Unit tests cover exact preservation, peer mismatch,
+endpoint refusal, both IPv4 source representations and foreign-source isolation.
+Optional real-library integration and owned-image instruction probes live under
+`tools/p2p_probe/`; ordinary Go build/test does not require those dependencies.
 
 ## Companion lifecycle
 
@@ -149,7 +200,8 @@ The selected replacement (I) uses the library's dedicated friend advertisement
 query channel. Only currently in-game, namespace-matching Steam friends may
 read the owner's currently live 138 record; no remote writes are exposed.
 The record is bounded to 4096 bytes, owner/context checked, and its common
-address is rewritten to an authorized friend proxy. Nothing is placed in public
+address is validated against an authorized canonical peer endpoint and preserved
+in virtual mode (legacy mode uses its earlier physical-proxy rewrite). Nothing is placed in public
 lobby data. Reserved, orphaned, stale-connection and deleted records are excluded.
 No publication means an honest empty 138/14 result, not invented joinability.
 

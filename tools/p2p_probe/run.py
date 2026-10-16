@@ -11,7 +11,10 @@ import ctypes as C
 import json
 import os
 from pathlib import Path
+import queue
 import subprocess
+import sys
+import threading
 import time
 import uuid
 
@@ -48,13 +51,28 @@ class Event(C.Structure):
                 ("online_id", C.c_char * 17), ("change_kind", C.c_uint32)]
 
 
+class Endpoint(C.Structure):
+    _fields_ = [("size", C.c_uint32), ("address", C.c_char * 16), ("port", C.c_uint32)]
+
+
 def run():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--server", type=Path, required=True)
     parser.add_argument("--party", action="store_true", help="exercise a committed synthetic two-player party")
+    parser.add_argument("--owned-identity-proof", action="store_true",
+                        help="run the owned original receiver gate with the returned synthetic advertisement")
+    parser.add_argument("--owned-image", type=Path)
+    parser.add_argument("--image-inspector", type=Path)
+    parser.add_argument("--rhash-library", type=Path)
     parser.add_argument("--go", type=Path, default=Path(".toolchain/go/bin/go.exe"))
     args = parser.parse_args()
+    if args.owned_identity_proof and not all((args.owned_image, args.image_inspector, args.rhash_library)):
+        parser.error("--owned-identity-proof requires --owned-image, --image-inspector and --rhash-library")
+    if args.owned_identity_proof:
+        args.owned_image = args.owned_image.resolve(strict=True)
+        args.image_inspector = args.image_inspector.resolve(strict=True)
+        args.rhash_library = args.rhash_library.resolve(strict=True)
     repo = Path(__file__).resolve().parents[2]
     root = repo / ".cache" / "p2p-probe" / uuid.uuid4().hex
     root.mkdir(parents=True)
@@ -79,6 +97,9 @@ def run():
     dll.osw_get_result.argtypes = [C.c_void_p, C.c_uint64, C.POINTER(Result)]
     dll.osw_release.argtypes = [C.c_void_p, C.c_uint64]
     dll.osw_poll_event.argtypes = [C.c_void_p, C.POINTER(Event)]
+    dll.osw_enable_virtual_endpoints.argtypes = [C.c_void_p]
+    dll.osw_get_local_endpoint.argtypes = [C.c_void_p, C.POINTER(Endpoint)]
+    dll.osw_route_endpoint.argtypes = [C.c_void_p, C.c_uint32, C.POINTER(Endpoint), C.POINTER(Endpoint)]
 
     def call(ctx, metadata, operation=8, body=b""):
         raw = json.dumps(metadata).encode()
@@ -132,6 +153,8 @@ def run():
             if dll.osw_create_v2(C.byref(config), C.byref(ctx)) != 0:
                 raise RuntimeError("create failed")
             contexts.append(ctx)
+            if dll.osw_enable_virtual_endpoints(ctx) != 0:
+                raise RuntimeError("enable virtual endpoints failed")
             if dll.osw_start(ctx) != 0:
                 raise RuntimeError("start failed")
             until = time.monotonic() + 15
@@ -146,9 +169,14 @@ def run():
                     raise RuntimeError("publisher readiness")
                 time.sleep(.05)
             _, token = call(ctx, {"client_id": "publisher-probe", "scope": "openid"}, 1)
+            endpoint = Endpoint()
+            endpoint.size = C.sizeof(endpoint)
+            if dll.osw_get_local_endpoint(ctx, C.byref(endpoint)) != 0:
+                raise RuntimeError("local canonical endpoint unavailable")
             inputs.append({"Token": token.decode(), "Address": address, "GameBind": game,
                            "Name": config.base.online_id.decode(), "PID": config.lab_account_id,
-                           "PublicKey": base64.b64encode(public).decode(), "Party": args.party})
+                           "PublicKey": base64.b64encode(public).decode(), "Party": args.party,
+                           "Index": index, "Canonical": {"Address":endpoint.address.decode(),"Port":endpoint.port}})
         until = time.monotonic() + 5
         while True:
             if all(len(call(ctx, {"op": "name.lookup", "names": ["LabOne", "LabTwo"]})[0]
@@ -182,11 +210,68 @@ def run():
             call(contexts[1], {"method": "POST", "path": "/v1/sessions/" + session + "/members",
                                "content_type": "application/json"}, 2, b"{}")
             time.sleep(.1)  # bounded fixture synchronization for committed membership
-        completed = subprocess.run([str(root / "client.exe")], input=json.dumps(inputs),
-                                   text=True, capture_output=True, timeout=90)
-        # The helper emits only fixed step names and aggregate booleans.
-        print(completed.stdout.strip())
-        if completed.returncode:
+        # Inherited pipes bridge the synthetic game socket adapter to the same
+        # generic C API that a host uses. Only final assertion records are shown.
+        completed = subprocess.Popen([str(root / "client.exe")], stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                     text=True, bufsize=1)
+        lines = queue.Queue()
+        def read_client():
+            try:
+                for line in completed.stdout:
+                    lines.put(line)
+            finally:
+                lines.put(None)
+        reader = threading.Thread(target=read_client, daemon=True)
+        reader.start()
+        final = None
+        proof_result = None
+        try:
+            completed.stdin.write(json.dumps(inputs) + "\n")
+            completed.stdin.flush()
+            deadline = time.monotonic() + 90
+            while True:
+                line = lines.get(timeout=max(.01, deadline - time.monotonic()))
+                if line is None:
+                    break
+                message = json.loads(line)
+                if not message.get("bridge"):
+                    final = message
+                    print(json.dumps(message, sort_keys=True))
+                    continue
+                if message["operation"] == "route":
+                    endpoint_in = Endpoint(C.sizeof(Endpoint), message["address"].encode(), message["port"])
+                    endpoint_out = Endpoint()
+                    endpoint_out.size = C.sizeof(endpoint_out)
+                    status = dll.osw_route_endpoint(contexts[message["index"]], message["direction"],
+                                                    C.byref(endpoint_in), C.byref(endpoint_out))
+                    reply = {"Status":status,"Address":endpoint_out.address.decode(),"Port":endpoint_out.port}
+                elif message["operation"] == "identity":
+                    reply = {"OK":message["self"] == message["advertised"]}
+                    if args.owned_identity_proof:
+                        proof = subprocess.run([sys.executable,"-B",str(repo / "tools/p2p_probe/commonaddr_identity.py"),
+                            "--image",str(args.owned_image),
+                            "--inspector",str(args.image_inspector),
+                            "--rhash",str(args.rhash_library),
+                            "--documents-stdin"],input=json.dumps(message),text=True,capture_output=True,timeout=15)
+                        proof_result = json.loads(proof.stdout) if proof.returncode == 0 else {"ok":False}
+                        reply["OK"] = proof.returncode == 0 and proof_result.get("ok",False)
+                        (root / "identity-proof.json").write_text(json.dumps(proof_result,indent=2)+"\n")
+                else:
+                    raise RuntimeError("unexpected fixture bridge operation")
+                completed.stdin.write(json.dumps(reply) + "\n")
+                completed.stdin.flush()
+            completed.wait(timeout=max(.01,deadline-time.monotonic()))
+        finally:
+            if completed.poll() is None:
+                completed.kill()
+                completed.wait(timeout=5)
+            completed.stdin.close()
+            completed.stdout.close()
+            reader.join(timeout=2)
+        if proof_result is not None:
+            print(json.dumps({"owned_identity_comparison":proof_result},sort_keys=True))
+        if completed.returncode or final is None or not final.get("ok"):
             for index, ctx in enumerate(contexts):
                 events, _ = call(ctx, {"op": "events.poll"})
                 names = [event.get("event") for event in events.get("events", [])]

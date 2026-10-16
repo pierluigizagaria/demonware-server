@@ -1,13 +1,50 @@
 # Optional publisher integration fixture
 
 Run from the server repository on Windows after building the publisher and an
-orbiSteamworks ABI 2 library. Python uses only its standard library. OpenSSL
+orbiSteamworks ABI 2 library with the optional virtual endpoint C API. The main
+fixture uses Python's standard library. OpenSSL
 must be on `PATH`; the default Go executable is `.toolchain/go/bin/go.exe`.
 
 ```powershell
-python tools/p2p_probe/run.py --library ../orbisteamworks/build/p2p-candidate/orbisteamworks.dll --server bin/demonware-server-p2p-v4.exe
-python tools/p2p_probe/run.py --library ../orbisteamworks/build/p2p-candidate/orbisteamworks.dll --server bin/demonware-server-p2p-v4.exe --party
+python tools/p2p_probe/run.py --library ../orbisteamworks/build/virtual-candidate/orbisteamworks.dll --server bin/demonware-server-canonical-candidate.exe
+python tools/p2p_probe/run.py --library ../orbisteamworks/build/virtual-candidate/orbisteamworks.dll --server bin/demonware-server-canonical-candidate.exe --party
 ```
+
+Use current candidates containing `osw_enable_virtual_endpoints`,
+`osw_get_local_endpoint`, `osw_route_endpoint` and the publisher's
+`virtual.endpoints.v1` capability. Neither project is linked into the other: the optional fixture
+loads only the supplied DLL's public C API and launches the supplied executable.
+
+The fixture enables canonical endpoints before each library context starts.
+Its synthetic game verifies the exact-source NAT discovery result, publishes a
+CommonAddr containing the canonical public endpoint and a distinct local port,
+and requires the friend and room records to preserve every byte. A private pipe
+bridge calls the generic C API to map outbound canonical endpoints to authorized
+physical proxies and inbound proxy sources back to canonical endpoints. UDP is
+sent only to the returned physical proxies, so a direct connection to the other
+fixture game's bind cannot mask a broken provider route. Both pre-room and room
+traffic require the correct canonical source in each direction.
+
+Add `--owned-identity-proof --owned-image PATH --image-inspector PATH --rhash-library PATH` to run the bounded
+original-instruction CommonAddr comparison against the **actual synthetic
+advertisement returned by the publisher**. It requires the owned hash-pinned
+image, an OrbisImage inspector, Python Unicorn and a trusted local
+librhash. It verifies byte-exact preservation, distinct IDs for the two
+canonical endpoints, acceptance of the correct advertisement and rejection of
+the other identity. Only aggregate booleans are emitted; the private report is
+under that run's ignored directory. This optional research dependency is outside
+ordinary server build/test, and remains distinct from a running game test.
+The three paths are mandatory only for that optional proof; the tool makes no
+assumption about sibling repositories or the operator's workspace layout.
+
+Both canonical scenarios passed on 2026-10-16, including the optional original
+comparison with the actual returned synthetic advertisement. The original gate
+accepted the preserved ID, rejected the other canonical ID, and reproduced the
+previous all-slot-rewrite rejection. The pre-room and room routes both preserved
+canonical source identity in each direction; the party variant also retained
+follower selection and disconnect seat removal. Redacted aggregate logs are
+`.cache/p2p-probe/canonical-default.log` and `canonical-party.log`. These are
+implementation fixtures (I), not a completed original-game connection or race.
 
 The fixture reserves publisher loopbacks `127.0.0.60` and `127.0.0.70` (TCP
 8460, 8093, 3074; UDP 3074), and game loopbacks `127.0.0.61:3074` and

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/netip"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -70,6 +71,7 @@ type P2PBackend struct {
 	engine             *asyncHandler
 	owner              uint64
 	ownerText          string
+	canonical          netip.AddrPort
 	mu                 sync.Mutex
 	selectMu           sync.Mutex
 	mutationMu         sync.Mutex // serializes engine mutations with room invalidation
@@ -90,13 +92,14 @@ type P2PBackend struct {
 	advertisement      *friendAdvertisementHandler
 }
 
-func InstallP2P(ctx context.Context, table *lobby.ServiceTable, transport RoomTransport, owner uint64) (*P2PBackend, error) {
+func InstallP2P(ctx context.Context, table *lobby.ServiceTable, transport RoomTransport, owner uint64, canonical netip.AddrPort) (*P2PBackend, error) {
 	engine, ok := table.Handlers[SvcAsyncMatchMaking].(*asyncHandler)
-	if !ok || transport == nil || owner == 0 {
+	if !ok || transport == nil || owner == 0 || (canonical.IsValid() && !validCanonicalEndpoint(canonical)) {
 		return nil, errors.New("invalid P2P dependencies")
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	b := &P2PBackend{ctx: ctx, cancel: cancel, transport: transport, engine: engine, owner: owner, ownerText: strconv.FormatUint(owner, 10), remotes: map[string]*remoteRoomPeer{}, pending: map[string]chan roomPacket{}, acks: map[string]*roomAck{}, rates: map[string]roomRate{}}
+	b.canonical = canonical
 	table.Handlers[SvcAsyncMatchMaking] = b
 	if fallback := table.Handlers[SvcTitleUtilities]; fallback != nil {
 		table.Handlers[SvcTitleUtilities] = &localNameHandler{backend: b, fallback: fallback}

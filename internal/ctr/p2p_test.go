@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"reflect"
 	"slices"
 	"strconv"
@@ -328,7 +329,7 @@ func newRoomFixture(t *testing.T, hub *roomFixtureHub, pid uint64, decorate ...f
 	for _, wrap := range decorate {
 		roomTransport = wrap(roomTransport)
 	}
-	b, err := InstallP2P(context.Background(), table, roomTransport, pid)
+	b, err := InstallP2P(context.Background(), table, roomTransport, pid, netip.AddrPort{})
 	if err != nil {
 		t.Fatal(err)
 	}

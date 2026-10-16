@@ -11,10 +11,9 @@
 // these replies the NAT type stays unknown and the game only offers local
 // games.
 //
-// NAT traversal (29-byte packets, format documented by
-// Protarium-Network/bo2-wiiu-demonware):
+// NAT traversal (29-byte packets, owned CTR serializer 0x1bdc30):
 //
-//	type | u16 version | ID[10] | hmac[4] | sourceAddress[6] | destAddress[6]
+//	type | u16 version | MAC[10] | targetCommonAddrID[4] | sourceAddress[6] | destAddress[6]
 //
 // 0x0A: a joining player asks to be introduced to the host. We send the packet
 // back BYTE FOR BYTE to the destination with type 0x0B (INTRO); the HMAC covers
@@ -49,11 +48,12 @@ type Server struct {
 	BindAddr, NextendoHost string
 	// LocalOnly answers only the two discovery shapes observed in CTR PS4.
 	// It never forwards introductions or responds to unknown flag variants.
-	LocalOnly bool
-	connNum   *atomic.Uint64
-	natSeenMu sync.Mutex
-	natSeen   map[string]int
-	natIntros atomic.Int64
+	LocalOnly    bool
+	localVirtual *localVirtualEndpoint
+	connNum      *atomic.Uint64
+	natSeenMu    sync.Mutex
+	natSeen      map[string]int
+	natIntros    atomic.Int64
 }
 
 // NewServer initializes NAT state without opening sockets or starting workers.
@@ -127,7 +127,7 @@ func (s *Server) servePacket(pc net.PacketConn, port int) {
 			continue
 		}
 		if s.LocalOnly {
-			resp := localDiscoveryReply(buf[:n], ua, serverIP, port)
+			resp := s.localDiscoveryReply(buf[:n], ua, serverIP, port)
 			if len(resp) != 0 {
 				_, _ = pc.WriteTo(resp, addr)
 			} else {

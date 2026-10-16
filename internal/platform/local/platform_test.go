@@ -61,6 +61,31 @@ func TestInvalidOwnerRefused(t *testing.T) {
 	}
 }
 
+func TestVirtualOwnerTransportIsExplicitAndBounded(t *testing.T) {
+	valid := VirtualTransport{Mode: "virtual-v1", Address: "198.19.255.255", Port: 65535, GameAddress: "127.0.0.11", GamePort: 3074}
+	owner := ownerFixture()
+	owner.Transport = &valid
+	if _, err := New(owner); err != nil {
+		t.Fatal("valid virtual owner refused")
+	}
+	for _, change := range []func(*VirtualTransport){
+		func(v *VirtualTransport) { v.Mode = "unknown" },
+		func(v *VirtualTransport) { v.Address = "invalid" },
+		func(v *VirtualTransport) { v.Address = "::ffff:198.18.1.2" },
+		func(v *VirtualTransport) { v.Port = 0 },
+		func(v *VirtualTransport) { v.GameAddress = "198.18.1.2" },
+		func(v *VirtualTransport) { v.GameAddress = "::1" },
+		func(v *VirtualTransport) { v.GamePort = 0 },
+	} {
+		transport := valid
+		change(&transport)
+		owner.Transport = &transport
+		if _, err := New(owner); err == nil {
+			t.Fatal("invalid virtual transport admitted")
+		}
+	}
+}
+
 func TestAdmissionRefusalCategoriesContainNoInput(t *testing.T) {
 	p, _ := New(ownerFixture())
 	valid := string(envelope(ownerFixture().Token))

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"slices"
 	"testing"
 	"time"
 )
@@ -43,6 +44,35 @@ func TestPipeOwnerRequestsAndEOF(t *testing.T) {
 		t.Fatal("EOF did not stop pipe")
 	}
 	p.Wait()
+}
+
+func TestVirtualEndpointReadyCapabilityIsExplicit(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		inR, inW := io.Pipe()
+		outR, outW := io.Pipe()
+		p := New(context.Background(), inR, outW)
+		if enabled {
+			p.EnableVirtualEndpoints()
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		if err := p.Ready(ctx); err != nil {
+			t.Fatal(err)
+		}
+		var ready struct {
+			Capabilities []string `json:"capabilities"`
+		}
+		if err := json.NewDecoder(outR).Decode(&ready); err != nil {
+			t.Fatal(err)
+		}
+		if slices.Contains(ready.Capabilities, "virtual.endpoints.v1") != enabled {
+			t.Fatal("virtual capability not explicitly negotiated")
+		}
+		cancel()
+		p.Close()
+		inW.Close()
+		outR.Close()
+		p.Wait()
+	}
 }
 
 func TestPipeRejectsMalformedOwner(t *testing.T) {

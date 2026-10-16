@@ -33,7 +33,62 @@ type input struct {
 	Token, Address, GameBind, Name, PublicKey string
 	PID                                       uint64
 	Party                                     bool
+	Index                                     int
+	Canonical                                 endpoint
 }
+type endpoint struct {
+	Address string
+	Port    int
+}
+
+var control = json.NewDecoder(os.Stdin)
+
+func bridge(request map[string]any, reply any) {
+	request["bridge"] = true
+	must(json.NewEncoder(os.Stdout).Encode(request) == nil, "fixture bridge request")
+	must(control.Decode(reply) == nil, "fixture bridge reply")
+}
+
+func (p *peer) route(direction int, input *net.UDPAddr) *net.UDPAddr {
+	var reply struct {
+		Status  int
+		Address string
+		Port    int
+	}
+	bridge(map[string]any{"operation": "route", "index": p.config.Index, "direction": direction, "address": input.IP.String(), "port": input.Port}, &reply)
+	must(reply.Status == 0 && reply.Port > 0, "authorized endpoint route")
+	return &net.UDPAddr{IP: net.ParseIP(reply.Address), Port: reply.Port}
+}
+
+func commonAddress(c input) []byte {
+	a := make([]byte, 67)
+	for slot := 0; slot < 11; slot++ {
+		if slot > 0 && slot < 10 {
+			copy(a[slot*6:], []byte{0, 255, 0, 255})
+			continue
+		}
+		copy(a[slot*6:], net.ParseIP(c.Canonical.Address).To4())
+		port := 3074
+		if slot == 10 {
+			port = c.Canonical.Port
+		}
+		binary.LittleEndian.PutUint16(a[slot*6+4:], uint16(port))
+	}
+	a[66] = 3
+	return a
+}
+
+func (p *peer) verifyDiscovery() {
+	server := &net.UDPAddr{IP: net.ParseIP(p.config.Address), Port: 3074}
+	_, err := p.udp.WriteToUDP([]byte{30, 3, 0}, server)
+	must(err == nil, "canonical discovery send")
+	buf := make([]byte, 64)
+	p.udp.SetReadDeadline(time.Now().Add(3 * time.Second))
+	n, source, err := p.udp.ReadFromUDP(buf)
+	want := commonAddress(p.config)[60:66]
+	must(err == nil && source.IP.Equal(server.IP) && source.Port == server.Port && n == 9 && bytes.Equal(buf[:3], []byte{31, 2, 0}) && bytes.Equal(buf[3:n], want), "canonical discovery exact source")
+}
+
 type peer struct {
 	conn   net.Conn
 	keys   demonware.SessionKeys
@@ -155,11 +210,7 @@ func result(raw []byte) *demonware.Reader {
 	return r
 }
 func info(c input) string {
-	a := make([]byte, 67)
-	for i := 0; i < 11; i++ {
-		copy(a[i*6:], net.ParseIP(c.GameBind).To4())
-		binary.LittleEndian.PutUint16(a[i*6+4:], 3074)
-	}
+	a := commonAddress(c)
 	id := make([]byte, 8)
 	key := make([]byte, 16)
 	rand.Read(id)
@@ -181,19 +232,21 @@ func main() {
 		}
 	}()
 	var cfg []input
-	must(json.NewDecoder(os.Stdin).Decode(&cfg) == nil && len(cfg) == 2, "input")
+	must(control.Decode(&cfg) == nil && len(cfg) == 2, "input")
 	a := connect(cfg[0])
 	defer a.conn.Close()
 	defer a.udp.Close()
 	b := connect(cfg[1])
 	defer b.conn.Close()
 	defer b.udp.Close()
+	a.verifyDiscovery()
+	b.verifyDiscovery()
 	// Original friend result layout, queried before an async room exists.
 	attrs := &demonware.Writer{}
 	attrs.Uint64(cfg[0].PID)
 	attrs.String(cfg[0].Name)
 	create := args("Delta")
-	create.Blob(make([]byte, 67))
+	create.Blob(commonAddress(cfg[0]))
 	create.Uint32(1)
 	create.Uint32(8)
 	create.Blob(attrs.Bytes())
@@ -205,9 +258,15 @@ func main() {
 	friend := result(b.call(138, 14, lookup))
 	friendAddress, err := friend.Blob()
 	must(err == nil && len(friendAddress) == 67, "friend advertisement")
+	must(bytes.Equal(friendAddress, commonAddress(cfg[0])), "friend CommonAddr identity preserved")
+	var identityReply struct{ OK bool }
+	bridge(map[string]any{"operation": "identity", "self": base64.StdEncoding.EncodeToString(commonAddress(cfg[0])), "advertised": base64.StdEncoding.EncodeToString(friendAddress), "other": base64.StdEncoding.EncodeToString(commonAddress(cfg[1]))}, &identityReply)
+	must(identityReply.OK, "original CommonAddr receive gate")
 	// Only B read A's advertisement. A has neither looked up B nor allocated
 	// a peer endpoint. Exercise the first datagram before any directory room.
-	preRoomProxy := &net.UDPAddr{IP: net.IP(friendAddress[:4]), Port: int(binary.LittleEndian.Uint16(friendAddress[4:6]))}
+	canonicalA := &net.UDPAddr{IP: net.ParseIP(cfg[0].Canonical.Address), Port: cfg[0].Canonical.Port}
+	canonicalB := &net.UDPAddr{IP: net.ParseIP(cfg[1].Canonical.Address), Port: cfg[1].Canonical.Port}
+	preRoomProxy := b.route(1, canonicalA)
 	must(preRoomProxy.IP.IsLoopback(), "pre-room local proxy")
 	_, err = b.udp.WriteToUDP([]byte("pre-room"), preRoomProxy)
 	must(err == nil, "unilateral pre-room send")
@@ -215,11 +274,17 @@ func main() {
 	preRoomBytes := make([]byte, 128)
 	preRoomCount, reverseProxy, err := a.udp.ReadFromUDP(preRoomBytes)
 	must(err == nil && string(preRoomBytes[:preRoomCount]) == "pre-room" && reverseProxy.IP.IsLoopback(), "unilateral pre-room delivery")
-	_, err = a.udp.WriteToUDP([]byte("pre-room-return"), reverseProxy)
+	fromB := a.route(2, reverseProxy)
+	must(fromB.IP.Equal(canonicalB.IP) && fromB.Port == canonicalB.Port, "reverse source canonical identity")
+	replyProxy := a.route(1, fromB)
+	must(replyProxy.IP.Equal(reverseProxy.IP) && replyProxy.Port == reverseProxy.Port, "stable reverse proxy route")
+	_, err = a.udp.WriteToUDP([]byte("pre-room-return"), replyProxy)
 	must(err == nil, "unilateral pre-room reply")
 	b.udp.SetReadDeadline(time.Now().Add(5 * time.Second))
-	preRoomCount, _, err = b.udp.ReadFromUDP(preRoomBytes)
+	preRoomCount, replySource, err := b.udp.ReadFromUDP(preRoomBytes)
 	must(err == nil && string(preRoomBytes[:preRoomCount]) == "pre-room-return", "unilateral pre-room return")
+	fromA := b.route(2, replySource)
+	must(fromA.IP.Equal(canonicalA.IP) && fromA.Port == canonicalA.Port, "return source canonical identity")
 	names := &demonware.Writer{}
 	names.Uint32(1)
 	names.String(cfg[0].Name)
@@ -290,7 +355,8 @@ func main() {
 		addr, err = base64.StdEncoding.DecodeString(doc.Listen.Address)
 		must(err == nil && len(addr) == 67, "proxy address")
 	}
-	proxy := &net.UDPAddr{IP: net.IP(addr[:4]), Port: int(binary.LittleEndian.Uint16(addr[4:6]))}
+	must(bytes.Equal(addr, commonAddress(cfg[0])), "room CommonAddr identity preserved")
+	proxy := b.route(1, canonicalA)
 	must(proxy.IP.IsLoopback(), "loopback proxy")
 	payload := []byte{0, 255, 1, 2, 3, 4, 5}
 	b.udp.WriteToUDP(payload, proxy)
@@ -298,10 +364,14 @@ func main() {
 	buf := make([]byte, 128)
 	nbytes, source, err := a.udp.ReadFromUDP(buf)
 	must(err == nil && bytes.Equal(buf[:nbytes], payload) && source.IP.IsLoopback(), "lab race proxy delivery")
-	a.udp.WriteToUDP([]byte("return"), source)
+	fromB = a.route(2, source)
+	must(fromB.IP.Equal(canonicalB.IP) && fromB.Port == canonicalB.Port, "room reverse identity")
+	a.udp.WriteToUDP([]byte("return"), a.route(1, fromB))
 	b.udp.SetReadDeadline(time.Now().Add(5 * time.Second))
-	nbytes, _, err = b.udp.ReadFromUDP(buf)
+	nbytes, source, err = b.udp.ReadFromUDP(buf)
 	must(err == nil && string(buf[:nbytes]) == "return", "lab return datagram")
+	fromA = b.route(2, source)
+	must(fromA.IP.Equal(canonicalA.IP) && fromA.Port == canonicalA.Port, "room return identity")
 	// Disconnect without another room RPC: the party follower has no remote
 	// request object on the owner, but its directory departure must free its seat.
 	b.conn.Close()
@@ -316,6 +386,6 @@ func main() {
 		Players map[string]string `json:"players"`
 	}
 	must(err == nil && json.Unmarshal([]byte(backend), &membership) == nil && len(membership.Players) == 1 && membership.Players[strconv.FormatUint(cfg[0].PID, 10)] == "expected", "departed member seat released")
-	output, _ := json.Marshal(map[string]any{"ok": true, "evidence": "implementation fixture, simulated lab", "publishers": 2, "signed_auth": true, "encrypted_lobby": true, "friend_advertisement": true, "friend_ad_before_party": !cfg[0].Party, "pre_room_bidirectional_proxy": true, "local_names": true, "private_statistics": true, "owner_create_member_join": !cfg[0].Party, "committed_party_search": cfg[0].Party, "bidirectional_proxy": true, "member_departure": true})
+	output, _ := json.Marshal(map[string]any{"ok": true, "evidence": "implementation fixture, simulated lab", "publishers": 2, "signed_auth": true, "encrypted_lobby": true, "friend_advertisement": true, "friend_ad_before_party": !cfg[0].Party, "pre_room_bidirectional_proxy": true, "local_names": true, "private_statistics": true, "owner_create_member_join": !cfg[0].Party, "committed_party_search": cfg[0].Party, "bidirectional_proxy": true, "member_departure": true, "canonical_discovery": true, "exact_commonaddr_preserved": true, "canonical_routes_both_directions": true})
 	fmt.Println(string(output))
 }

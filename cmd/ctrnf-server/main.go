@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -69,6 +70,7 @@ func runServer(ctx context.Context, cfg config.Config) error {
 	var platform auth.PublisherPlatform
 	var trustID string
 	var ownerPID uint64
+	var virtual *local.VirtualTransport
 	var err error
 	if cfg.Admission == "local" {
 		pipe = companion.New(ctx, os.Stdin, os.Stdout)
@@ -83,6 +85,10 @@ func runServer(ctx context.Context, cfg config.Config) error {
 		}
 		platform, trustID = localPlatform, localPlatform.TrustID()
 		ownerPID = localPlatform.PID()
+		virtual = owner.Transport
+		if virtual != nil && cfg.Matchmaking != "steam" {
+			return errors.New("virtual transport requires peer matchmaking")
+		}
 	} else {
 		platform, trustID, err = loadPublisherPlatform(cfg)
 	}
@@ -121,7 +127,19 @@ func runServer(ctx context.Context, cfg config.Config) error {
 		})
 	}
 	if cfg.Matchmaking == "steam" {
-		backend, err := ctr.InstallP2P(ctx, i.lobby.Table, pipe, ownerPID)
+		var canonical netip.AddrPort
+		if virtual != nil {
+			game, endpoint, err := virtual.Endpoints()
+			if err != nil {
+				return finish(err)
+			}
+			if err := i.nat.SetLocalVirtualEndpoint(game, endpoint); err != nil {
+				return finish(err)
+			}
+			canonical = endpoint
+			pipe.EnableVirtualEndpoints()
+		}
+		backend, err := ctr.InstallP2P(ctx, i.lobby.Table, pipe, ownerPID, canonical)
 		if err != nil {
 			return finish(err)
 		}
