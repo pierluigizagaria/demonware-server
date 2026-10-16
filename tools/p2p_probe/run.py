@@ -187,6 +187,12 @@ def run():
         # The helper emits only fixed step names and aggregate booleans.
         print(completed.stdout.strip())
         if completed.returncode:
+            for index, ctx in enumerate(contexts):
+                events, _ = call(ctx, {"op": "events.poll"})
+                names = [event.get("event") for event in events.get("events", [])]
+                print(json.dumps({"context_index": index, "room_selected_count": names.count("room.selected"),
+                                  "room_changed_count": names.count("room.changed"),
+                                  "room_closed_count": names.count("room.closed")}))
             raise RuntimeError("publisher engine integration failed")
         if args.party:
             events, _ = call(contexts[1], {"op": "events.poll"})

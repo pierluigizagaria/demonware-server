@@ -181,3 +181,9 @@ UDP through the previously advertised friend proxy. It exposed and verified a
 library fix that promotes the existing socket into the shared room: the first
 follower packet can then establish the owner's reverse endpoint using validated
 membership. This does not establish how the real game propagates party state.
+Both probe variants now disconnect the member's encrypted lobby connection and
+require an owner document containing only the remaining seat. The party variant
+exposed two independent defects: the publisher did not release a follower that
+had never sent a room request, and the library immediately rejoined an explicitly
+left selection. The publisher's directory-member diff and the library's explicit
+leave suppression together pass this end-to-end implementation regression.

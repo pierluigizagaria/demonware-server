@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/pierluigizagaria/demonware-server/internal/demonware"
@@ -286,6 +287,20 @@ func main() {
 	b.udp.SetReadDeadline(time.Now().Add(5 * time.Second))
 	nbytes, _, err = b.udp.ReadFromUDP(buf)
 	must(err == nil && string(buf[:nbytes]) == "return", "lab return datagram")
-	output, _ := json.Marshal(map[string]any{"ok": true, "evidence": "implementation fixture, simulated lab", "publishers": 2, "signed_auth": true, "encrypted_lobby": true, "friend_advertisement": true, "friend_ad_before_party": !cfg[0].Party, "local_names": true, "private_statistics": true, "owner_create_member_join": !cfg[0].Party, "committed_party_search": cfg[0].Party, "bidirectional_proxy": true})
+	// Disconnect without another room RPC: the party follower has no remote
+	// request object on the owner, but its directory departure must free its seat.
+	b.conn.Close()
+	r = demonware.NewReader(a.push())
+	event, _ = r.Uint32()
+	must(event == 2006, "member departure update event")
+	_, _ = r.Uint64()
+	_, _ = r.Uint64()
+	_, _ = r.String()
+	backend, err := r.String()
+	var membership struct {
+		Players map[string]string `json:"players"`
+	}
+	must(err == nil && json.Unmarshal([]byte(backend), &membership) == nil && len(membership.Players) == 1 && membership.Players[strconv.FormatUint(cfg[0].PID, 10)] == "expected", "departed member seat released")
+	output, _ := json.Marshal(map[string]any{"ok": true, "evidence": "implementation fixture, simulated lab", "publishers": 2, "signed_auth": true, "encrypted_lobby": true, "friend_advertisement": true, "friend_ad_before_party": !cfg[0].Party, "local_names": true, "private_statistics": true, "owner_create_member_join": !cfg[0].Party, "committed_party_search": cfg[0].Party, "bidirectional_proxy": true, "member_departure": true})
 	fmt.Println(string(output))
 }
