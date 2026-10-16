@@ -155,3 +155,12 @@ names, a foreign-statistics empty result, owner create/member join and opaque
 bidirectional UDP proxy delivery. Tokens exist only in process memory/stdin;
 runtime keys, databases and child logs stay in ignored `.cache/`. This is still
 simulated lab evidence (I), not a game race or two Steam accounts.
+The reproducible source and invocation are in `tools/p2p_probe/README.md`.
+The P2P, pipe, local admission, diagnostics and configuration packages also pass
+Go's race detector with the existing project-local native Clang toolchain.
+The probe's `--party` variant passes synthetic invitation/acceptance, committed
+membership, a leader search claiming both members, follower room selection and
+UDP through the previously advertised friend proxy. It exposed and verified a
+library fix that promotes the existing socket into the shared room: the first
+follower packet can then establish the owner's reverse endpoint using validated
+membership. This does not establish how the real game propagates party state.
