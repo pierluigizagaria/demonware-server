@@ -216,6 +216,26 @@ publisher handler is reachable from peer room messages.
 
 ## Evidence status
 
+Current acceptance update, 2026-10-18: the user has confirmed original native
+Online/Pit Stop with local admission, reciprocal Lab friends and Join, an
+invitation, and a complete private race through return to the lobby. The
+accepted private run used native `cd41018`, provider `4ab63f2` and publisher
+`112e884`, with bidirectional proxy traffic and preserved canonical addresses.
+Subsequent public-entry retests with provider `cc141ec` and publisher `be702a4`
+measure four search-to-host-connected-report intervals of 1.930–2.133 seconds.
+These are original-game simulated Lab observations, not live Steam peer tests.
+The current complete public race remains pending human confirmation. The
+original two-PC Steam invitation/race procedure remains a separate handoff.
+
+The latest optional two-publisher default/party integrations pass with those
+current artifacts. A read-only audit of the actual Lab databases confirms
+distinct files and local owner/trust bindings, with no foreign-owner rows in
+any player-keyed table. It does not prove reward deltas or rewards for both
+players: receipt counts are A=0 and B=1. Ordinary component tests establish
+contracts independently; optional integration and human acceptance remain
+separate evidence. The implementation checkpoints below retain their original
+scope and do not override these later observations.
+
 Owner admission, configuration refusal, exact NAT shapes, pipe correlation and
 EOF are fixture-tested (I). The complete existing Go suite passes on the Windows
 host, including the unchanged dispatcher baseline. Sandboxed TCP fixtures hang
