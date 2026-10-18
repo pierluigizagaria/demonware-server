@@ -60,6 +60,10 @@ def run():
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--server", type=Path, required=True)
     parser.add_argument("--party", action="store_true", help="exercise a committed synthetic two-player party")
+    parser.add_argument("--loopback", action="store_true", help="use loopback-v1 with no host endpoint translation")
+    parser.add_argument("--weak-native-token", action="store_true", help="exercise explicit local fabricated-token admission")
+    parser.add_argument("--mixed-economy", action="store_true", help="match normal and unlock-all publishers in one namespace")
+    parser.add_argument("--app-id", type=int, default=480)
     parser.add_argument("--owned-identity-proof", action="store_true",
                         help="run the owned original receiver gate with the returned synthetic advertisement")
     parser.add_argument("--owned-image", type=Path)
@@ -67,6 +71,8 @@ def run():
     parser.add_argument("--rhash-library", type=Path)
     parser.add_argument("--go", type=Path, default=Path(".toolchain/go/bin/go.exe"))
     args = parser.parse_args()
+    if not 1 <= args.app_id <= 0xffffffff:
+        parser.error("--app-id must be a positive uint32")
     if args.owned_identity_proof and not all((args.owned_image, args.image_inspector, args.rhash_library)):
         parser.error("--owned-identity-proof requires --owned-image, --image-inspector and --rhash-library")
     if args.owned_identity_proof:
@@ -98,6 +104,10 @@ def run():
     dll.osw_release.argtypes = [C.c_void_p, C.c_uint64]
     dll.osw_poll_event.argtypes = [C.c_void_p, C.POINTER(Event)]
     dll.osw_enable_virtual_endpoints.argtypes = [C.c_void_p]
+    if args.loopback:
+        dll.osw_enable_loopback_endpoints.argtypes = [C.c_void_p]
+    if args.app_id != 480:
+        dll.osw_set_app_id.argtypes = [C.c_void_p, C.c_uint32]
     dll.osw_get_local_endpoint.argtypes = [C.c_void_p, C.POINTER(Endpoint)]
     dll.osw_route_endpoint.argtypes = [C.c_void_p, C.c_uint32, C.POINTER(Endpoint), C.POINTER(Endpoint)]
 
@@ -139,6 +149,10 @@ def run():
                    "AUTH_PORT": "8460", "LOBBY_PORTS": "3074", "NAT_PORT": "3074", "DASH_PORT": "8093",
                    "CTR_AUTH_SIGNING_KEY": str(root / "response.pem"), "DATA_DIR": str(state),
                    "OSW_COMPANION_STDERR": str(state / "child.log")}
+            if args.weak_native_token:
+                env["CTR_LOCAL_WEAK_TOKEN"] = "1"
+            if args.mixed_economy and index == 1:
+                env["CTR_UNLOCK_ALL"] = "1"
             config = Config2()
             config.base.size, config.base.abi_version = C.sizeof(config), 2
             config.base.online_id = b"LabOne" if index == 0 else b"LabTwo"
@@ -153,8 +167,11 @@ def run():
             if dll.osw_create_v2(C.byref(config), C.byref(ctx)) != 0:
                 raise RuntimeError("create failed")
             contexts.append(ctx)
-            if dll.osw_enable_virtual_endpoints(ctx) != 0:
-                raise RuntimeError("enable virtual endpoints failed")
+            enable_endpoints = dll.osw_enable_loopback_endpoints if args.loopback else dll.osw_enable_virtual_endpoints
+            if enable_endpoints(ctx) != 0:
+                raise RuntimeError("enable canonical endpoints failed")
+            if args.app_id != 480 and dll.osw_set_app_id(ctx, args.app_id) != 0:
+                raise RuntimeError("set app ID failed")
             if dll.osw_start(ctx) != 0:
                 raise RuntimeError("start failed")
             until = time.monotonic() + 15
@@ -169,6 +186,8 @@ def run():
                     raise RuntimeError("publisher readiness")
                 time.sleep(.05)
             _, token = call(ctx, {"client_id": "publisher-probe", "scope": "openid"}, 1)
+            if args.weak_native_token:
+                token = f"sacredfire.{config.base.online_id.decode()}.{config.lab_account_id:016x}".encode()
             endpoint = Endpoint()
             endpoint.size = C.sizeof(endpoint)
             if dll.osw_get_local_endpoint(ctx, C.byref(endpoint)) != 0:
@@ -176,6 +195,8 @@ def run():
             inputs.append({"Token": token.decode(), "Address": address, "GameBind": game,
                            "Name": config.base.online_id.decode(), "PID": config.lab_account_id,
                            "PublicKey": base64.b64encode(public).decode(), "Party": args.party,
+                           "Loopback": args.loopback, "WeakNativeToken": args.weak_native_token,
+                           "MixedEconomy": args.mixed_economy,
                            "Index": index, "Canonical": {"Address":endpoint.address.decode(),"Port":endpoint.port}})
         until = time.monotonic() + 5
         while True:
@@ -240,6 +261,8 @@ def run():
                     print(json.dumps(message, sort_keys=True))
                     continue
                 if message["operation"] == "route":
+                    if args.loopback:
+                        raise RuntimeError("loopback fixture must not request host endpoint translation")
                     endpoint_in = Endpoint(C.sizeof(Endpoint), message["address"].encode(), message["port"])
                     endpoint_out = Endpoint()
                     endpoint_out.size = C.sizeof(endpoint_out)

@@ -1,13 +1,15 @@
 # Optional publisher integration fixture
 
 Run from the server repository on Windows after building the publisher and an
-orbiSteamworks ABI 2 library with the optional virtual endpoint C API. The main
+orbiSteamworks ABI 2 library with the optional canonical endpoint C API. The main
 fixture uses Python's standard library. OpenSSL
 must be on `PATH`; the default Go executable is `.toolchain/go/bin/go.exe`.
 
 ```powershell
 python tools/p2p_probe/run.py --library ../orbisteamworks/build/virtual-candidate/orbisteamworks.dll --server bin/demonware-server-canonical-candidate.exe
 python tools/p2p_probe/run.py --library ../orbisteamworks/build/virtual-candidate/orbisteamworks.dll --server bin/demonware-server-canonical-candidate.exe --party
+python tools/p2p_probe/run.py --library ../orbisteamworks/build/loopback-candidate/orbisteamworks.dll --server bin/demonware-server-bridge-candidate.exe --loopback --mixed-economy --weak-native-token
+python tools/p2p_probe/run.py --library ../orbisteamworks/build/loopback-candidate/orbisteamworks.dll --server bin/demonware-server-bridge-candidate.exe --loopback --mixed-economy --party --app-id 482
 ```
 
 Use current candidates containing `osw_enable_virtual_endpoints`,
@@ -104,3 +106,61 @@ Private logs are `.cache/p2p-probe/preparty-before-fix.log`,
 These are implementation fixtures (I), not live Steam, native game menu, actual
 race or two-PC acceptance. Party propagation inside CTR and embedded race
 addresses still need game evidence.
+
+## Loopback and native admission variants
+
+`--loopback` selects `osw_enable_loopback_endpoints` and requires the publisher's
+`loopback.endpoints.v1` acknowledgement. The client never calls the route API:
+it sends directly to the returned canonical endpoint and compares the actual
+received socket source with the other canonical endpoint. The control pipe
+refuses any route request in this mode. The synthetic games remain on distinct
+physical loopbacks outside the reserved canonical range, so directly reaching
+the other game cannot satisfy these assertions.
+
+`--weak-native-token` explicitly sets `CTR_LOCAL_WEAK_TOKEN=1` for both children
+and authenticates with the upstream native token shape. Before each successful
+signed authentication it requires a foreign-account token to receive HTTP 403.
+Without this switch the original pipe capability is used. `--mixed-economy`
+uses normal policy for the first child and unlock-all for the second, with
+distinct databases and the identical platform namespace. Both scenarios retain
+the foreign-statistics empty-result assertion; no economy data enters peer RPCs.
+
+`--app-id` accepts a positive uint32 and defaults to 480. A non-default value
+requires `osw_set_app_id`. This option exercises only the synthetic Lab backend;
+it makes no claim about owning or launching a Steam app. Canonical endpoints
+remain deterministic. Windows may reserve a selected port; binding then fails
+closed instead of finding another route or silently changing the namespace.
+
+## Bridge B1 evidence (2026-10-19)
+
+Production publisher source `f5f0c62` passes the complete Go suite and vet.
+The local/auth/companion/config/NAT/CTR packages also pass the race detector.
+The bounded owned-image probe now explicitly accepts distinct `127.64/10`
+canonical identities and rejects another peer's ID without changing the NAT
+byte or MAC/identity checks.
+
+The actual provider DLL and two actual publisher children pass:
+
+- loopback-v1, normal/unlock-all, weak owner-token admission, unilateral friend
+  bootstrap before any party, public room creation/join and departure;
+- loopback-v1, normal/unlock-all, inherited capabilities and committed party
+  operation with AppID 480;
+- the same party variant with explicit synthetic AppID 482 and owned-image
+  comparison of the advertisement actually returned by the publisher;
+- the unchanged default virtual-v1 scenario, including host route translation.
+
+Every successful loopback run verifies exact-source NAT discovery, signed HTTP
+authentication, encrypted lobby tasks, all 67 CommonAddr bytes, bidirectional
+pre-room and room UDP with actual canonical socket sources, local name lookup,
+foreign-statistics isolation and member departure. These are implementation
+fixtures (I), not unmodified-game, Steam or two-PC acceptance.
+
+The explicit AppID 481 variant fails closed before returning a friend record.
+A separate socket probe reproduced WSAEACCES 10013 for its deterministic port
+62201 on this Windows host; the same variant at 482 binds successfully. The
+runtime contains no port or namespace fallback. Private aggregate evidence is
+retained in `.cache/bridge-loopback-integration.log`,
+`.cache/bridge-loopback-party480.log`, `.cache/bridge-loopback-party482.log`,
+`.cache/bridge-virtual-regression.log`, and `.cache/bridge-loopback-app481.log`.
+Source/build hashes for the final candidate are retained in the private build
+record; no executable, key, account file or generated database is committed.

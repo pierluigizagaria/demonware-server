@@ -120,6 +120,10 @@ def main():
     auxiliary = original[:6] + proxy * 9 + original[60:]
     fallback = original[:60] + empty + original[66:]
     fallback_auxiliary = fallback[:6] + proxy * 9 + fallback[60:]
+    loopback = (endpoint((127, 0, 0, 1), 3074) + empty * 9
+                + endpoint((127, 64, 1, 2), 45000) + bytes([3]))
+    loopback_other = (endpoint((127, 0, 0, 1), 3074) + empty * 9
+                      + endpoint((127, 64, 1, 3), 45000) + bytes([3]))
     cases = {
         "all_slots_change_id": identity(original) != identity(rewritten),
         "owned_receiver_rejects_all_slots": not original_receive_gate(
@@ -135,6 +139,12 @@ def main():
         "owned_receiver_accepts_fallback_auxiliary": original_receive_gate(
             identity(fallback), identity(fallback_auxiliary)),
         "nat_byte_preserved": rewritten[66] == auxiliary[66] == fallback_auxiliary[66] == 3,
+        "loopback_public_is_identity": original_public_selection(loopback[60:66]),
+        "loopback_canonical_ids_distinct": identity(loopback) != identity(loopback_other),
+        "owned_receiver_accepts_loopback_canonical": original_receive_gate(
+            identity(loopback), identity(loopback)),
+        "owned_receiver_rejects_other_loopback": not original_receive_gate(
+            identity(loopback), identity(loopback_other)),
     }
     if args.documents_stdin:
         documents = json.load(sys.stdin)

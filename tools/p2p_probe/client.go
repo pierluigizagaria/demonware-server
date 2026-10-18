@@ -33,6 +33,7 @@ type input struct {
 	Token, Address, GameBind, Name, PublicKey string
 	PID                                       uint64
 	Party                                     bool
+	Loopback, WeakNativeToken, MixedEconomy   bool
 	Index                                     int
 	Canonical                                 endpoint
 }
@@ -50,6 +51,11 @@ func bridge(request map[string]any, reply any) {
 }
 
 func (p *peer) route(direction int, input *net.UDPAddr) *net.UDPAddr {
+	if p.config.Loopback {
+		// An unmodified host uses the canonical socket directly. Inbound
+		// identity assertions below inspect the actual OS datagram source.
+		return input
+	}
 	var reply struct {
 		Status  int
 		Address string
@@ -109,6 +115,15 @@ func connect(c input) *peer {
 	e, _ := json.Marshal(map[string]string{"token": string(t)})
 	body, _ := json.Marshal(map[string]string{"title_id": "5760", "auth_task": "46", "iv_seed": "1", "extra_data": string(e)})
 	h := &http.Client{Timeout: 10 * time.Second}
+	if c.WeakNativeToken {
+		foreignToken, _ := json.Marshal(map[string]string{"id_token": fmt.Sprintf("sacredfire.Same.Name.%016x", c.PID+123)})
+		foreignExtra, _ := json.Marshal(map[string]string{"token": string(foreignToken)})
+		foreignBody, _ := json.Marshal(map[string]string{"title_id": "5760", "auth_task": "46", "iv_seed": "1", "extra_data": string(foreignExtra)})
+		refused, err := h.Post("http://"+c.Address+":8460/auth/", "application/json", bytes.NewReader(foreignBody))
+		must(err == nil, "foreign native token request")
+		refused.Body.Close()
+		must(refused.StatusCode == http.StatusForbidden, "foreign native account refused")
+	}
 	r, err := h.Post("http://"+c.Address+":8460/auth/", "application/json", bytes.NewReader(body))
 	must(err == nil, "local HTTP request")
 	defer r.Body.Close()
@@ -386,6 +401,6 @@ func main() {
 		Players map[string]string `json:"players"`
 	}
 	must(err == nil && json.Unmarshal([]byte(backend), &membership) == nil && len(membership.Players) == 1 && membership.Players[strconv.FormatUint(cfg[0].PID, 10)] == "expected", "departed member seat released")
-	output, _ := json.Marshal(map[string]any{"ok": true, "evidence": "implementation fixture, simulated lab", "publishers": 2, "signed_auth": true, "encrypted_lobby": true, "friend_advertisement": true, "friend_ad_before_party": !cfg[0].Party, "pre_room_bidirectional_proxy": true, "local_names": true, "private_statistics": true, "owner_create_member_join": !cfg[0].Party, "committed_party_search": cfg[0].Party, "bidirectional_proxy": true, "member_departure": true, "canonical_discovery": true, "exact_commonaddr_preserved": true, "canonical_routes_both_directions": true})
+	output, _ := json.Marshal(map[string]any{"ok": true, "evidence": "implementation fixture, simulated lab", "publishers": 2, "signed_auth": true, "encrypted_lobby": true, "friend_advertisement": true, "friend_ad_before_party": !cfg[0].Party, "pre_room_bidirectional_proxy": true, "local_names": true, "private_statistics": true, "owner_create_member_join": !cfg[0].Party, "committed_party_search": cfg[0].Party, "bidirectional_proxy": true, "member_departure": true, "canonical_discovery": true, "exact_commonaddr_preserved": true, "canonical_routes_both_directions": true, "loopback_without_host_translation": cfg[0].Loopback, "weak_native_token_owner_only": cfg[0].WeakNativeToken, "mixed_economy": cfg[0].MixedEconomy})
 	fmt.Println(string(output))
 }

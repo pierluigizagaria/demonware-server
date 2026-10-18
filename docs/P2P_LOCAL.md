@@ -255,6 +255,18 @@ publisher handler is reachable from peer room messages.
 
 ## Evidence status
 
+Bridge B1 update, 2026-10-19: publisher `f5f0c62` adds the opt-in descriptor and
+weak owner-token mode. The complete Go suite, vet and six relevant race-detector
+package suites pass. An actual-DLL/two-publisher fixture passes loopback-v1
+without host endpoint translation, with mixed normal/unlock-all policy and
+weak owner admission, plus a party variant at AppIDs 480 and 482. The owned-image
+receiver comparison accepts the exact returned synthetic CommonAddr and rejects
+another identity. Virtual-v1 regression also passes. AppID 481's deterministic
+reserved Windows port fails closed, as documented in
+`tools/p2p_probe/README.md`. This is implementation evidence (I), not bridge B3
+unmodified-native gameplay or live Steam acceptance; the following older
+human observations apply to their original modified-host artifacts only.
+
 Current acceptance update, 2026-10-18: the user has confirmed original native
 Online/Pit Stop with local admission, reciprocal Lab friends and Join, an
 invitation, and a complete private race through return to the lobby. The
