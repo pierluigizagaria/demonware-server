@@ -68,6 +68,11 @@ func TestLoopbackOwnerTransportAndAppNamespace(t *testing.T) {
 	valid := VirtualTransport{Mode: "loopback-v1", Address: "127.64.0.1", Port: 1024, GameAddress: "127.0.0.1", GamePort: 3074}
 	o := ownerFixture()
 	o.Transport = &valid
+	if _, err := New(o); err == nil {
+		t.Fatal("loopback owner without explicit app ID admitted")
+	}
+	defaultApp := uint32(480)
+	o.AppID = &defaultApp
 	if _, err := New(o); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +93,6 @@ func TestLoopbackOwnerTransportAndAppNamespace(t *testing.T) {
 	}
 	o = ownerFixture()
 	old, _ := New(o)
-	defaultApp := uint32(480)
 	o.AppID = &defaultApp
 	current, _ := New(o)
 	if old.TrustID() != current.TrustID() {

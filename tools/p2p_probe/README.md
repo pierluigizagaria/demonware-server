@@ -116,6 +116,8 @@ received socket source with the other canonical endpoint. The control pipe
 refuses any route request in this mode. The synthetic games remain on distinct
 physical loopbacks outside the reserved canonical range, so directly reaching
 the other game cannot satisfy these assertions.
+The owner frame must explicitly include the configured `app_id` even for 480;
+the loopback path has no missing-field or transport-mode fallback.
 
 `--weak-native-token` explicitly sets `CTR_LOCAL_WEAK_TOKEN=1` for both children
 and authenticates with the upstream native token shape. Before each successful
@@ -125,8 +127,9 @@ uses normal policy for the first child and unlock-all for the second, with
 distinct databases and the identical platform namespace. Both scenarios retain
 the foreign-statistics empty-result assertion; no economy data enters peer RPCs.
 
-`--app-id` accepts a positive uint32 and defaults to 480. A non-default value
-requires `osw_set_app_id`. This option exercises only the synthetic Lab backend;
+`--app-id` accepts a positive uint32 and defaults to 480. The loopback fixture
+always requires and calls `osw_set_app_id`; the separate virtual fixture also
+uses that export for a non-default value. This option exercises only the synthetic Lab backend;
 it makes no claim about owning or launching a Steam app. Canonical endpoints
 remain deterministic. Windows may reserve a selected port; binding then fails
 closed instead of finding another route or silently changing the namespace.

@@ -86,6 +86,9 @@ func New(owner Owner) (*Platform, error) {
 // HTTP adapter must supply the actual socket source through AuthenticateFrom;
 // Authenticate alone never admits a weak token. The pipe owner stays authoritative.
 func NewWithWeakToken(owner Owner, weakToken bool) (*Platform, error) {
+	if owner.Transport != nil && owner.Transport.Mode == "loopback-v1" && owner.AppID == nil {
+		return nil, errors.New("loopback transport requires explicit app ID")
+	}
 	appID := uint32(480)
 	if owner.AppID != nil {
 		appID = *owner.AppID

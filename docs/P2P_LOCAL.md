@@ -48,8 +48,10 @@ initial name until the context is restarted. Explicit configured names remain
 fixed. This is a local replacement protocol, not a Steam-ticket claim.
 
 SQLite binds to a separate local namespace including backend, realm and owner.
-The optional owner `app_id` is a positive numeric uint32; omission means 480
-for older parents. It also binds the local trust namespace. Lab and Steam
+The owner `app_id` is a positive numeric uint32 and is mandatory for
+`loopback-v1`; absence or null is rejected rather than defaulted. Independently
+selected legacy/virtual-v1 paths retain their existing default 480. The value
+also binds the local trust namespace. Lab and Steam
 identities or different AppIDs cannot share a database. Normal/unlock-all remain
 fixed per instance and require separate databases and game saves. Build changes
 do not reset the owner's progression; discovery matches the full build namespace.
@@ -126,6 +128,7 @@ Optional real-library integration and owned-image instruction probes live under
 ### Loopback-global endpoints
 
 The additive `loopback-v1` descriptor has the same five fields as `virtual-v1`.
+Its owner frame must explicitly carry `app_id`, including when the value is 480.
 Its canonical endpoint is in the provider-reserved `127.64.0.0/10` range with a
 port from 1024 through 65535. The game source must be a specific loopback IPv4
 endpoint outside that reserved range; wildcard sources are not descriptors.

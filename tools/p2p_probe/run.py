@@ -103,13 +103,14 @@ def run():
     dll.osw_get_result.argtypes = [C.c_void_p, C.c_uint64, C.POINTER(Result)]
     dll.osw_release.argtypes = [C.c_void_p, C.c_uint64]
     dll.osw_poll_event.argtypes = [C.c_void_p, C.POINTER(Event)]
-    dll.osw_enable_virtual_endpoints.argtypes = [C.c_void_p]
     if args.loopback:
         dll.osw_enable_loopback_endpoints.argtypes = [C.c_void_p]
-    if args.app_id != 480:
+    else:
+        dll.osw_enable_virtual_endpoints.argtypes = [C.c_void_p]
+        dll.osw_route_endpoint.argtypes = [C.c_void_p, C.c_uint32, C.POINTER(Endpoint), C.POINTER(Endpoint)]
+    if args.loopback or args.app_id != 480:
         dll.osw_set_app_id.argtypes = [C.c_void_p, C.c_uint32]
     dll.osw_get_local_endpoint.argtypes = [C.c_void_p, C.POINTER(Endpoint)]
-    dll.osw_route_endpoint.argtypes = [C.c_void_p, C.c_uint32, C.POINTER(Endpoint), C.POINTER(Endpoint)]
 
     def call(ctx, metadata, operation=8, body=b""):
         raw = json.dumps(metadata).encode()
@@ -170,7 +171,7 @@ def run():
             enable_endpoints = dll.osw_enable_loopback_endpoints if args.loopback else dll.osw_enable_virtual_endpoints
             if enable_endpoints(ctx) != 0:
                 raise RuntimeError("enable canonical endpoints failed")
-            if args.app_id != 480 and dll.osw_set_app_id(ctx, args.app_id) != 0:
+            if (args.loopback or args.app_id != 480) and dll.osw_set_app_id(ctx, args.app_id) != 0:
                 raise RuntimeError("set app ID failed")
             if dll.osw_start(ctx) != 0:
                 raise RuntimeError("start failed")
