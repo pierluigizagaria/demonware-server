@@ -224,14 +224,20 @@ accepted private run used native `cd41018`, provider `4ab63f2` and publisher
 Subsequent public-entry retests with provider `cc141ec` and publisher `be702a4`
 measure four search-to-host-connected-report intervals of 1.930–2.133 seconds.
 These are original-game simulated Lab observations, not live Steam peer tests.
-The current complete public race remains pending human confirmation. The
-original two-PC Steam invitation/race procedure remains a separate handoff.
+The user subsequently confirmed public-race results on both clients; captured
+load/return markers and bidirectional proxy counters corroborate that bounded
+Lab run. A later native-only status-polling correction (`065173e`) also restored
+fresh invitation acceptance into the same group, confirmed by the user. The
+publisher binary remains `be702a4`. The original two-PC Steam invitation/race
+procedure remains a separate handoff.
 
 The latest optional two-publisher default/party integrations pass with those
 current artifacts. A read-only audit of the actual Lab databases confirms
 distinct files and local owner/trust bindings, with no foreign-owner rows in
 any player-keyed table. It does not prove reward deltas or rewards for both
-players: receipt counts are A=0 and B=1. Ordinary component tests establish
+players: after the public run, receipt counts are A=0 and B=2. Results alone do
+not distinguish a finish from DNF or establish a valid reward report from both
+players. Ordinary component tests establish
 contracts independently; optional integration and human acceptance remain
 separate evidence. The implementation checkpoints below retain their original
 scope and do not override these later observations.
