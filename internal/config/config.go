@@ -36,6 +36,7 @@ type Config struct {
 	Matchmaking                           string
 	P2PTiming                             bool
 	AuthHTTP                              bool
+	LocalWeakToken                        bool
 	Companion                             string
 	SteamHelper, SteamLibrary, SteamRealm string
 	JWKSURL                               string
@@ -122,6 +123,7 @@ func Load(lookup func(string) string, check []string, serving bool) (Config, err
 		Matchmaking:    r.text("CTR_MATCHMAKING", "central"),
 		P2PTiming:      r.flag("CTR_P2P_TIMING", false),
 		AuthHTTP:       r.flag("CTR_AUTH_HTTP", false),
+		LocalWeakToken: r.flag("CTR_LOCAL_WEAK_TOKEN", false),
 		Companion:      r.text("CTR_COMPANION", ""),
 		SteamHelper:    r.required("CTR_STEAM_HELPER", serving && admission == "steam"),
 		SteamLibrary:   r.text("CTR_STEAM_LIBRARY", ""),
@@ -185,6 +187,9 @@ func Load(lookup func(string) string, check []string, serving bool) (Config, err
 	}
 	if c.Matchmaking == "steam" && admission != "local" {
 		r.fail("CTR_MATCHMAKING=steam requires CTR_ADMISSION=local")
+	}
+	if c.LocalWeakToken && admission != "local" {
+		r.fail("CTR_LOCAL_WEAK_TOKEN requires CTR_ADMISSION=local")
 	}
 	if admission == "local" || c.AuthHTTP {
 		if ip := net.ParseIP(c.BindAddr); ip == nil || !ip.IsLoopback() {

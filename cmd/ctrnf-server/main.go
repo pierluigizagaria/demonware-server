@@ -79,7 +79,7 @@ func runServer(ctx context.Context, cfg config.Config) error {
 		if ownerErr != nil {
 			return ownerErr
 		}
-		localPlatform, localErr := local.New(owner)
+		localPlatform, localErr := local.NewWithWeakToken(owner, cfg.LocalWeakToken)
 		if localErr != nil {
 			return localErr
 		}
@@ -137,7 +137,11 @@ func runServer(ctx context.Context, cfg config.Config) error {
 				return finish(err)
 			}
 			canonical = endpoint
-			pipe.EnableVirtualEndpoints()
+			if virtual.Mode == "loopback-v1" {
+				pipe.EnableLoopbackEndpoints()
+			} else {
+				pipe.EnableVirtualEndpoints()
+			}
 		}
 		var timing *ctr.P2PTiming
 		if cfg.P2PTiming {

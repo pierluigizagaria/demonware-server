@@ -25,6 +25,7 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/dashboard"
 	"github.com/pierluigizagaria/demonware-server/internal/diagnostics"
 	"github.com/pierluigizagaria/demonware-server/internal/httpserver"
+	platformid "github.com/pierluigizagaria/demonware-server/internal/platform"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/local"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 	"github.com/pierluigizagaria/demonware-server/internal/presence"
@@ -142,7 +143,11 @@ func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Te
 		_ = json.Unmarshal(body, &req)
 
 		// The instance's admission provider supplies identity before ticket issuance.
-		id, identityErr := platform.Authenticate(body)
+		authenticate := platform.Authenticate
+		if owner, ok := platform.(*local.Platform); ok {
+			authenticate = func(body []byte) (platformid.PlayerID, error) { return owner.AuthenticateFrom(body, r.RemoteAddr) }
+		}
+		id, identityErr := authenticate(body)
 		if identityErr != nil {
 			// Each format is a source constant: diagnostics never disclose an
 			// input field or error text, even when identity redaction is active.
@@ -153,6 +158,12 @@ func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Te
 				diag.DiagnosticLogf("[auth] local refusal: unsupported-task")
 			case local.OwnerCapabilityMismatch:
 				diag.DiagnosticLogf("[auth] local refusal: owner-capability-mismatch")
+			case local.WeakTokenMalformed:
+				diag.DiagnosticLogf("[auth] local refusal: weak-token-malformed")
+			case local.WeakTokenOwnerMismatch:
+				diag.DiagnosticLogf("[auth] local refusal: weak-token-owner-mismatch")
+			case local.WeakTokenNonLoopback:
+				diag.DiagnosticLogf("[auth] local refusal: weak-token-nonloopback")
 			}
 			reason := "platform verification failed"
 			diag.DiagnosticLogf("[auth] #%d %q pid=%d kind=%s REFUSED (%s)", n, id.Username, id.PID, id.Kind, reason)

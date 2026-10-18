@@ -98,22 +98,23 @@ type response struct {
 }
 
 type Pipe struct {
-	input            io.ReadCloser
-	output           io.WriteCloser
-	ctx              context.Context
-	cancel           context.CancelFunc
-	once             sync.Once
-	closedBy         atomic.Uint32
-	owner            chan local.Owner
-	events           chan Event
-	writes           chan []byte
-	mu               sync.Mutex
-	pending          map[string]chan response
-	ids              atomic.Uint64
-	workers          sync.WaitGroup
-	ownerName        func(string, string) error
-	nameUpdatesReady bool
-	virtualEndpoints bool
+	input             io.ReadCloser
+	output            io.WriteCloser
+	ctx               context.Context
+	cancel            context.CancelFunc
+	once              sync.Once
+	closedBy          atomic.Uint32
+	owner             chan local.Owner
+	events            chan Event
+	writes            chan []byte
+	mu                sync.Mutex
+	pending           map[string]chan response
+	ids               atomic.Uint64
+	workers           sync.WaitGroup
+	ownerName         func(string, string) error
+	nameUpdatesReady  bool
+	virtualEndpoints  bool
+	loopbackEndpoints bool
 }
 
 func New(ctx context.Context, input io.ReadCloser, output io.WriteCloser) *Pipe {
@@ -179,6 +180,9 @@ func (p *Pipe) Ready(ctx context.Context) error {
 	if p.virtualEndpoints {
 		capabilities = append(capabilities, "virtual.endpoints.v1")
 	}
+	if p.loopbackEndpoints {
+		capabilities = append(capabilities, "loopback.endpoints.v1")
+	}
 	p.mu.Unlock()
 	return p.send(ctx, map[string]any{"v": 1, "event": "ready", "capabilities": capabilities})
 }
@@ -189,6 +193,14 @@ func (p *Pipe) EnableVirtualEndpoints() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.virtualEndpoints = true
+}
+
+// EnableLoopbackEndpoints acknowledges the loopback-v1 descriptor separately
+// from virtual-v1. A child must never negotiate one mode as the other.
+func (p *Pipe) EnableLoopbackEndpoints() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.loopbackEndpoints = true
 }
 
 // EnableOwnerNames must precede Ready. It belongs to admission, independently

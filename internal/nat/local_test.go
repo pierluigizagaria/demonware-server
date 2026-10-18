@@ -26,37 +26,42 @@ func TestLocalDiscoveryExactShapes(t *testing.T) {
 }
 
 func TestVirtualDiscoveryOnlyForExactGameSource(t *testing.T) {
-	s := &Server{LocalOnly: true}
-	game := netip.MustParseAddrPort("127.0.0.6:3074")
-	canonical := netip.MustParseAddrPort("198.19.9.8:12345")
-	if err := s.SetLocalVirtualEndpoint(game, canonical); err != nil {
-		t.Fatal(err)
-	}
-	server := net.IPv4(127, 0, 0, 5)
-	for _, ip := range []net.IP{net.IPv4(127, 0, 0, 6), net.IP{127, 0, 0, 6}} {
-		source := &net.UDPAddr{IP: ip, Port: 3074}
-		for _, packet := range [][]byte{{30, 3, 0}, {20, 2, 0, 0}} {
-			got := s.localDiscoveryReply(packet, source, server, 3074)
-			want := localDiscoveryReply(packet, source, server, 3074)
-			copy(want[3:9], []byte{198, 19, 9, 8, 57, 48})
-			if !bytes.Equal(got, want) {
-				t.Fatal("canonical observed endpoint or physical alternate differs")
+	for _, value := range []string{"198.19.9.8:12345", "127.64.9.8:12345"} {
+		t.Run(value, func(t *testing.T) {
+			canonical := netip.MustParseAddrPort(value)
+			s := &Server{LocalOnly: true}
+			game := netip.MustParseAddrPort("127.0.0.6:3074")
+			if err := s.SetLocalVirtualEndpoint(game, canonical); err != nil {
+				t.Fatal(err)
 			}
-		}
-		for _, packet := range [][]byte{{20, 2, 0, 2}, {20, 2, 0, 3}, {30, 3, 0, 0}, append([]byte{10, 2, 0}, make([]byte, 26)...)} {
-			if s.localDiscoveryReply(packet, source, server, 3074) != nil {
-				t.Fatal("unsupported packet gained a reply")
+			server := net.IPv4(127, 0, 0, 5)
+			for _, ip := range []net.IP{net.IPv4(127, 0, 0, 6), net.IP{127, 0, 0, 6}} {
+				source := &net.UDPAddr{IP: ip, Port: 3074}
+				for _, packet := range [][]byte{{30, 3, 0}, {20, 2, 0, 0}} {
+					got := s.localDiscoveryReply(packet, source, server, 3074)
+					want := localDiscoveryReply(packet, source, server, 3074)
+					ip := canonical.Addr().As4()
+					copy(want[3:9], append(ip[:], 57, 48))
+					if !bytes.Equal(got, want) {
+						t.Fatal("canonical observed endpoint or physical alternate differs")
+					}
+				}
+				for _, packet := range [][]byte{{20, 2, 0, 2}, {20, 2, 0, 3}, {30, 3, 0, 0}, append([]byte{10, 2, 0}, make([]byte, 26)...)} {
+					if s.localDiscoveryReply(packet, source, server, 3074) != nil {
+						t.Fatal("unsupported packet gained a reply")
+					}
+				}
 			}
-		}
-	}
-	for _, source := range []*net.UDPAddr{{IP: net.IPv4(127, 0, 0, 7), Port: 3074}, {IP: net.IPv4(127, 0, 0, 6), Port: 3075}, {IP: net.IPv4(192, 0, 2, 1), Port: 3074}} {
-		packet := []byte{30, 3, 0}
-		if !bytes.Equal(s.localDiscoveryReply(packet, source, server, 3074), localDiscoveryReply(packet, source, server, 3074)) {
-			t.Fatal("foreign source received canonical endpoint")
-		}
-	}
-	legacy := &Server{}
-	if legacy.SetLocalVirtualEndpoint(game, canonical) == nil {
-		t.Fatal("central mode accepted virtual discovery")
+			for _, source := range []*net.UDPAddr{{IP: net.IPv4(127, 0, 0, 7), Port: 3074}, {IP: net.IPv4(127, 0, 0, 6), Port: 3075}, {IP: net.IPv4(192, 0, 2, 1), Port: 3074}} {
+				packet := []byte{30, 3, 0}
+				if !bytes.Equal(s.localDiscoveryReply(packet, source, server, 3074), localDiscoveryReply(packet, source, server, 3074)) {
+					t.Fatal("foreign source received canonical endpoint")
+				}
+			}
+			legacy := &Server{}
+			if legacy.SetLocalVirtualEndpoint(game, canonical) == nil {
+				t.Fatal("central mode accepted virtual discovery")
+			}
+		})
 	}
 }

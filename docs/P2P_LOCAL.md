@@ -1,8 +1,9 @@
 # Local publisher and P2P boundary
 
-Decision: 2026-10-16. Replacement design (I), not a recovered Sony service.
-The native CTR host loads orbiSteamworks and owns this publisher as a hidden
-child. No hosting or distribution is implied. The original PolyForm Shield
+Decision: 2026-10-16, bridge addendum 2026-10-19. Replacement design (I), not a
+recovered Sony service. The independent `ctrnf-p2p` bridge loads orbiSteamworks;
+the library owns this publisher as a hidden child. In-process hosts remain
+supported. No hosting or distribution is implied. The original PolyForm Shield
 license remains unchanged; the library and native host stay separate projects.
 
 ## Local admission
@@ -16,6 +17,20 @@ that exact capability admits the owner through the original PS4 auth envelope.
 The capability is a local credential, **not a validated Steam ticket**. It is
 never sent to a remote admission helper or peer. Fresh publisher tickets retain
 their existing connection-admission window; established sessions do not expire.
+
+`CTR_LOCAL_WEAK_TOKEN=1` is an explicit, default-off compatibility setting for
+the unmodified native `online` host at `b1b4bf9`. It additionally accepts
+`sacredfire.<name>.<16 lowercase hex account digits>` inside the unchanged PS4
+task-46 envelope. This fabricated token proves no secret and is weaker than the
+pipe capability: any local process that knows the owner's account ID can submit
+it. It is allowed only with local admission and a literal loopback listener;
+the HTTP handler also checks the actual socket source, ignoring forwarded
+headers. The account suffix must equal the inherited pipe owner, while the name
+never establishes identity or replaces the inherited label. Parse the suffix
+from the right; printable ASCII names may contain dots, spaces and punctuation.
+No new token service or remote admission route is introduced. Refusals use only
+fixed categories `weak-token-malformed`, `weak-token-owner-mismatch`, and
+`weak-token-nonloopback`, alongside the existing capability/envelope categories.
 
 The child advertises the optional `owner.name.v1` capability in its `ready`
 frame. A matching library may then send a private `owner.name` event containing
@@ -33,9 +48,13 @@ initial name until the context is restarted. Explicit configured names remain
 fixed. This is a local replacement protocol, not a Steam-ticket claim.
 
 SQLite binds to a separate local namespace including backend, realm and owner.
-Lab and Steam identities cannot share a database. Normal/unlock-all remain
+The optional owner `app_id` is a positive numeric uint32; omission means 480
+for older parents. It also binds the local trust namespace. Lab and Steam
+identities or different AppIDs cannot share a database. Normal/unlock-all remain
 fixed per instance and require separate databases and game saves. Build changes
 do not reset the owner's progression; discovery matches the full build namespace.
+Economy policy is not part of the discovery namespace: normal and unlock-all
+players use the same AppID/title/build/realm and may match together.
 `CTR_ADMISSION=steam` retains the independent helper-based central admission.
 
 `CTR_AUTH_HTTP=1` enables plain HTTP only on direct loopback. Auth and Umbrella
@@ -103,6 +122,26 @@ Steam FakeIP. The original CommonAddr hash and MAC evidence is documented in
 endpoint refusal, both IPv4 source representations and foreign-source isolation.
 Optional real-library integration and owned-image instruction probes live under
 `tools/p2p_probe/`; ordinary Go build/test does not require those dependencies.
+
+### Loopback-global endpoints
+
+The additive `loopback-v1` descriptor has the same five fields as `virtual-v1`.
+Its canonical endpoint is in the provider-reserved `127.64.0.0/10` range with a
+port from 1024 through 65535. The game source must be a specific loopback IPv4
+endpoint outside that reserved range; wildcard sources are not descriptors.
+The publisher validates this contract without calculating addresses or opening
+peer sockets. Only after installing the exact-source NAT mapping does it
+acknowledge `loopback.endpoints.v1`; it does not acknowledge this mode as
+`virtual.endpoints.v1`. Mixed modes fail the provider's capability negotiation.
+
+Both canonical modes share the same CommonAddr checks and preserve all 67
+bytes, complete host documents and original security material. In loopback
+mode the provider binds remote proxies exactly at their canonical endpoints,
+so an unmodified host sends directly to those local sockets. The publisher
+still responds canonically only to the configured game IP and port. Other
+sources retain actual-source NAT replies, and no race packet is rewritten.
+Address allocation, collision handling, peer authorization and transport remain
+provider responsibilities. Legacy and virtual defaults are unchanged.
 
 ## Companion lifecycle
 

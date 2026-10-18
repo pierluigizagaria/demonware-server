@@ -47,12 +47,14 @@ func TestPipeOwnerRequestsAndEOF(t *testing.T) {
 }
 
 func TestVirtualEndpointReadyCapabilityIsExplicit(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
+	for _, mode := range []string{"", "virtual-v1", "loopback-v1"} {
 		inR, inW := io.Pipe()
 		outR, outW := io.Pipe()
 		p := New(context.Background(), inR, outW)
-		if enabled {
+		if mode == "virtual-v1" {
 			p.EnableVirtualEndpoints()
+		} else if mode == "loopback-v1" {
+			p.EnableLoopbackEndpoints()
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		if err := p.Ready(ctx); err != nil {
@@ -64,7 +66,7 @@ func TestVirtualEndpointReadyCapabilityIsExplicit(t *testing.T) {
 		if err := json.NewDecoder(outR).Decode(&ready); err != nil {
 			t.Fatal(err)
 		}
-		if slices.Contains(ready.Capabilities, "virtual.endpoints.v1") != enabled {
+		if slices.Contains(ready.Capabilities, "virtual.endpoints.v1") != (mode == "virtual-v1") || slices.Contains(ready.Capabilities, "loopback.endpoints.v1") != (mode == "loopback-v1") {
 			t.Fatal("virtual capability not explicitly negotiated")
 		}
 		cancel()

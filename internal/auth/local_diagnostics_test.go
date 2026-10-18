@@ -32,6 +32,9 @@ func TestLocalAuthRefusalLogsOnlyFixedCategory(t *testing.T) {
 		{local.MalformedEnvelope, "malformed-envelope"},
 		{local.UnsupportedTask, "unsupported-task"},
 		{local.OwnerCapabilityMismatch, "owner-capability-mismatch"},
+		{local.WeakTokenMalformed, "weak-token-malformed"},
+		{local.WeakTokenOwnerMismatch, "weak-token-owner-mismatch"},
+		{local.WeakTokenNonLoopback, "weak-token-nonloopback"},
 	} {
 		output.Reset()
 		diag := &diagnostics.Diagnostics{RedactLogs: true, PrivateIdentity: true}
