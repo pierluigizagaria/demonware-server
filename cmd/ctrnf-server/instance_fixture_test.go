@@ -29,8 +29,8 @@ import (
 // ticket directory; auth, lobby and Umbrella receive the same instance owner.
 var testTickets = auth.NewTicketStore()
 
-func testAuthHandler(p auth.PublisherPlatform, s *auth.CTRSigner, dumps string) http.Handler {
-	return auth.NewPlatformAuthHandler(testDiagnostics, testTelemetry, testTickets, testPresence, p, s, dumps, ctr.NewUmbrellaHandler(testDiagnostics, testTickets))
+func testAuthHandler(p auth.PublisherPlatform, dumps string) http.Handler {
+	return auth.NewPlatformAuthHandler(testDiagnostics, testTelemetry, testTickets, testPresence, p, dumps, ctr.NewUmbrellaHandler(testDiagnostics, testTickets))
 }
 
 var testPresence = presence.NewStore(nil)

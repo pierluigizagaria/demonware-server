@@ -40,7 +40,7 @@ type Config struct {
 	Companion                             string
 	SteamHelper, SteamLibrary, SteamRealm string
 	JWKSURL                               string
-	SigningKey, DataDir                   string
+	DataDir                               string
 	UnlockAll, Migrate, RedactLogs        bool
 	StartBalance                          int64
 	RelayLow, RelayHigh                   int
@@ -151,7 +151,6 @@ func Load(lookup func(string) string, check []string, serving bool) (Config, err
 			Scopes:    strings.Fields(r.required("SHADNET_SCOPES", needsShadNet)),
 		},
 		JWKSURL:      r.required("SHADNET_JWKS_URL", needsShadNet),
-		SigningKey:   r.required("CTR_AUTH_SIGNING_KEY", serving),
 		DataDir:      r.text("DATA_DIR", "data"),
 		UnlockAll:    r.flag("CTR_UNLOCK_ALL", false),
 		StartBalance: r.balance("CTR_START_BALANCE"),

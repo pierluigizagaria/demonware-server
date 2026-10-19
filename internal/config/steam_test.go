@@ -7,7 +7,7 @@ import (
 
 func TestSteamAdmissionConfigIsIndependent(t *testing.T) {
 	env := map[string]string{"CTR_ADMISSION": "steam", "CTR_STEAM_REALM": "normal",
-		"CTR_STEAM_HELPER": "osw-auth-helper.exe", "CTR_AUTH_SIGNING_KEY": "fixture.pem"}
+		"CTR_STEAM_HELPER": "osw-auth-helper.exe"}
 	if c, err := Load(lookupFrom(env), nil, true); err != nil || c.Admission != "steam" || c.UnlockAll {
 		t.Fatal("independent Steam config refused", err)
 	}

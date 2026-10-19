@@ -17,10 +17,12 @@ Activision, Demonware, Nintendo, Nextendo Network or the shadPS4 project.
 ## Features
 
 - PS4 publisher login using shadNet ID tokens and a configured public JWKS endpoint.
-- Signed authentication replies, locally issued tickets and encrypted lobby sessions.
+- Unsigned authentication replies (with the client signature patch), locally issued tickets
+  and encrypted lobby sessions.
 - Async matchmaking, contextual friend sessions, rich presence and lobby synchronization.
 - PS4 marketplace, race rewards, challenges, leaderboards and configurable menu news.
-- One SQLite database per instance, with separate normal and unlock-all economies.
+- One SQLite database per instance. Central instances keep separate normal and unlock-all
+  economies; a local P2P database is shared by its accounts and both modes.
 - NAT discovery/introductions and the existing monitoring endpoints.
 - Owned workers and graceful operator shutdown; established lobbies have no idle cutoff.
 
@@ -53,8 +55,7 @@ game admission. The detailed acceptance history and open issues are in
 
 ## Build and test
 
-Requirements: **Go 1.25 or newer** and **OpenSSL on PATH** for response signing
-and its tests. No C compiler is required for the SQLite driver.
+Requirements: **Go 1.25 or newer**. No C compiler or OpenSSL is required.
 
 ```sh
 git clone https://github.com/pierluigizagaria/demonware-server.git
@@ -91,7 +92,7 @@ go test ./internal/demonware -run '^$' -fuzz '^FuzzWireParsers$' -fuzztime=15s
 
 Start from [example.env](example.env). Configuration is validated once at
 startup; process environment values take precedence over an instance env file.
-Private env files, signing keys, certificates and databases are not distributed.
+Private env files, certificates and databases are not distributed.
 
 ```sh
 ./bin/demonware-server -env normal.env
@@ -104,8 +105,8 @@ Before connecting a client, configure:
 2. For shadNet admission, the trusted `SHADNET_*` issuer, client, title, scopes
    and public JWKS URL. shadNet owns the accounts; no private key or database
    is shared with this server.
-3. TLS (`CERT_FILE`, `KEY_FILE`), response signing (`CTR_AUTH_SIGNING_KEY`),
-   listener addresses/ports and routing to your own server.
+3. TLS (`CERT_FILE`, `KEY_FILE`), listener addresses/ports and routing to your own
+   server. Authentication replies are unsigned.
 4. The required client-side authentication integration and
    [CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch).
    Server settings alone do not replace the client prerequisites.

@@ -21,7 +21,7 @@ func TestWeakNativeAuthUsesSocketSourceAndInheritedIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	tickets := NewTicketStore()
-	handler := testAuthHandler(tickets, p, testCTRSigner(t), "")
+	handler := testAuthHandler(tickets, p, "")
 	for _, test := range []struct {
 		remote  string
 		account uint64
@@ -53,7 +53,7 @@ func TestWeakNativeAuthUsesSocketSourceAndInheritedIdentity(t *testing.T) {
 				t.Fatal("ticket identity differs from pipe owner")
 			}
 			id, ok := tickets.IssuedIdentity(raw)
-			if !ok || id.Username != owner.OnlineID || response.Header().Get("X-Signature") == "" {
+			if !ok || id.Username != owner.OnlineID || response.Header().Get("X-Signature") != "" {
 				t.Fatal("weak token name replaced trusted identity or unsigned response")
 			}
 		}

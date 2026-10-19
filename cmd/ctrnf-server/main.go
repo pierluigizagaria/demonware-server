@@ -69,6 +69,7 @@ func runServer(ctx context.Context, cfg config.Config) error {
 	var pipe *companion.Pipe
 	var platform auth.PublisherPlatform
 	var trustID string
+	var legacyTrust func(string) bool
 	var ownerPID uint64
 	var virtual *local.VirtualTransport
 	var err error
@@ -83,7 +84,7 @@ func runServer(ctx context.Context, cfg config.Config) error {
 		if localErr != nil {
 			return localErr
 		}
-		platform, trustID = localPlatform, localPlatform.TrustID()
+		platform, trustID, legacyTrust = localPlatform, localPlatform.TrustID(), localPlatform.LegacyTrustID
 		ownerPID = localPlatform.PID()
 		virtual = owner.Transport
 		if virtual != nil && cfg.Matchmaking != "steam" {
@@ -102,7 +103,14 @@ func runServer(ctx context.Context, cfg config.Config) error {
 	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
 		return finish(err)
 	}
-	database, err := store.OpenSQLite(filepath.Join(cfg.DataDir, store.DBFile), cfg.UnlockAll, trustID)
+	// A local player's own database serves every account and both economy
+	// modes; central instances keep one fixed mode per database.
+	var database *store.SQLite
+	if cfg.Admission == "local" {
+		database, err = store.OpenSharedSQLite(filepath.Join(cfg.DataDir, store.DBFile), trustID, legacyTrust)
+	} else {
+		database, err = store.OpenSQLite(filepath.Join(cfg.DataDir, store.DBFile), cfg.UnlockAll, trustID)
+	}
 	if err != nil {
 		return finish(fmt.Errorf("CTR database: %w", err))
 	}

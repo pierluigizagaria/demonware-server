@@ -127,12 +127,11 @@ func lookupFrom(env map[string]string) func(string) string {
 
 func serverEnv() map[string]string {
 	return map[string]string{
-		"SHADNET_ISSUER":       "https://identity.example.net",
-		"SHADNET_CLIENT_ID":    "example-application",
-		"SHADNET_TITLE_ID":     "CUSA13795",
-		"SHADNET_SCOPES":       "openid openid:duid",
-		"SHADNET_JWKS_URL":     "https://identity.example.net/.well-known/jwks.json",
-		"CTR_AUTH_SIGNING_KEY": "keys/ctr-signing.pem",
+		"SHADNET_ISSUER":    "https://identity.example.net",
+		"SHADNET_CLIENT_ID": "example-application",
+		"SHADNET_TITLE_ID":  "CUSA13795",
+		"SHADNET_SCOPES":    "openid openid:duid",
+		"SHADNET_JWKS_URL":  "https://identity.example.net/.well-known/jwks.json",
 	}
 }
 
@@ -191,14 +190,14 @@ func TestConfigReadsServerSettings(t *testing.T) {
 		t.Fatalf("settings not read: %+v", c)
 	}
 	if !reflect.DeepEqual(c.Shadnet.Scopes, []string{"openid", "openid:duid"}) || c.Shadnet.NPTitleID != "CUSA13795" ||
-		c.JWKSURL != env["SHADNET_JWKS_URL"] || c.SigningKey != "keys/ctr-signing.pem" {
+		c.JWKSURL != env["SHADNET_JWKS_URL"] {
 		t.Fatalf("shadNet trust not read: %+v", c.Shadnet)
 	}
 }
 
 func TestConfigRefusesWithEveryProblemListed(t *testing.T) {
 	_, err := Load(lookupFrom(nil), nil, true)
-	for _, name := range []string{"SHADNET_ISSUER", "SHADNET_CLIENT_ID", "SHADNET_TITLE_ID", "SHADNET_SCOPES", "SHADNET_JWKS_URL", "CTR_AUTH_SIGNING_KEY"} {
+	for _, name := range []string{"SHADNET_ISSUER", "SHADNET_CLIENT_ID", "SHADNET_TITLE_ID", "SHADNET_SCOPES", "SHADNET_JWKS_URL"} {
 		if err == nil || !strings.Contains(err.Error(), name+" is required") {
 			t.Fatalf("missing %s not reported: %v", name, err)
 		}
@@ -242,6 +241,11 @@ func TestConfigRefusesUnknownSettings(t *testing.T) {
 	if _, err := Load(lookupFrom(serverEnv()), []string{"NEXTENDO_ACCOUNT_URL", "CTR_AUTH_CONFIG"}, true); err == nil ||
 		!strings.Contains(err.Error(), "NEXTENDO_ACCOUNT_URL") || !strings.Contains(err.Error(), "CTR_AUTH_CONFIG") {
 		t.Fatalf("retired settings accepted: %v", err)
+	}
+	// Auth replies are unsigned; a leftover signing key is refused, not ignored.
+	if _, err := Load(lookupFrom(serverEnv()), []string{"CTR_AUTH_SIGNING_KEY"}, true); err == nil ||
+		!strings.Contains(err.Error(), "CTR_AUTH_SIGNING_KEY is not a setting") {
+		t.Fatalf("retired signing key accepted: %v", err)
 	}
 }
 

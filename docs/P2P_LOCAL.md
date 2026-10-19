@@ -47,22 +47,26 @@ Older child versions advertise no capability; the library retains their
 initial name until the context is restarted. Explicit configured names remain
 fixed. This is a local replacement protocol, not a Steam-ticket claim.
 
-SQLite binds to a separate local namespace including backend, realm and owner.
-The owner `app_id` is a positive numeric uint32 and is mandatory for
-`loopback-v1`; absence or null is rejected rather than defaulted. Independently
-selected legacy/virtual-v1 paths retain their existing default 480. The value
-also binds the local trust namespace. Lab and Steam
-identities or different AppIDs cannot share a database. Normal/unlock-all remain
-fixed per instance and require separate databases and game saves. Build changes
-do not reset the owner's progression; discovery matches the full build namespace.
+SQLite binds to the local namespace `ctrnf:local:v2:<backend>` (2026-10-19 user
+decision). Rows are keyed by SteamID, so one installation's database serves every
+account, AppID and realm, and both economy modes: Lab and Steam identities still
+never share a file. Unlock-all computes catalog ownership at read time and writes
+no grant; race rewards, challenges and statistics are recorded in both modes.
+A v1 local database (bound to one owner, AppID, realm and mode) is upgraded in
+place in the transaction that validates its exact legacy binding; other bindings
+are refused unchanged. The owner `app_id` is a positive numeric uint32 and is
+mandatory for `loopback-v1`; absence or null is rejected rather than defaulted.
+Independently selected legacy/virtual-v1 paths retain their existing default 480.
+Owner, AppID, title, build and realm are still validated for every session.
+Build changes do not reset the owner's progression; discovery matches the full
+build namespace.
 Economy policy is not part of the discovery namespace: normal and unlock-all
 players use the same AppID/title/build/realm and may match together.
 `CTR_ADMISSION=steam` retains the independent helper-based central admission.
 
 `CTR_AUTH_HTTP=1` enables plain HTTP only on direct loopback. Auth and Umbrella
-use the same auth listener; TLS files are not loaded in this mode. Response
-signing is still required, as is the independently validated game signature
-patch. With no new settings the existing HTTPS/central behavior stays intact.
+use the same auth listener; TLS files are not loaded in this mode. Replies are
+unsigned; the independently validated game signature patch is required. With no new settings the existing HTTPS/central behavior stays intact.
 
 Local NAT answers only the exact observed `1e 03 00` and `14 02 00 00` probes,
 using the actual observed source endpoint and bound publisher address unless
@@ -205,7 +209,6 @@ AUTH_PORT=8460
 LOBBY_PORTS=3074
 NAT_PORT=3074
 DASH_PORT=8093
-CTR_AUTH_SIGNING_KEY=private-response-key.pem
 DATA_DIR=private-normal-state
 ```
 
@@ -276,7 +279,7 @@ in virtual mode (legacy mode uses its earlier physical-proxy rewrite). Nothing i
 lobby data. Reserved, orphaned, stale-connection and deleted records are excluded.
 No publication means an honest empty 138/14 result, not invented joinability.
 
-Each local database is bound to one owner. Remote users are never registered in
+Each local database belongs to one installation. Remote users are never registered in
 local persistent player names, stats or economy. Existing local handlers return
 only local data for cross-player reads; missing remote state remains absent.
 The existing composed instance-isolation tests cover independent balances,

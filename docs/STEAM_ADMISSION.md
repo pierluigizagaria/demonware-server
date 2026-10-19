@@ -55,9 +55,8 @@ admission object and keep their existing behavior.
 
 For an explicit live developer test, set `OSW_LIVE_HELPER`, `OSW_LIVE_CLIENT`
 and `OSW_LIVE_DIR` to the built helper, `osw-platform-check` (or spike client)
-and a private directory. Put the existing OpenSSL installation on PATH,
-then run `go test ./internal/platform/steam -run '^TestLiveSteamAdmission$' -count=1 -v`.
+and a private directory, then run `go test ./internal/platform/steam -run '^TestLiveSteamAdmission$' -count=1 -v`.
 Steam must already be running and signed in. The test obtains a bound ticket,
-verifies HTTPS discovery, signed admission, publisher-ticket handoff, replay
+verifies HTTPS discovery, unsigned admission, publisher-ticket handoff, replay
 rejection and persistence, and stops its own
 client/helper. It never logs ticket contents or signs into an account.

@@ -23,7 +23,7 @@ func guestEntropy(ids ...uint64) *bytes.Reader {
 }
 
 func TestGuestConfigIsExplicitAndNeedsNoShadNet(t *testing.T) {
-	env := map[string]string{"CTR_ADMISSION": "guest", "CTR_UNLOCK_ALL": "1", "CTR_AUTH_SIGNING_KEY": "fixture.pem"}
+	env := map[string]string{"CTR_ADMISSION": "guest", "CTR_UNLOCK_ALL": "1"}
 	c, err := config.Load(lookupFrom(env), nil, true)
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestGuestConfigIsExplicitAndNeedsNoShadNet(t *testing.T) {
 	}
 	for _, tc := range []struct{ field, value string }{
 		{"CTR_ADMISSION", "off"}, {"CTR_UNLOCK_ALL", "0"},
-		{"SHADNET_ISSUER", "https://identity.example.net"}, {"CTR_AUTH_SIGNING_KEY", ""},
+		{"SHADNET_ISSUER", "https://identity.example.net"},
 	} {
 		t.Run(tc.field, func(t *testing.T) {
 			prior := env[tc.field]
@@ -56,14 +56,14 @@ func TestGuestConfigIsExplicitAndNeedsNoShadNet(t *testing.T) {
 
 func TestGuestTicketsReachLobbyAndUmbrella(t *testing.T) {
 	p := guest.Platform{Random: guestEntropy(17, 29)}
-	handler := testAuthHandler(p, testCTRSigner(t), "")
+	handler := testAuthHandler(p, "")
 	body, _ := json.Marshal(psnAuthRequest(t, "TOKEN"))
 	for _, want := range []uint64{17, 29} {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("POST", "/auth/", bytes.NewReader(body))
 		r.RemoteAddr = "127.0.0.1:50000" // same address and body must not merge guests
 		handler.ServeHTTP(w, r)
-		if w.Code != 200 || w.Header().Get("X-Signature") == "" {
+		if w.Code != 200 || w.Header().Get("X-Signature") != "" {
 			t.Fatal("anonymous admission failed", w.Code)
 		}
 		var response struct {

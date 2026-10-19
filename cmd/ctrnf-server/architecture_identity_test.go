@@ -2,9 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto"
-	"crypto/rsa"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -46,29 +43,24 @@ func TestArchitectureIdentityDoubleRead(t *testing.T) {
 	}
 }
 
-func TestArchitectureAuthSignatureBeforeInspection(t *testing.T) {
-	signer := testCTRSigner(t)
-	h := testAuthHandler(fixturePSNPlatform(), signer, "")
+func TestArchitectureAuthReplyIsUnsigned(t *testing.T) {
+	h := testAuthHandler(fixturePSNPlatform(), "")
 	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", bytes.NewReader(body)))
 	if w.Code != 200 {
 		t.Fatal("synthetic provider refused")
 	}
-	signature, err := base64.StdEncoding.DecodeString(w.Header().Get("X-Signature"))
-	if err != nil {
-		t.Fatal("missing signature")
-	}
-	digest := sha256.Sum256(w.Body.Bytes())
-	if rsa.VerifyPSS(signer.Public, crypto.SHA256, digest[:], signature, nil) != nil {
-		t.Fatal("original response body is not signed")
+	// The signature-patched client ignores the verifier's failure; no key is held.
+	if _, signed := w.Header()["X-Signature"]; signed {
+		t.Fatal("reply carries a response signature")
 	}
 	var response map[string]string
 	if json.Unmarshal(w.Body.Bytes(), &response) != nil {
-		t.Fatal("invalid signed JSON")
+		t.Fatal("invalid response JSON")
 	}
 	if len(response) != 6 || response["code"] != "700" || response["auth_task"] != "47" {
-		t.Fatal("signed response envelope changed")
+		t.Fatal("response envelope changed")
 	}
 	client, err := base64.StdEncoding.DecodeString(response["client_ticket"])
 	if err != nil || response["client_ticket"] != response["server_ticket"] {

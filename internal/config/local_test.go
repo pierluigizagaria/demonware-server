@@ -3,7 +3,7 @@ package config
 import "testing"
 
 func TestLocalModeValidation(t *testing.T) {
-	base := map[string]string{"CTR_ADMISSION": "local", "CTR_COMPANION": "stdio", "CTR_MATCHMAKING": "steam", "CTR_AUTH_HTTP": "1", "BIND_ADDR": "127.0.0.5", "NEXTENDO_HOST": "127.0.0.5", "CTR_AUTH_SIGNING_KEY": "fixture.pem"}
+	base := map[string]string{"CTR_ADMISSION": "local", "CTR_COMPANION": "stdio", "CTR_MATCHMAKING": "steam", "CTR_AUTH_HTTP": "1", "BIND_ADDR": "127.0.0.5", "NEXTENDO_HOST": "127.0.0.5"}
 	if c, err := Load(lookupFrom(base), nil, true); err != nil || !c.AuthHTTP || c.Matchmaking != "steam" || c.LocalWeakToken {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestLocalModeValidation(t *testing.T) {
 }
 
 func TestWeakTokenRequiresExplicitLocalAdmission(t *testing.T) {
-	base := map[string]string{"CTR_ADMISSION": "local", "CTR_COMPANION": "stdio", "CTR_LOCAL_WEAK_TOKEN": "1", "BIND_ADDR": "127.0.0.1", "NEXTENDO_HOST": "127.0.0.1", "CTR_AUTH_SIGNING_KEY": "fixture.pem"}
+	base := map[string]string{"CTR_ADMISSION": "local", "CTR_COMPANION": "stdio", "CTR_LOCAL_WEAK_TOKEN": "1", "BIND_ADDR": "127.0.0.1", "NEXTENDO_HOST": "127.0.0.1"}
 	if c, err := Load(lookupFrom(base), nil, true); err != nil || !c.LocalWeakToken {
 		t.Fatal("explicit local weak mode refused", err)
 	}

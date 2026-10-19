@@ -71,9 +71,8 @@ upstream reconstruction from original PS4 evidence and replacement policy.
 
 Go dependency versions remain pinned in `go.mod` and `go.sum`, including the
 `modernc.org/sqlite` driver and `golang.org/x/sys`. Their source and licenses
-belong to their respective authors. OpenSSL is an external signing tool and is
-not bundled here. No game assets, firmware, certificates, signing keys or
-private account data are distributed with this project.
+belong to their respective authors. No game assets, firmware, certificates or private
+account data are distributed with this project.
 
 The original [PolyForm Shield License 1.0.0](LICENSE.md) is retained verbatim.
 

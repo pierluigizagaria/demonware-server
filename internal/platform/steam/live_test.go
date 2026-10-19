@@ -3,12 +3,8 @@ package steam_test
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -105,20 +101,8 @@ func TestLiveSteamAdmission(t *testing.T) {
 	extra, _ := json.Marshal(map[string]string{"token": string(inner)})
 	body, _ := json.Marshal(map[string]string{"title_id": "5760", "auth_task": "46", "iv_seed": "1", "extra_data": string(extra)})
 	provider := &steam.Platform{Validator: helper, Store: db, Realm: "local-test"}
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal("test signing key generation failed")
-	}
-	keyPath := filepath.Join(dir, "test-signing.pem")
-	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0600); err != nil {
-		t.Fatal("test key write failed")
-	}
-	signer, err := auth.LoadCTRSigner(keyPath)
-	if err != nil {
-		t.Fatal("test response signer unavailable; existing OpenSSL must be on PATH")
-	}
 	tickets := auth.NewTicketStore()
-	handler := auth.NewPlatformAuthHandler(&diagnostics.Diagnostics{RedactLogs: true}, dashboard.NewTelemetry(config.Config{}, func() int64 { return 0 }), tickets, presence.NewStore(nil), provider, signer, "", nil)
+	handler := auth.NewPlatformAuthHandler(&diagnostics.Diagnostics{RedactLogs: true}, dashboard.NewTelemetry(config.Config{}, func() int64 { return 0 }), tickets, presence.NewStore(nil), provider, "", nil)
 	server := httptest.NewTLSServer(handler)
 	defer server.Close()
 	httpClient := server.Client()
@@ -140,8 +124,8 @@ func TestLiveSteamAdmission(t *testing.T) {
 	var envelope map[string]string
 	err = json.NewDecoder(response.Body).Decode(&envelope)
 	response.Body.Close()
-	if err != nil || response.StatusCode != http.StatusOK || response.Header.Get("X-Signature") == "" || envelope["code"] != "700" || envelope["auth_task"] != "47" {
-		t.Fatal("signed HTTPS admission failed")
+	if err != nil || response.StatusCode != http.StatusOK || response.Header.Get("X-Signature") != "" || envelope["code"] != "700" || envelope["auth_task"] != "47" {
+		t.Fatal("HTTPS admission failed")
 	}
 	publisherTicket, err := base64.StdEncoding.DecodeString(envelope["server_ticket"])
 	if err != nil {

@@ -3,13 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/binary"
-	"encoding/pem"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,26 +14,6 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
-
-func testCTRSigner(t *testing.T) *auth.CTRSigner {
-	t.Helper()
-	if _, err := exec.LookPath("openssl"); err != nil {
-		t.Skip("openssl unavailable")
-	}
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(t.TempDir(), "signer.pem")
-	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0600); err != nil {
-		t.Fatal(err)
-	}
-	s, err := auth.LoadCTRSigner(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
-}
 
 func fixturePSNPlatform() ps4.PSNPlatform {
 	return ps4.PSNPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {

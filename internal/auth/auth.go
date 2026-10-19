@@ -1,5 +1,6 @@
 // Publisher HTTPS authentication for CTR:NF PS4. The injected platform
-// provider admits identity; this owner signs replies and issues local tickets.
+// provider admits identity; this owner issues local tickets. Replies are not
+// signed: the PS4 client accepts them only with the CTR:NF Server Signature Patch.
 // Historical NSO offsets below remain upstream evidence for the shared layout.
 
 package auth
@@ -35,14 +36,8 @@ import (
 const TicketMagic uint32 = 0xEFBDADDE
 
 func StartAuth(platform PublisherPlatform, tickets *TicketStore, presenceStore *presence.Store, cfg config.Config, diag *diagnostics.Diagnostics, monitor *dashboard.Telemetry, umbrella AuxiliaryAuthHandler) (*httpserver.Server, error) {
-	ctrSigner, err := LoadCTRSigner(cfg.SigningKey)
-	if err != nil {
-		return nil, err
-	}
-	if ctrSigner == nil {
-		return nil, fmt.Errorf("CTR_AUTH_SIGNING_KEY is required")
-	}
 	var certificate tls.Certificate
+	var err error
 	if cfg.AuthHTTP {
 		if ip := net.ParseIP(cfg.BindAddr); ip == nil || !ip.IsLoopback() || cfg.ProxyProtocol {
 			return nil, fmt.Errorf("plain HTTP authentication requires a direct loopback listener")
@@ -53,10 +48,10 @@ func StartAuth(platform PublisherPlatform, tickets *TicketStore, presenceStore *
 			return nil, err
 		}
 	}
-	diag.DiagnosticLogf("[auth] signed replies enabled (client trust mod required)")
+	diag.DiagnosticLogf("[auth] unsigned replies (CTR:NF Server Signature Patch required)")
 	dumps := diag.RunDumpDir("auth")
 
-	h := NewPlatformAuthHandler(diag, monitor, tickets, presenceStore, platform, ctrSigner, dumps, umbrella)
+	h := NewPlatformAuthHandler(diag, monitor, tickets, presenceStore, platform, dumps, umbrella)
 
 	srv := &http.Server{
 		Addr:    net.JoinHostPort(cfg.BindAddr, strconv.Itoa(cfg.AuthPort)),
@@ -85,7 +80,7 @@ func StartAuth(platform PublisherPlatform, tickets *TicketStore, presenceStore *
 	return httpserver.Start(srv, ln, !cfg.AuthHTTP), nil
 }
 
-func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Telemetry, tickets *TicketStore, presenceStore *presence.Store, platform PublisherPlatform, ctrSigner *CTRSigner, dumps string, umbrella AuxiliaryAuthHandler) http.Handler {
+func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Telemetry, tickets *TicketStore, presenceStore *presence.Store, platform PublisherPlatform, dumps string, umbrella AuxiliaryAuthHandler) http.Handler {
 	var authReqNum atomic.Uint64
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/orbi/steam/v1" {
@@ -176,18 +171,13 @@ func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Te
 				id.Admission.Close()
 			}
 		}()
-		if ctrSigner == nil {
-			diag.DiagnosticLogf("[auth] #%d refused: responses must be signed", n)
-			http.Error(w, "authentication signing unavailable", http.StatusInternalServerError)
-			return
-		}
-
 		// The client reads the ticket's first 4 bytes and compares them to the
 		// magic 0xEFBDADDE (bytes DE AD BD EF), resolved via an
 		// R_AARCH64_RELATIVE relocation to 0xF07FB8. If they match, the
 		// decryption branch is skipped and the ticket is read in the clear —
-		// this bypass concerns ticket decryption only. CTR still requires signed
-		// auth replies and the separately installed server-signature patch.
+		// this bypass concerns ticket decryption only. The reply carries no
+		// X-Signature: the PS4 verifier then fails, and the separately installed
+		// server-signature patch removes the rejection of that failure.
 		//
 		// Layout read from parse_ticket (0xBFCF30), 128 bytes packed:
 		//   +0 u32 magic | +4 u8 | +5 u32 | +9 u32 | +13 u32
@@ -286,15 +276,6 @@ func NewPlatformAuthHandler(diag *diagnostics.Diagnostics, monitor *dashboard.Te
 			ExtraData:    string(extra),
 		}
 		out, _ := json.Marshal(resp)
-		if ps4.IsCTRTitle(titleID) && ctrSigner != nil {
-			signature, err := ctrSigner.Sign(out)
-			if err != nil {
-				diag.DiagnosticLogf("[auth] %v", err)
-				http.Error(w, "authentication signing failed", http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("X-Signature", signature)
-		}
 
 		monitor.RecordLogin()
 		diag.DiagnosticLogf("[auth] #%d %q pid=%d kind=%s -> 200 code=700 auth_task=%s", n, id.Username, id.PID, id.Kind, authTask)

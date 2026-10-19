@@ -55,19 +55,7 @@ func TestShadNetPublisherInterop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	keyPath := filepath.Join(t.TempDir(), "signer.pem")
-	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0600); err != nil {
-		t.Fatal(err)
-	}
-	signer, err := auth.LoadCTRSigner(keyPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	handler := testAuthHandler(p, signer, "")
+	handler := testAuthHandler(p, "")
 	for _, user := range f.Users {
 		parts := strings.Split(user.Token, ".")
 		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
@@ -96,10 +84,8 @@ func TestShadNetPublisherInterop(t *testing.T) {
 		if w.Code != 200 {
 			t.Fatal("native credential refused")
 		}
-		signature, err := base64.StdEncoding.DecodeString(w.Header().Get("X-Signature"))
-		digest := sha256.Sum256(w.Body.Bytes())
-		if err != nil || rsa.VerifyPSS(&key.PublicKey, crypto.SHA256, digest[:], signature, nil) != nil {
-			t.Fatal("response signature does not verify")
+		if _, signed := w.Header()["X-Signature"]; signed {
+			t.Fatal("reply carries a response signature")
 		}
 		var response struct {
 			AuthTask     string `json:"auth_task"`

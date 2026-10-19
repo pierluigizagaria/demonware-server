@@ -3,16 +3,10 @@ package auth
 import (
 	"bytes"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
-	"encoding/pem"
 	"io"
 	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
 	"testing/iotest"
 	"time"
@@ -20,26 +14,6 @@ import (
 	"github.com/pierluigizagaria/demonware-server/internal/platform"
 	"github.com/pierluigizagaria/demonware-server/internal/platform/ps4"
 )
-
-func testCTRSigner(t *testing.T) *CTRSigner {
-	t.Helper()
-	if _, err := exec.LookPath("openssl"); err != nil {
-		t.Skip("openssl unavailable")
-	}
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(t.TempDir(), "signer.pem")
-	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0600); err != nil {
-		t.Fatal(err)
-	}
-	s, err := LoadCTRSigner(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
-}
 
 func fixturePSNPlatform() ps4.PSNPlatform {
 	return ps4.PSNPlatform{Verifier: platformVerifierFunc(func(string, time.Time) (platform.Identity, error) {
@@ -60,24 +34,24 @@ func psnTicket(issued time.Time) []byte {
 	return ticket
 }
 
-func TestPS4AuthRequiresResponseSigner(t *testing.T) {
+func TestPS4AuthReplyIsUnsigned(t *testing.T) {
 	testTickets := NewTicketStore()
-	h := testAuthHandler(testTickets, fixturePSNPlatform(), nil, "")
+	h := testAuthHandler(testTickets, fixturePSNPlatform(), "")
 	body, _ := json.Marshal(psnAuthRequest(t, "synthetic-fixture"))
 	before := len(testTickets.entries)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", bytes.NewReader(body)))
-	if w.Code == 200 {
-		t.Fatal("PS4 auth succeeded without required response signature")
+	if w.Code != 200 || len(testTickets.entries) != before+1 {
+		t.Fatal("verified PS4 auth did not issue its ticket")
 	}
-	if len(testTickets.entries) != before {
-		t.Fatal("ticket issued without a signed response")
+	if _, signed := w.Header()["X-Signature"]; signed {
+		t.Fatal("reply carries a response signature")
 	}
 }
 
 func TestAuthRefusesIncompleteBody(t *testing.T) {
 	testTickets := NewTicketStore()
-	h := testAuthHandler(testTickets, fixturePSNPlatform(), testCTRSigner(t), "")
+	h := testAuthHandler(testTickets, fixturePSNPlatform(), "")
 	before := len(testTickets.entries)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/auth/", iotest.ErrReader(io.ErrUnexpectedEOF)))

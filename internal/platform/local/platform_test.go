@@ -43,11 +43,40 @@ func TestOwnerAdmissionUsesInheritedCredential(t *testing.T) {
 	if p.TrustID() == q.TrustID() {
 		t.Fatal("lab shares Steam database namespace")
 	}
+	// Realm and owner select sessions, not the database: one file per backend.
 	other = o
 	other.Realm = "unlock-all"
 	q, _ = New(other)
-	if p.TrustID() == q.TrustID() {
-		t.Fatal("economy realm not bound")
+	if p.TrustID() != q.TrustID() || p.TrustID() != "ctrnf:local:v2:lab" {
+		t.Fatal("realm changed the database namespace")
+	}
+}
+
+func TestLegacyTrustIDIsExactAndSameBackend(t *testing.T) {
+	p, err := New(ownerFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, trust := range []string{
+		"ctrnf:local:480:5760:v1:lab:normal:76561198000000001",
+		"ctrnf:local:876543:5760:v1:lab:other-realm_2:76561198000000002",
+	} {
+		if !p.LegacyTrustID(trust) {
+			t.Fatalf("legacy binding refused: %s", trust)
+		}
+	}
+	for _, trust := range []string{
+		"", p.TrustID(), "ctrnf:local:480:5760:v1:steam:normal:76561198000000001",
+		"ctrnf:local:0:5760:v1:lab:normal:1", "ctrnf:local:0480:5760:v1:lab:normal:1",
+		"ctrnf:local:4294967296:5760:v1:lab:normal:1", "ctrnf:local:480:5761:v1:lab:normal:1",
+		"ctrnf:local:480:5760:v2:lab:normal:1", "ctrnf:local:480:5760:v1:lab:bad/realm:1",
+		"ctrnf:local:480:5760:v1:lab:normal:0", "ctrnf:local:480:5760:v1:lab:normal:01",
+		"ctrnf:local:480:5760:v1:lab:normal:1:extra", "ctrnf:steam:480:5760:v1:normal",
+		"ctrnf:anonymous-guests:v1",
+	} {
+		if p.LegacyTrustID(trust) {
+			t.Fatalf("invalid legacy binding accepted: %q", trust)
+		}
 	}
 }
 

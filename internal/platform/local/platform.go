@@ -98,6 +98,7 @@ type Platform struct {
 	owner     platform.PlayerID
 	digest    [32]byte
 	trust     string
+	backend   string
 	weakToken bool
 }
 
@@ -150,11 +151,36 @@ func NewWithWeakToken(owner Owner, weakToken bool) (*Platform, error) {
 	}
 	return &Platform{owner: platform.PlayerID{PID: token.AccountID, Username: owner.OnlineID,
 		Sub: "local:" + owner.Backend + ":" + owner.SteamID, Kind: "local", Title: ps4.CTRTitle},
-		digest: sha256.Sum256([]byte(owner.Token)), trust: "ctrnf:local:" + strconv.FormatUint(uint64(appID), 10) + ":5760:v1:" + owner.Backend + ":" + owner.Realm + ":" + owner.SteamID, weakToken: weakToken}, nil
+		digest: sha256.Sum256([]byte(owner.Token)), trust: "ctrnf:local:v2:" + owner.Backend, backend: owner.Backend, weakToken: weakToken}, nil
 }
 
+// TrustID names the persistence namespace: one database per installation and
+// backend. Account rows are keyed by SteamID, so other accounts, AppIDs, realms
+// and economy modes reuse it; the owner, AppID, realm, title and build are still
+// validated for every session above.
 func (p *Platform) TrustID() string { return p.trust }
-func (p *Platform) PID() uint64     { return p.Current().PID }
+
+// LegacyTrustID reports whether trust is this backend's v1 database binding,
+// ctrnf:local:<app>:5760:v1:<backend>:<realm>:<SteamID>, which pinned one owner,
+// AppID and realm. Such a database may be upgraded in place to TrustID.
+func (p *Platform) LegacyTrustID(trust string) bool {
+	parts := strings.Split(trust, ":")
+	canonical := func(text string) bool {
+		value, err := strconv.ParseUint(text, 10, 64)
+		return err == nil && value != 0 && strconv.FormatUint(value, 10) == text
+	}
+	if len(parts) != 8 || parts[0] != "ctrnf" || parts[1] != "local" || parts[3] != "5760" || parts[4] != "v1" || parts[5] != p.backend {
+		return false
+	}
+	app, err := strconv.ParseUint(parts[2], 10, 32)
+	if err != nil || !canonical(parts[2]) || app == 0 || !canonical(parts[7]) {
+		return false
+	}
+	_, err = steam.TrustID(parts[6])
+	return err == nil
+}
+
+func (p *Platform) PID() uint64 { return p.Current().PID }
 func (p *Platform) Current() platform.PlayerID {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

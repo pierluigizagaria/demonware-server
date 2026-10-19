@@ -53,9 +53,28 @@ func lockInstance(path string) (*os.File, error) {
 }
 
 // OpenSQLite binds the instance to its admission namespace: the shadNet
-// issuer/client/title or the separate anonymous-guest namespace.
+// issuer/client/title or the separate anonymous-guest namespace. The database
+// also records CTR_UNLOCK_ALL and refuses the other economy mode.
 func OpenSQLite(path string, unlockAll bool, trustID string) (*SQLite, error) {
-	if trustID == "" {
+	return openSQLite(path, binding{trust: trustID, unlockAll: unlockAll})
+}
+
+// OpenSharedSQLite binds the database to trustID only: normal and unlock-all
+// sessions use the same file, since unlock-all never persists catalog grants.
+// A database whose trust ID satisfies legacy is upgraded to trustID in place,
+// in the transaction that validates it; its rows are kept unchanged.
+func OpenSharedSQLite(path, trustID string, legacy func(string) bool) (*SQLite, error) {
+	return openSQLite(path, binding{trust: trustID, shared: true, legacy: legacy})
+}
+
+type binding struct {
+	trust             string
+	unlockAll, shared bool
+	legacy            func(string) bool
+}
+
+func openSQLite(path string, b binding) (*SQLite, error) {
+	if b.trust == "" {
 		return nil, fmt.Errorf("CTR database needs a trust ID")
 	}
 	lock, err := lockInstance(path)
@@ -75,7 +94,7 @@ func OpenSQLite(path string, unlockAll bool, trustID string) (*SQLite, error) {
 	}
 	db.SetMaxOpenConns(1)
 	s := &SQLite{db: db, lock: lock}
-	if err := s.initialize(unlockAll, trustID); err != nil {
+	if err := s.initialize(b); err != nil {
 		s.Close()
 		return nil, err
 	}
@@ -88,7 +107,7 @@ func (s *SQLite) Close() error {
 	return err
 }
 
-func (s *SQLite) initialize(unlockAll bool, trustID string) error {
+func (s *SQLite) initialize(b binding) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -99,17 +118,22 @@ func (s *SQLite) initialize(unlockAll bool, trustID string) error {
 		return err
 	}
 	want := "0"
-	if unlockAll {
+	if b.unlockAll {
 		want = "1"
 	}
 	switch version {
 	case 0:
-		// No old files are read or imported. Schema and mode commit together.
+		// No old files are read or imported. Schema and binding commit together.
 		if _, err := tx.Exec(ctrSchema); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('unlock_all', ?), ('trust_id', ?)`, want, trustID); err != nil {
+		if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('trust_id', ?)`, b.trust); err != nil {
 			return err
+		}
+		if !b.shared {
+			if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES ('unlock_all', ?)`, want); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
 			return err
@@ -119,17 +143,32 @@ func (s *SQLite) initialize(unlockAll bool, trustID string) error {
 		if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'trust_id'`).Scan(&trusted); err != nil {
 			return fmt.Errorf("read trust ID: %w", err)
 		}
-		if trusted != trustID {
+		upgrade := b.shared && trusted != b.trust && b.legacy != nil && b.legacy(trusted)
+		if trusted != b.trust && !upgrade {
 			return fmt.Errorf("CTR database belongs to another admission identity namespace")
 		}
 		var got string
-		if err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'unlock_all'`).Scan(&got); err != nil {
+		err := tx.QueryRow(`SELECT value FROM meta WHERE key = 'unlock_all'`).Scan(&got)
+		switch {
+		case b.shared && !upgrade:
+			// A shared database records no mode; a mode row means another binding.
+			if err != sql.ErrNoRows {
+				return fmt.Errorf("invalid shared CTR database binding")
+			}
+		case err != nil:
 			return fmt.Errorf("read unlock-all mode: %w", err)
-		}
-		if got != "0" && got != "1" {
+		case got != "0" && got != "1":
 			return fmt.Errorf("invalid unlock-all mode in CTR database")
-		}
-		if got != want {
+		case upgrade:
+			// The legacy file pinned one owner, AppID, realm and mode. Its rows
+			// are already keyed by account, so only the binding changes.
+			if _, err := tx.Exec(`UPDATE meta SET value = ? WHERE key = 'trust_id'`, b.trust); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`DELETE FROM meta WHERE key = 'unlock_all'`); err != nil {
+				return err
+			}
+		case got != want:
 			return fmt.Errorf("CTR database unlock-all mode differs from CTR_UNLOCK_ALL")
 		}
 	default:

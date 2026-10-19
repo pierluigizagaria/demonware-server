@@ -98,11 +98,12 @@ func TestLoopbackOwnerTransportAndAppNamespace(t *testing.T) {
 	if old.TrustID() != current.TrustID() {
 		t.Fatal("default app namespace changed")
 	}
+	// AppID selects the matchmaking namespace, not the persisted accounts.
 	otherApp := uint32(481)
 	o.AppID = &otherApp
 	other, _ := New(o)
-	if other.TrustID() == old.TrustID() {
-		t.Fatal("different apps share a trust namespace")
+	if other.TrustID() != old.TrustID() {
+		t.Fatal("AppID changed the database namespace")
 	}
 	zero := uint32(0)
 	o.AppID = &zero

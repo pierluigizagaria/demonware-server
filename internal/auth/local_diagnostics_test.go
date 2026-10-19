@@ -38,7 +38,7 @@ func TestLocalAuthRefusalLogsOnlyFixedCategory(t *testing.T) {
 	} {
 		output.Reset()
 		diag := &diagnostics.Diagnostics{RedactLogs: true, PrivateIdentity: true}
-		h := NewPlatformAuthHandler(diag, nil, nil, nil, refusalPlatform{test.category}, nil, "", nil)
+		h := NewPlatformAuthHandler(diag, nil, nil, nil, refusalPlatform{test.category}, "", nil)
 		response := httptest.NewRecorder()
 		h.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/auth/", strings.NewReader(`{"auth_task":"private-input","identity":"private-identity"}`)))
 		if response.Code != http.StatusForbidden || !strings.Contains(output.String(), "local refusal: "+test.label) || strings.Contains(output.String(), "private-") {

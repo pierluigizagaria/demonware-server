@@ -48,10 +48,10 @@ This cleanup has not been installed or accepted in game.
 | Demonware wire protocol | `internal/demonware` | Shared framing, handshake key derivation, typed buffers and task/reply envelopes. Standard-library dependencies only; no game state, identity policy or listeners. [Contracts and evidence](docs/DEMONWARE_PROTOCOL.md). |
 | PS4 identity | `internal/platform/ps4/platform_psn.go`, `internal/platform/shadnet` | Parses the task-46/title-5760 envelope and verifies the shadNet NPAuth ID token (RS256, JWKS fetched from a configured URL and cached for 5 minutes, renewed in the background during the last minute, issuer/audience/title/scopes, 60 s clock leeway) |
 | Anonymous admission | `internal/platform/guest/platform_guest.go` | Explicit injected provider, `CTR_ADMISSION=guest`, restricted to unlock-all instances. Reads the unchanged PS4 envelope, assigns a random positive 63-bit publisher ID and a matching nickname of at most 15 characters. No issuer lookup, account, client identity claim or network-address binding. Never a fallback after failed verification. |
-| Ticket admission | `internal/auth/tickets.go`, `internal/lobby/handshake.go`, `internal/ctr/umbrella.go` | Lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity; a missing response signer fails closed. Tickets live in memory by session tag (the auth handler, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. No session files and no all-zero handshake key |
+| Ticket admission | `internal/auth/tickets.go`, `internal/lobby/handshake.go`, `internal/ctr/umbrella.go` | Lobby and Umbrella accept only tickets issued here in the last 120 s and bound to their identity. Tickets live in memory by session tag (the auth handler, lobby and Umbrella share the process; a restart drops every lobby connection and clients authenticate again) and are forgotten one minute after their window. No session files and no all-zero handshake key |
 | PS4 tasks | `internal/ctr/platform_tasks.go`, `internal/lobby/services.go` | 38/6 identity report; inherited router compatibility for the exact 18-byte predicate (general protocol attribution unproven); 12/10 getUserIDs (online players, then the name each player was last issued a ticket under, from `player_names` in `ctrnf.db`; never used for admission). Friend IDs are shadNet account IDs |
 | Marketplace | `internal/ctr/marketplace.go`, `internal/ctr/rewards.go` | 80/245,165,154 use `octane_psn` and owner `psn`; purchases accept only original PS4 SDK defaults. 80/246 (Switch only) and unknown tasks fail without ledger writes |
-| Unlock-all option | `internal/ctr/economy_policy.go`, `cmd/ctrnf-server/main.go` | Opt-in full catalog ownership is computed at read time. Known-SKU purchases debit nothing and write nothing; unknown SKUs fail. `meta.unlock_all` fixes the mode for the database, independently of admission. Startup logs the configured boolean mode. |
+| Unlock-all option | `internal/ctr/economy_policy.go`, `cmd/ctrnf-server/main.go` | Opt-in full catalog ownership is computed at read time. Known-SKU purchases debit nothing and write nothing; unknown SKUs fail. Central admissions record `meta.unlock_all` and refuse the other mode; local admission shares one database across both modes. Startup logs the configured boolean mode. |
 | Economy storage | `internal/store/sqlite.go`, `internal/ctr/economy.go` | One `<DATA_DIR>/ctrnf.db` per instance holds accounts, balances, insert-only inventory, race receipts, daily online seconds, challenge progress, Pit Stop refresh state, and an append-only ledger. A narrow backend seam preserves the upstream JSON reference and reward rules; every operation saves state and audit rows in one transaction and writes only changed rows. Race receipts and online seconds older than nine days, beyond the seven-day reward window, are never loaded and are deleted when that account next saves (an inactive account keeps its expired rows). |
 | Leaderboards | `internal/store/sqlite.go`, `internal/ctr/stats.go`, `cmd/ctrnf-server/main.go` | bdStats shares `ctrnf.db` with the economy, keeping the original table, batch transactions and ranking. Rank pages and entity reads run in SQL on an index matching the ranking order. The upstream JSON store remains the reference for the contract test. |
 | Engine | `internal/ctr/async.go`, `internal/ctr/merge.go` | Every player holds one seat. Party members are the leader's unverified claim, so a search whose claimed followers already hold a seat is refused; the check and the reservation are atomic before the success reply. A leader's new search replaces only its own searches and seat (`detach`, shared with disconnects); a stale connection's disconnect releases no seat the account's newer connection may hold; disbanding an old lobby ends no search. Party followers who leave lose only their seat and the host gets the new membership; explicit merge-eligibility flags; merges cancelled when a source closes or membership changes; handoff before backfill |
@@ -91,9 +91,8 @@ Keys and certificates stay in their own files, named by path.
 | --- | --- |
 | `CTR_ADMISSION` | `shadnet` (default) or `guest`. Guest requires `CTR_UNLOCK_ALL=1` and empty `SHADNET_*` values. Selection is passed to the auth handler; no mutable global admission switch. |
 | `SHADNET_ISSUER`, `SHADNET_CLIENT_ID`, `SHADNET_TITLE_ID`, `SHADNET_SCOPES`, `SHADNET_JWKS_URL` | Required for shadNet admission: issuer, registered client and title, exact granted scopes (space-separated) and the trusted public key set |
-| `CTR_AUTH_SIGNING_KEY` | Required RSA-2048 key (exponent 65537) for the CTR response signature; the PS4 game accepts it only with the CTR:NF Server Signature Patch (see [Client side](#client-side)) |
 | `DATA_DIR` | Persistent state directory (default `data`): `ctrnf.db` holds the economy, ledger, mode, leaderboards and player names. |
-| `CTR_UNLOCK_ALL` | Optional instance-wide unlock-all: unset, `0`, `false` = off; `1`, `true` = on. The database records the mode and refuses a different one. |
+| `CTR_UNLOCK_ALL` | Optional instance-wide unlock-all: unset, `0`, `false` = off; `1`, `true` = on. A central database records the mode and refuses a different one; local admission shares one database across modes. |
 | `CTR_START_BALANCE` | Initial Wumpa Coins for new accounts (default `0`); existing balances are preserved. |
 | `CTR_NEWS`, `CTR_NEWS_<CODE>` | Optional main-menu ticker text and the 28 exact-language overrides listed in `example.env`; empty overrides fall back to `CTR_NEWS`. See [Main-menu news](#main-menu-news). |
 | `AUTH_PORT`, `CERT_FILE`, `KEY_FILE` | HTTPS auth listener |
@@ -103,8 +102,7 @@ Keys and certificates stay in their own files, named by path.
 `CTR_RELAY_PORT_LOW/HIGH` enable the optional UDP relay inherited from upstream
 (`CTR_RELAY_PIDS` selects the joiners). Its sockets honor `BIND_ADDR`. A pair is
 released when either player has no lobby connection, never because it was
-quiet. The relay is not qualified for the PS4 race transport. `openssl` must be
-on `PATH` for response signing.
+quiet. The relay is not qualified for the PS4 race transport.
 
 ## Main-menu news
 
@@ -193,8 +191,8 @@ This repository contains only the server. With shadNet admission a PS4 player al
   [shadps4-emu/shadPS4#5350](https://github.com/shadps4-emu/shadPS4/pull/5350)
   that depends on it;
 - the [CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch)
-  for CUSA13795 01.21, so the game accepts replies signed with
-  `CTR_AUTH_SIGNING_KEY`;
+  for CUSA13795 01.21, so the game accepts the unsigned auth replies (no `X-Signature`:
+  its verifier fails and the patch removes the rejection of that result);
 - the game's Demonware auth, Umbrella and lobby hosts routed to this server,
   whose TLS certificate the client must accept. Client routing and
   certificates are not part of this repository.
@@ -202,8 +200,8 @@ This repository contains only the server. With shadNet admission a PS4 player al
 ### Anonymous unlock-all candidate
 
 For an anonymous instance, set `CTR_ADMISSION=guest`, `CTR_UNLOCK_ALL=1`, omit
-the five shadNet trust values, and choose a separate `DATA_DIR`. TLS and the
-response signing key remain required. Merely setting unlock-all never disables
+the five shadNet trust values, and choose a separate `DATA_DIR`. TLS remains
+required. Merely setting unlock-all never disables
 account verification. Normal progression instances cannot select guest admission.
 
 The guest provider accepts the original nested PS4 request, including a placeholder
@@ -211,7 +209,7 @@ or empty `id_token`; this is explicitly anonymous admission, not successful toke
 verification. It ignores supplied account IDs and names. Each authentication
 gets a new cryptographically random ID and the nickname `G-` followed by that ID
 in base 36. Both ticket ID fields, lobby identity, name lookup and Umbrella refer
-to the same assigned guest. Fresh-ticket checks, response signing and encrypted
+to the same assigned guest. Fresh-ticket checks and encrypted
 lobby messages still apply. Established sessions have no added timeout.
 
 No account can reclaim the identity after another authentication, so progression
@@ -253,7 +251,11 @@ recorded with `PRAGMA user_version`. Schema creation and the
 `trust_id` commit together. The trust ID is a hash of the issuer, client ID and
 title in `SHADNET_*`: shadNet account IDs are unique only within it, so a
 database refuses to open for another one. A missing, invalid or conflicting mode
-or trust ID fails closed on reopen. Player names and the trust binding are part
+or trust ID fails closed on reopen. Local P2P admission instead records only
+`trust_id=ctrnf:local:v2:<backend>`: its rows are keyed by SteamID, so other accounts,
+AppIDs, realms and both economy modes share the file. A v1 local database bound to
+one owner, AppID, realm and mode is upgraded in place, in the validating transaction,
+without touching its rows. Player names and the trust binding are part
 of the initial schema. Other versions are refused; there is no migration from
 the discarded pre-release lab schemas. The architecture refactor preserves the
 accepted version-1 schema, SQL and transaction boundaries; existing version-1
