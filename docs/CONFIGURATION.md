@@ -39,7 +39,7 @@ Configure `SHADNET_ISSUER`, `SHADNET_CLIENT_ID`, `SHADNET_TITLE_ID`,
 Scopes are space-separated. The issuer owns accounts and private signing keys;
 the publisher fetches public verification keys and shares no account database.
 The client needs a host with the matching NPAuth integration and routing to this
-publisher. [FORK.md](../FORK.md#client-side) records the integration's provenance.
+publisher. [FORK.md](../FORK.md#design) describes the component boundaries.
 
 ### Steam central admission
 
@@ -139,8 +139,19 @@ after switching economy modes.
 
 `CTR_NEWS` sets the main-menu ticker; exact-language `CTR_NEWS_<CODE>` values
 override it. An empty override falls back to the default. Text is not translated
-automatically. Supported codes and length rules are in `example.env`; detailed
-client behavior is recorded in [FORK.md](../FORK.md#main-menu-news).
+automatically. Supported codes are listed in `example.env`.
+
+For example, `CTR_NEWS=Welcome!   ***` supplies the default and
+`CTR_NEWS_IT=Benvenuti!   ***` supplies Italian. Use a visible separator because
+the game scrolls repeated copies without adding a gap. The client determines
+the language. An exact override takes precedence; there is no base-language or
+English fallback. Empty defaults and overrides produce no new message.
+
+Text must be valid UTF-8, at most 2047 bytes, without control characters or
+Unicode line/paragraph separators. Its JSON encoding must fit below 4096 bytes.
+Invalid text or unrecognized override names stop startup. Restart the server
+after editing news. A game already displaying a message can retain its cached
+text until its next news download; an empty reply does not erase that cache.
 
 Logs are redacted by default. Raw dumps can contain credentials and player data;
 local admission requires redaction. `D3_PUBFILES` still selects optional generic

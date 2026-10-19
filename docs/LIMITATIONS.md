@@ -1,8 +1,6 @@
 # Current limitations
 
-This page distinguishes implemented compatibility behavior from complete service
-support. It does not replace the revision-specific validation records linked from
-the [documentation index](README.md).
+This page describes incomplete services and the supported integration scope.
 
 ## Incomplete service behavior
 
@@ -53,12 +51,5 @@ inherited fallback behavior.
   to AppID 480. Local P2P receives its configurable AppID from the companion owner
   frame. A configurable local AppID does not make the central path configurable.
 
-## Validation boundaries
-
-Ordinary tests verify server contracts with synthetic clients and temporary data.
-Optional real-provider tests verify only their documented integration. Human
-gameplay reports apply to the exact artifacts and conditions recorded in
-[FORK.md](../FORK.md) and [P2P_LOCAL.md](P2P_LOCAL.md#evidence-status).
-They do not establish arbitrary-host support, Internet transport, capacity or
-public-service readiness. Save-cached inventory, equipped items across economy
-changes and host process teardown require client-side validation as well.
+The server requires a compatible client integration. Native saves, cached
+inventory, equipped items and host process teardown remain client responsibilities.

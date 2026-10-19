@@ -1,7 +1,6 @@
 # Common Demonware protocol and compatibility contract
 
-Decision: 2026-10-14. Extract the existing lobby wire implementation into
-`internal/demonware`, in the existing Go module, repository and executable.
+`internal/demonware` contains the lobby wire implementation within this module.
 Game services, identity admission and persistence stay in the application.
 The package has only standard-library dependencies and owns no listeners,
 goroutines, clocks, configuration, registries or mutable global state.
@@ -21,24 +20,22 @@ Pinned source lineage:
 - Historical clients: Diablo III Switch (title 5745), CTR Switch (5775).
   The active fork targets CTR PS4 CUSA13795 01.21 (5760).
 
-Evidence labels follow the workspace convention: **F** owned firmware,
+Evidence labels distinguish **F** owned firmware,
 **C** original game/caller bytes, **U** upstream source and its reconstruction
 claims, **H** public reverse-engineering work, **P** provider documentation,
 **S** general standards, **I** inference or replacement/design policy.
-No new firmware/game disassembly or live Diablo session was performed for this
-extraction. Tests are regression evidence, not an additional source class and
+Tests are regression evidence, not an additional source class and
 not proof of original production-server policy.
 
-Upstream's retained [historical README](HISTORICAL_SWITCH_README.md#crash-team-racing) reports the same
+The [upstream documentation](https://github.com/NextendoNetwork/nextendo-demonware/tree/c3400c312a739cf7598204a981156959910ed874) reports the same
 lobby protocol for CTR and Diablo and a Diablo login/create/find test on the
 merged server (**U**). Its known limits explicitly say live Diablo rich presence
 was not demonstrated. The source comments retain D3 NSO addresses; those addresses
 remain upstream evidence, not independently verified PS4 offsets.
 
-The workspace's existing CTR compatibility, bootstrap and race records provide
-CTR-specific evidence. For example, PS4 send sequence `conn+0x260` and receive
-check `0x1ac33` are recorded in [FORK.md](../FORK.md#design) (**C**).
-No historical in-game result qualifies this newly refactored binary automatically.
+CTR PS4 sequence handling is supported by the original client's send counter
+at `conn+0x260` and receive check at `0x1ac33` (**C**). Compatibility evidence
+applies to that title and version, not every Demonware client.
 
 ## Shared behavior matrix
 
@@ -173,51 +170,17 @@ frame consumes its sequence even if its decrypted envelope is malformed.
 The parser does not independently revalidate the outer frame length/flag;
 network framing remains the responsibility of `ReadFrame` and its caller.
 
-## Refactor decisions and acceptance
+## Implementation boundaries
 
-The useful SOLID improvement is responsibility separation and explicit inputs:
-private parsing state, pure serialization, transport injected as an exact-read
-callback, and policy owned by application services. Concrete functions and small
-types suffice. No unused service interfaces, generic inventory hierarchy,
-plugin registry or extra process is introduced. This follows Go's
-[internal-package layout guidance](https://go.dev/doc/modules/layout) and
-[small behavior-oriented interfaces](https://go.dev/doc/effective_go#interfaces).
+Private parsing state, pure serialization and an exact-read callback separate
+wire behavior from transport and application policy. The package uses concrete
+functions and small types, with only standard-library dependencies. It follows
+Go's [internal-package layout](https://go.dev/doc/modules/layout).
 
-The initial protocol extraction renamed `ctr_presence.go` to `richpresence.go`.
-The subsequent architecture refactor moved it to `internal/presence`, extracted
-owned components and wired one CTR table. Diablo's table and generators are now
-inactive. The [architecture inventory and fixture ledger](ARCHITECTURE_REFACTOR.md)
-record the allowed disconnection changes; all other dispatcher snapshots retain
-their original bytes and state. The [final report](ARCHITECTURE_REFACTOR_REPORT.md)
-records package moves, lifecycle verification and the new parser fuzz run.
-
-Compatibility checks use fixed synthetic outputs recorded from **c16b085 before
-extraction**, stored in `internal/demonware/testdata/pre_refactor.json`. The fixture
-also includes the already-public wrapping label. It contains no live ticket,
-account or signing key. `TestPreRefactorWireVectors` compares exact bytes for
-typed values, reply variants, proofs, directional keys and encrypted envelopes.
-Independent existing integration fixtures in `cmd/ctrnf-server` still construct requests/replies manually.
-
-Small robustness changes are explicit: invalid IV lengths return errors rather
-than panicking; malformed lengths cannot overflow slice bounds; field tags above
-31 are encoded as complete varints; MAC/proof comparisons use `hmac.Equal`; an
-invalid-MAC frame is no longer decrypted for diagnostics. Current valid wire
-vectors are unchanged. The application still enforces admission and sequence
-policy, covered by `TestEncryptedFrameRejectionPreservesSequencePolicy` and the
-original replay/admission tests.
-
-Validation: 370 named tests/subtests passed, together with `go vet ./...` and a
-server build. Dependency inspection found only standard-library imports beneath
-`internal/demonware`. A 15-second parser fuzz run completed 340,577 executions
-without a failure. The race detector was not run (no configured cgo compiler).
-On 2026-10-14 the user accepted the installed `33dc1c6` build with shadNet A/B:
-shared lobby and races through results. The matching server-log segment records
-matched searches, accepted lobby synchronization, leaderboard uploads and
-persisted rewards, with no MAC errors. Guest C/D remained on the previous build;
-LAN/WAN and live Diablo compatibility remain unqualified. Profile B crashed once
-on `Game:Main` (`0xc0000005`) about five seconds after the first match notification,
-without recurrence after restart; the cause is open and unattributed. This
-acceptance does not automatically qualify the subsequent architecture refactor.
+Fixed synthetic vectors in `internal/demonware/testdata/pre_refactor.json`
+protect typed values, replies, proofs, directional keys and encrypted envelopes.
+Application tests cover admission and sequence policy separately. Invalid IVs,
+lengths and MACs return errors; diagnostics do not decrypt invalid-MAC frames.
 
 ## Reusing this for another game
 

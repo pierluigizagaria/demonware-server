@@ -10,8 +10,7 @@ Pit Stop inventory, progression, leaderboards and NAT discovery. It can run as a
 central server or as a local publisher managed by a platform provider. Game
 execution and platform services belong to separate projects.
 
-**Experimental:** client integration is required. Automated tests do not establish
-compatibility with every host or qualify Internet multiplayer or public hosting.
+**Experimental:** a compatible client integration is required.
 See [Current limitations](docs/LIMITATIONS.md). Diablo III code is retained only
 as an inactive compatibility reference.
 
@@ -82,7 +81,7 @@ SDK or import a host's implementation.
 rules. It is an internal Go package, **not a public SDK** or a promise of support
 for other games. See the [protocol contract](docs/DEMONWARE_PROTOCOL.md) before
 changing serialized data, and the [documentation index](docs/README.md) for
-integration contracts, architecture and historical validation records.
+integration contracts and architecture.
 
 ## License and credits
 

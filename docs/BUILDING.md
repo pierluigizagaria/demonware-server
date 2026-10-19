@@ -59,10 +59,9 @@ These require explicit external setup and are separate from ordinary tests:
 - **shadNet issuer:** set `SHADNET_INTEROP_FIXTURE` to the private fixture expected
   by `cmd/ctrnf-server/platform_shadnet_integration_test.go`, then run
   `go test -tags=integration -run TestShadNetPublisherInterop ./cmd/ctrnf-server`.
-- **Steam helper:** follow [Verified Steam admission](STEAM_ADMISSION.md) to
-  provide the native helper, client and an existing Steam session.
-- **P2P contracts:** [tools/p2p_probe](../tools/p2p_probe/README.md) documents
-  optional provider integration and owned-image probes.
+- **Steam helper:** `internal/platform/steam` contains an opt-in integration
+  test for the helper protocol. It requires explicit native artifacts and an
+  existing Steam session; ordinary tests do not initialize Steam.
 
 Keep credentials, filled env files, captures and databases out of commits and
 release packages. Fixture success demonstrates the tested contract; original

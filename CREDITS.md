@@ -25,13 +25,12 @@ authorship of the inherited implementation or a change of license.
 The retained Git history records individual contributions. This project's PS4
 adaptation, shadNet/guest admission, SQLite integration and architecture work
 build on that foundation. Development includes AI-assisted implementation with
-Codex and architecture discussion/review with Claude; this does not substitute
-for the human review and runtime acceptance recorded in the project documents.
+Codex and architecture discussion/review with Claude.
 
 ## Related PS4 projects
 
-- **[shadPS4](https://github.com/shadps4-emu/shadPS4)** provides the emulator used
-  for the local PS4 validation work.
+- **[shadPS4](https://github.com/shadps4-emu/shadPS4)** provides the independent
+  PS4 emulator integration.
 - **[shadNet](https://github.com/shadps4-emu/shadNet)** provides the independent
   account/identity service used by normal instances.
 - **[CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch)**
@@ -62,8 +61,6 @@ PS4 behavior or a blanket license assessment of the referenced projects.
   **[hosseinpourziyaie/demonware-companion](https://github.com/hosseinpourziyaie/demonware-companion)**:
   Demonware reverse-engineering tools.
 
-Historical wording and context remain in
-[the retained Switch documentation](docs/HISTORICAL_SWITCH_README.md).
 [The protocol contract](docs/DEMONWARE_PROTOCOL.md) distinguishes inherited
 upstream reconstruction from original PS4 evidence and replacement policy.
 

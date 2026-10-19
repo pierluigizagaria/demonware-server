@@ -6,14 +6,8 @@ the companion protocol; see [Configuration](CONFIGURATION.md#admission-and-match
 and [P2P_LOCAL.md](P2P_LOCAL.md). Current authentication replies are unsigned and
 require the client signature patch.
 
-Implementation status, 2026-10-15: the `steam` admission provider uses the
-orbiSteamworks native helper over private child-process pipes. Unit/contract
-tests and a live local native-helper/provider/SQLite test pass. A C API-issued
-ticket also passed discovery and signed authentication through the production
-handler over local HTTPS, with publisher-ticket handoff and replay checks. Signed
-replies describe that historical revision; response signing was removed on
-2026-10-19. This does not qualify a shadPS4 login, race, two-account operation
-or WAN play.
+The `steam` admission provider uses the orbiSteamworks authentication helper
+over private child-process pipes.
 
 Use `CTR_ADMISSION=steam`, an absolute `CTR_STEAM_HELPER` executable path and
 `CTR_STEAM_REALM` (1–64 letters, digits, underscores or hyphens). Optionally set
@@ -24,8 +18,7 @@ at 480. No Steam Web API key or client password is used.
 Select a fresh `DATA_DIR`. Trust is `ctrnf:steam:480:5760:v1:<realm>` and the
 instance's normal/unlock-all policy is still enforced separately. Existing
 shadNet or guest databases are refused and are not migrated. The initial
-SQLite schema includes Steam name bindings and consumed ticket hashes; this
-work does not migrate or rewrite the running laboratory's databases.
+SQLite schema includes Steam name bindings and consumed ticket hashes.
 
 The Steam client issues `osw1.<SteamID>.<hex-ticket>.<base64url-online-ID>`.
 The original PS4 publisher envelope remains unchanged. The native helper
@@ -60,11 +53,3 @@ Matchmaking, room rules and the shared Demonware wire protocol are unchanged.
 The lobby handshake gains only native-admission ownership at the existing
 issued-ticket boundary. Default shadNet and guest providers use no native
 admission object and keep their existing behavior.
-
-For an explicit live developer test, set `OSW_LIVE_HELPER`, `OSW_LIVE_CLIENT`
-and `OSW_LIVE_DIR` to the built helper, `osw-platform-check` (or spike client)
-and a private directory, then run `go test ./internal/platform/steam -run '^TestLiveSteamAdmission$' -count=1 -v`.
-Steam must already be running and signed in. The test obtains a bound ticket,
-verifies HTTPS discovery, unsigned admission, publisher-ticket handoff, replay
-rejection and persistence, and stops its own
-client/helper. It never logs ticket contents or signs into an account.
