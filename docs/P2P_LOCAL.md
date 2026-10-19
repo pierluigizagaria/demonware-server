@@ -127,7 +127,7 @@ Optional real-library integration and owned-image instruction probes live under
 
 ### Loopback-global endpoints
 
-The additive `loopback-v1` descriptor has the same five fields as `virtual-v1`.
+The fixed-source `loopback-v1` descriptor has the same five fields as `virtual-v1`.
 Its owner frame must explicitly carry `app_id`, including when the value is 480.
 Its canonical endpoint is in the provider-reserved `127.64.0.0/10` range with a
 port from 1024 through 65535. The game source must be a specific loopback IPv4
@@ -145,6 +145,33 @@ still responds canonically only to the configured game IP and port. Other
 sources retain actual-source NAT replies, and no race packet is rewritten.
 Address allocation, collision handling, peer authorization and transport remain
 provider responsibilities. Legacy and virtual defaults are unchanged.
+
+A supervisor that observes the owned game's socket only after process launch
+must explicitly select deferred binding before starting the provider. In that
+case the owner transport has exactly four fields:
+
+```json
+{"mode":"loopback-v1","address":"127.64.1.2","port":12345,"game_pending":true}
+```
+
+`game_address` and `game_port` are absent, not guessed or set to wildcard values.
+The publisher installs a silent discovery gate and advertises
+`game.endpoint.v1` with `loopback.endpoints.v1`. The provider sends one private
+`{"v":1,"event":"game.endpoint","id":"bind-1","address":"127.0.0.1","port":3104}`
+frame after the supervisor explicitly binds its observed source through the
+public C API. The publisher validates the source, commits the exact NAT mapping
+and acknowledges the same ID/address/port with `event:"game.endpoint.bound"`.
+Unknown fields, invalid sources, an unnegotiated event or any repeat close the
+pipe with the fixed `game-endpoint` category. The callback and active NAT reader
+synchronize the one-way transition; no packet is used to learn a source.
+
+In deferred mode discovery is silent before commit, and stays silent for every
+other source after commit. The provider withholds room, advertisement and peer
+activity until the acknowledgement; the publisher also refuses outbound peer
+operations while pending. Identity and platform friend WebAPI remain available.
+The canonical endpoint and CommonAddr contract never change during the bind.
+This is an explicit loopback mode; it adds no fallback to a missing descriptor
+or capability and does not alter independent central/virtual operation.
 
 ## Companion lifecycle
 

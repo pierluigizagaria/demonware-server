@@ -133,8 +133,16 @@ func runServer(ctx context.Context, cfg config.Config) error {
 			if err != nil {
 				return finish(err)
 			}
-			if err := i.nat.SetLocalVirtualEndpoint(game, endpoint); err != nil {
+			if virtual.GamePending {
+				err = i.nat.SetLocalPendingEndpoint(endpoint)
+			} else {
+				err = i.nat.SetLocalVirtualEndpoint(game, endpoint)
+			}
+			if err != nil {
 				return finish(err)
+			}
+			if virtual.GamePending {
+				pipe.EnableGameEndpoint(i.nat.BindLocalGameEndpoint)
 			}
 			canonical = endpoint
 			if virtual.Mode == "loopback-v1" {

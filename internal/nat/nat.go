@@ -48,12 +48,15 @@ type Server struct {
 	BindAddr, NextendoHost string
 	// LocalOnly answers only the two discovery shapes observed in CTR PS4.
 	// It never forwards introductions or responds to unknown flag variants.
-	LocalOnly    bool
-	localVirtual *localVirtualEndpoint
-	connNum      *atomic.Uint64
-	natSeenMu    sync.Mutex
-	natSeen      map[string]int
-	natIntros    atomic.Int64
+	LocalOnly      bool
+	localMu        sync.RWMutex
+	localVirtual   *localVirtualEndpoint
+	localPending   bool
+	localExactOnly bool
+	connNum        *atomic.Uint64
+	natSeenMu      sync.Mutex
+	natSeen        map[string]int
+	natIntros      atomic.Int64
 }
 
 // NewServer initializes NAT state without opening sockets or starting workers.

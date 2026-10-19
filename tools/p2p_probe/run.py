@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import socket
 import subprocess
 import sys
 import threading
@@ -61,6 +62,7 @@ def run():
     parser.add_argument("--server", type=Path, required=True)
     parser.add_argument("--party", action="store_true", help="exercise a committed synthetic two-player party")
     parser.add_argument("--loopback", action="store_true", help="use loopback-v1 with no host endpoint translation")
+    parser.add_argument("--defer-game-endpoint", action="store_true", help="commit the exact game source after companion readiness")
     parser.add_argument("--weak-native-token", action="store_true", help="exercise explicit local fabricated-token admission")
     parser.add_argument("--mixed-economy", action="store_true", help="match normal and unlock-all publishers in one namespace")
     parser.add_argument("--app-id", type=int, default=480)
@@ -73,6 +75,8 @@ def run():
     args = parser.parse_args()
     if not 1 <= args.app_id <= 0xffffffff:
         parser.error("--app-id must be a positive uint32")
+    if args.defer_game_endpoint and not args.loopback:
+        parser.error("--defer-game-endpoint requires --loopback")
     if args.owned_identity_proof and not all((args.owned_image, args.image_inspector, args.rhash_library)):
         parser.error("--owned-identity-proof requires --owned-image, --image-inspector and --rhash-library")
     if args.owned_identity_proof:
@@ -105,6 +109,8 @@ def run():
     dll.osw_poll_event.argtypes = [C.c_void_p, C.POINTER(Event)]
     if args.loopback:
         dll.osw_enable_loopback_endpoints.argtypes = [C.c_void_p]
+        if args.defer_game_endpoint:
+            dll.osw_defer_game_endpoint.argtypes = [C.c_void_p]
     else:
         dll.osw_enable_virtual_endpoints.argtypes = [C.c_void_p]
         dll.osw_route_endpoint.argtypes = [C.c_void_p, C.c_uint32, C.POINTER(Endpoint), C.POINTER(Endpoint)]
@@ -173,6 +179,8 @@ def run():
                 raise RuntimeError("enable canonical endpoints failed")
             if (args.loopback or args.app_id != 480) and dll.osw_set_app_id(ctx, args.app_id) != 0:
                 raise RuntimeError("set app ID failed")
+            if args.defer_game_endpoint and dll.osw_defer_game_endpoint(ctx) != 0:
+                raise RuntimeError("defer game endpoint failed")
             if dll.osw_start(ctx) != 0:
                 raise RuntimeError("start failed")
             until = time.monotonic() + 15
@@ -186,6 +194,35 @@ def run():
                 if time.monotonic() > until:
                     raise RuntimeError("publisher readiness")
                 time.sleep(.05)
+            if args.defer_game_endpoint:
+                if status.get("game_endpoint_pending") is not True:
+                    raise RuntimeError("pending source not reported")
+                pending_endpoint = Endpoint()
+                pending_endpoint.size = C.sizeof(pending_endpoint)
+                if dll.osw_get_local_endpoint(ctx, C.byref(pending_endpoint)) == 0:
+                    raise RuntimeError("pending source exposed active endpoint")
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+                    probe.bind((game, 3074))
+                    probe.settimeout(.15)
+                    probe.sendto(bytes((30, 3, 0)), (address, 3074))
+                    try:
+                        probe.recvfrom(32)
+                    except socket.timeout:
+                        pass
+                    else:
+                        raise RuntimeError("pending source received discovery")
+                bound, _ = call(ctx, {"op": "game.endpoint.bind", "address": game, "port": 3074})
+                if bound != {"address": game, "port": 3074}:
+                    raise RuntimeError("game source acknowledgement mismatch")
+                status, _ = call(ctx, {"op": "status"})
+                if status.get("game_endpoint_pending") is not False:
+                    raise RuntimeError("committed source still pending")
+                try:
+                    call(ctx, {"op": "game.endpoint.bind", "address": game, "port": 3074})
+                except RuntimeError:
+                    pass
+                else:
+                    raise RuntimeError("game source permitted rebinding")
             _, token = call(ctx, {"client_id": "publisher-probe", "scope": "openid"}, 1)
             if args.weak_native_token:
                 token = f"sacredfire.{config.base.online_id.decode()}.{config.lab_account_id:016x}".encode()
@@ -308,6 +345,8 @@ def run():
             if not any(event.get("event") == "room.selected" for event in events.get("events", [])):
                 raise RuntimeError("committed follower did not receive room selection")
             print(json.dumps({"ok": True, "simulated_invite_accept": True, "follower_room_selected": True}))
+        if args.defer_game_endpoint:
+            print(json.dumps({"ok": True, "pending_discovery_silent": True, "exact_source_committed": True, "rebinding_refused": True}))
     finally:
         for ctx in reversed(contexts):
             dll.osw_destroy(ctx)

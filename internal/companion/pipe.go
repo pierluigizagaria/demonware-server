@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/netip"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -40,6 +42,7 @@ const (
 	closeDuplicateResponse
 	closeEvent
 	closeEventQueueFull
+	closeGameEndpoint
 )
 
 func (r closeReason) String() string {
@@ -74,6 +77,8 @@ func (r closeReason) String() string {
 		return "event"
 	case closeEventQueueFull:
 		return "event-queue-full"
+	case closeGameEndpoint:
+		return "game-endpoint"
 	default:
 		return "unknown"
 	}
@@ -115,6 +120,10 @@ type Pipe struct {
 	nameUpdatesReady  bool
 	virtualEndpoints  bool
 	loopbackEndpoints bool
+	gameTransport     local.VirtualTransport
+	gameEndpoint      func(netip.AddrPort) error
+	gameUpdatesReady  bool
+	gameEndpointBound bool
 }
 
 func New(ctx context.Context, input io.ReadCloser, output io.WriteCloser) *Pipe {
@@ -183,6 +192,10 @@ func (p *Pipe) Ready(ctx context.Context) error {
 	if p.loopbackEndpoints {
 		capabilities = append(capabilities, "loopback.endpoints.v1")
 	}
+	p.gameUpdatesReady = p.gameEndpoint != nil && p.gameTransport.GamePending && !p.gameEndpointBound
+	if p.gameUpdatesReady {
+		capabilities = append(capabilities, "game.endpoint.v1")
+	}
 	p.mu.Unlock()
 	return p.send(ctx, map[string]any{"v": 1, "event": "ready", "capabilities": capabilities})
 }
@@ -203,6 +216,15 @@ func (p *Pipe) EnableLoopbackEndpoints() {
 	p.loopbackEndpoints = true
 }
 
+// EnableGameEndpoint must precede Ready. The private reader applies one exact
+// game source before acknowledging it; malformed or repeated updates close the
+// pipe. The callback must leave discovery closed if it returns an error.
+func (p *Pipe) EnableGameEndpoint(apply func(netip.AddrPort) error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.gameEndpoint = apply
+}
+
 // EnableOwnerNames must precede Ready. It belongs to admission, independently
 // of central or peer matchmaking. The reader serializes trusted name updates.
 func (p *Pipe) EnableOwnerNames(apply func(string, string) error) {
@@ -217,6 +239,10 @@ func (p *Pipe) Call(ctx context.Context, op string, fields map[string]any, resul
 	id := strconv.FormatUint(p.ids.Add(1), 10)
 	ch := make(chan response, 1)
 	p.mu.Lock()
+	if p.gameTransport.GamePending && !p.gameEndpointBound && (strings.HasPrefix(op, "directory.") || strings.HasPrefix(op, "peer.") || strings.HasPrefix(op, "advertisement.")) {
+		p.mu.Unlock()
+		return errors.New("game endpoint is pending")
+	}
 	if len(p.pending) >= 64 {
 		p.mu.Unlock()
 		return errors.New("companion request capacity")
@@ -303,12 +329,42 @@ func (p *Pipe) read() {
 				reason = closeOwner
 				return
 			}
+			if owner.Transport != nil {
+				p.mu.Lock()
+				p.gameTransport = *owner.Transport
+				p.mu.Unlock()
+			}
 			p.owner <- owner
 			first = false
 			continue
 		}
 		var eventName string
 		_ = json.Unmarshal(frame["event"], &eventName)
+		if eventName == "game.endpoint" {
+			var id, address string
+			var port uint16
+			if len(frame) != 5 || json.Unmarshal(frame["id"], &id) != nil || len(id) == 0 || len(id) > 64 || json.Unmarshal(frame["address"], &address) != nil || json.Unmarshal(frame["port"], &port) != nil {
+				reason = closeGameEndpoint
+				return
+			}
+			p.mu.Lock()
+			apply, enabled, transport := p.gameEndpoint, p.gameUpdatesReady && !p.gameEndpointBound, p.gameTransport
+			p.mu.Unlock()
+			transport.GamePending, transport.GameAddress, transport.GamePort = false, address, port
+			game, _, err := transport.Endpoints()
+			if !enabled || apply == nil || err != nil || apply(game) != nil {
+				reason = closeGameEndpoint
+				return
+			}
+			p.mu.Lock()
+			p.gameEndpointBound, p.gameUpdatesReady = true, false
+			p.mu.Unlock()
+			if p.send(p.ctx, map[string]any{"v": 1, "event": "game.endpoint.bound", "id": id, "address": address, "port": port}) != nil {
+				reason = closeGameEndpoint
+				return
+			}
+			continue
+		}
 		if eventName == "owner.name" {
 			var id, name string
 			if len(frame) != 4 || json.Unmarshal(frame["steam_id"], &id) != nil || json.Unmarshal(frame["online_id"], &name) != nil {
@@ -357,6 +413,13 @@ func (p *Pipe) read() {
 		case "peer.message", "room.changed", "room.closed", "room.selected", "error":
 		default:
 			reason = closeEvent
+			return
+		}
+		p.mu.Lock()
+		gamePending := p.gameTransport.GamePending && !p.gameEndpointBound
+		p.mu.Unlock()
+		if gamePending && e.Event != "error" {
+			reason = closeGameEndpoint
 			return
 		}
 		select {

@@ -38,17 +38,56 @@ type VirtualTransport struct {
 	Mode        string `json:"mode"`
 	Address     string `json:"address"`
 	Port        uint16 `json:"port"`
-	GameAddress string `json:"game_address"`
-	GamePort    uint16 `json:"game_port"`
+	GameAddress string `json:"game_address,omitempty"`
+	GamePort    uint16 `json:"game_port,omitempty"`
+	GamePending bool   `json:"game_pending,omitempty"`
+}
+
+func (t *VirtualTransport) UnmarshalJSON(raw []byte) error {
+	type plain VirtualTransport
+	var value plain
+	var fields map[string]json.RawMessage
+	if !strictjson.Decode(string(raw), &fields) || json.Unmarshal(raw, &value) != nil {
+		return errors.New("invalid transport descriptor")
+	}
+	if value.Mode == "loopback-v1" {
+		keys := []string{"mode", "address", "port", "game_address", "game_port"}
+		if value.GamePending {
+			keys = []string{"mode", "address", "port", "game_pending"}
+		}
+		if len(fields) != len(keys) {
+			return errors.New("invalid loopback transport fields")
+		}
+		for _, key := range keys {
+			if _, ok := fields[key]; !ok {
+				return errors.New("missing loopback transport field")
+			}
+		}
+	}
+	*t = VirtualTransport(value)
+	return nil
 }
 
 func (t VirtualTransport) Endpoints() (game, canonical netip.AddrPort, err error) {
 	ip, e1 := netip.ParseAddr(t.Address)
-	localIP, e2 := netip.ParseAddr(t.GameAddress)
-	if (t.Mode != "virtual-v1" && t.Mode != "loopback-v1") || e1 != nil || e2 != nil || !ip.Is4() || t.Port == 0 || !localIP.Is4() || !localIP.IsLoopback() || t.GamePort == 0 {
+	if (t.Mode != "virtual-v1" && t.Mode != "loopback-v1") || e1 != nil || !ip.Is4() || t.Port == 0 {
 		return game, canonical, errors.New("invalid virtual transport")
 	}
-	if t.Mode == "loopback-v1" && (!netip.MustParsePrefix("127.64.0.0/10").Contains(ip) || t.Port < 1024 || netip.MustParsePrefix("127.64.0.0/10").Contains(localIP)) {
+	canonical = netip.AddrPortFrom(ip, t.Port)
+	if t.Mode == "loopback-v1" && (!netip.MustParsePrefix("127.64.0.0/10").Contains(ip) || t.Port < 1024) {
+		return game, canonical, errors.New("invalid loopback transport")
+	}
+	if t.GamePending {
+		if t.Mode != "loopback-v1" || t.GameAddress != "" || t.GamePort != 0 {
+			return game, canonical, errors.New("invalid pending game endpoint")
+		}
+		return game, canonical, nil
+	}
+	localIP, e2 := netip.ParseAddr(t.GameAddress)
+	if e2 != nil || !localIP.Is4() || !localIP.IsLoopback() || t.GamePort == 0 {
+		return game, canonical, errors.New("invalid virtual transport")
+	}
+	if t.Mode == "loopback-v1" && netip.MustParsePrefix("127.64.0.0/10").Contains(localIP) {
 		return game, canonical, errors.New("invalid loopback transport")
 	}
 	return netip.AddrPortFrom(localIP, t.GamePort), netip.AddrPortFrom(ip, t.Port), nil

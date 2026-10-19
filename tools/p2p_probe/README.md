@@ -10,6 +10,7 @@ python tools/p2p_probe/run.py --library ../orbisteamworks/build/virtual-candidat
 python tools/p2p_probe/run.py --library ../orbisteamworks/build/virtual-candidate/orbisteamworks.dll --server bin/demonware-server-canonical-candidate.exe --party
 python tools/p2p_probe/run.py --library ../orbisteamworks/build/loopback-candidate/orbisteamworks.dll --server bin/demonware-server-bridge-candidate.exe --loopback --mixed-economy --weak-native-token
 python tools/p2p_probe/run.py --library ../orbisteamworks/build/loopback-candidate/orbisteamworks.dll --server bin/demonware-server-bridge-candidate.exe --loopback --mixed-economy --party --app-id 482
+python tools/p2p_probe/run.py --library ../orbisteamworks/build/loopback-candidate/orbisteamworks.dll --server bin/demonware-server-game-endpoint-candidate.exe --loopback --defer-game-endpoint --mixed-economy --weak-native-token
 ```
 
 Use current candidates containing `osw_enable_virtual_endpoints`,
@@ -118,6 +119,14 @@ physical loopbacks outside the reserved canonical range, so directly reaching
 the other game cannot satisfy these assertions.
 The owner frame must explicitly include the configured `app_id` even for 480;
 the loopback path has no missing-field or transport-mode fallback.
+
+`--defer-game-endpoint` additionally requires `osw_defer_game_endpoint` and the
+private `game.endpoint.v1` acknowledgement. It proves the actual publisher's
+discovery stays silent while the source is pending, then binds the fixture's
+explicit game source through `OSW_P2P game.endpoint.bind`, verifies the exact
+acknowledgement and rejects repeated binding before running the same encrypted
+lobby, CommonAddr and bidirectional canonical UDP checks. Only a supervisor may
+supply that source; the fixture does not infer it from an incoming packet.
 
 `--weak-native-token` explicitly sets `CTR_LOCAL_WEAK_TOKEN=1` for both children
 and authenticates with the upstream native token shape. Before each successful
