@@ -49,3 +49,4 @@ stdout.txt
 ctrnf.db
 ctrnf.db-*
 ctrnf.db.lock
+__pycache__/

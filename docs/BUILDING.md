@@ -66,3 +66,32 @@ These require explicit external setup and are separate from ordinary tests:
 Keep credentials, filled env files, captures and databases out of commits and
 release packages. Fixture success demonstrates the tested contract; original
 game behavior and multi-machine transport require separate validation.
+
+## Automated Windows builds and releases
+
+GitHub Actions runs the ordinary offline tests on pull requests and pushes to
+`main`. Builds use Windows Server 2022, Python 3.11.9 and Go 1.27.1. Hosted runner images
+can change; manifests record their image version and source commit. This is
+dependency pinning and traceability, not a claim of bit-identical compiler output.
+
+Open **Actions → Build, test and prepare release → Run workflow**, select `main`, and enter
+a version such as `v0.1.0-preview.1`. With `create_draft` selected, successful
+checks create a **draft prerelease** with the ZIP and external SHA-256 checksum.
+An existing release or conflicting tag is never replaced. For a packaging-only
+trial, clear `create_draft` and download the ZIP from the run's Artifacts.
+No new secret or personal token is required; only the draft job has write access.
+
+Inspect and test the downloaded package before publishing the draft. Offline
+fixtures do not establish live Steam or multi-PC game acceptance. Keep user
+configuration, databases, installed profiles and game files out of packages.
+
+Run the same build locally from the repository root with CMake/Go and Python on
+PATH: `python tools/ci_build.py --version v0.1.0-preview.1`.
+Builds use ignored output directories and refuse to overwrite an existing ZIP;
+choose a fresh version or archive the earlier output before rebuilding.
+The existing first preview release is not changed by adding these workflows.
+
+Go dependencies remain in `go.mod`/`go.sum`. CI verifies modules, runs `go vet`
+and all ordinary tests with readonly module resolution, then builds with
+`-trimpath`. Packages collect license notices from the command's linked modules
+and the Go toolchain. Dependabot proposes Go and GitHub Actions updates as PRs.
