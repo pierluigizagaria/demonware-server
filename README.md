@@ -25,6 +25,12 @@ as an inactive compatibility reference.
 
 ## Build
 
+Windows preview binaries are available in
+[Releases](https://github.com/pierluigizagaria/demonware-server/releases).
+For the native P2P mod, use the combined
+[ctrnf-p2p package](https://github.com/pierluigizagaria/ctrnf-p2p/releases) and its
+installation instructions.
+
 Requires **Go 1.25 or newer**. No C compiler, OpenSSL or sibling checkout is needed.
 
 ```sh
