@@ -101,11 +101,11 @@ explicit direct-loopback option, never a general TLS replacement.
 
 Authentication replies are **unsigned**, regardless of admission provider. Enable
 the [CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch)
-for the supported game version. There is no response signing key or OpenSSL
-dependency; TLS certificates serve a different purpose.
+for the supported game version. No response-signing key is configured; the TLS
+certificate only secures the connection.
 
-The optional inherited UDP relay is disabled by default and is not qualified for
-PS4 races. Local P2P mode refuses it. Configure monitoring access with `DASH_TOKEN`
+The optional inherited UDP relay is disabled by default and has not been tested
+with PS4 races. Local P2P mode refuses it. Configure monitoring access with `DASH_TOKEN`
 and your deployment's network controls; the sample `change-me` is a placeholder.
 
 ## Economy and storage
@@ -125,10 +125,10 @@ by the game save.
   are bound to the database. Separate normal and unlock-all instances need
   separate data directories, listeners and matchmaking pools.
 - **Local admission:** one installation's database is shared by accounts and
-  both economy modes. Rows use SteamID; the Steam and Lab backends retain
-  separate trust bindings. Unlock-all does not persist catalog grants, while
-  earned rewards and statistics can persist in both modes. Compatible v1 local
-  bindings upgrade in place; unrelated databases are refused.
+  both economy modes. Rows use SteamID; the provider's Steam and simulated test
+  backends never share a database. Unlock-all does not persist catalog grants,
+  while earned rewards and statistics persist in both modes. Databases bound to
+  another namespace are refused.
 
 Local AppID, realm and account changes do not reset progression. Native saves
 remain the host's responsibility. The game can cache inventory in its save;
@@ -154,12 +154,11 @@ after editing news. A game already displaying a message can retain its cached
 text until its next news download; an empty reply does not erase that cache.
 
 Logs are redacted by default. Raw dumps can contain credentials and player data;
-local admission requires redaction. `D3_PUBFILES` still selects optional generic
-CTR physical publisher files; legacy `D3_PUBFILES_CONFIG` and `D3_RIFTDATA` are
-accepted but inactive. The `pubfiles` command validates configuration and exits
+local admission requires redaction. `D3_PUBFILES` selects optional CTR publisher
+files on disk; `D3_PUBFILES_CONFIG` and `D3_RIFTDATA` are accepted for
+compatibility with upstream configuration files but have no effect. The `pubfiles` command validates configuration and exits
 without generating Diablo files.
 
 SIGINT/SIGTERM closes admission, drains admitted work and closes SQLite before
-releasing the instance lock. A single 30-second shutdown bound applies; it is
-not an idle or session lifetime limit. A committed operation may outlive its
+releasing the instance lock. Shutdown is bounded to 30 seconds. A committed operation may outlive its
 network reply, so exactly-once delivery is not promised.

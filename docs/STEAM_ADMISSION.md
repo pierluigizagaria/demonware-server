@@ -1,55 +1,69 @@
 # Verified Steam admission
 
-This is the central `CTR_ADMISSION=steam` integration. It remains fixed to AppID
-480 and differs from provider-managed local P2P, whose AppID is supplied through
-the companion protocol; see [Configuration](CONFIGURATION.md#admission-and-matchmaking)
-and [P2P_LOCAL.md](P2P_LOCAL.md). Current authentication replies are unsigned and
-require the client signature patch.
+`CTR_ADMISSION=steam` admits players on a central server by verified Steam
+identity, using the orbiSteamworks
+[authentication helper](https://github.com/pierluigizagaria/orbisteamworks/blob/main/server/auth-helper/README.md)
+over private child-process pipes. It is separate from local P2P admission
+(see [Local publisher and P2P boundary](P2P_LOCAL.md)).
 
-The `steam` admission provider uses the orbiSteamworks authentication helper
-over private child-process pipes.
+**Client availability:** this mode needs a game client that obtains `osw1`
+tickets from orbiSteamworks and sends them to this server. No such client is
+published yet; see [Current limitations](LIMITATIONS.md#client-integrations).
 
-Use `CTR_ADMISSION=steam`, an absolute `CTR_STEAM_HELPER` executable path and
+## Configuration
+
+Set `CTR_ADMISSION=steam`, an absolute `CTR_STEAM_HELPER` executable path and
 `CTR_STEAM_REALM` (1–64 letters, digits, underscores or hyphens). Optionally set
-`CTR_STEAM_LIBRARY` to the user-supplied Valve runtime library; otherwise it is
-loaded beside the helper. Leave all `SHADNET_*` settings empty. AppID is fixed
-at 480. No Steam Web API key or client password is used.
+`CTR_STEAM_LIBRARY` to the operator-supplied Steam API library; otherwise the
+helper loads it from its own directory. Leave all `SHADNET_*` settings empty.
+The AppID is always 480, and no Steam Web API key or client password is used.
 
-Select a fresh `DATA_DIR`. Trust is `ctrnf:steam:480:5760:v1:<realm>` and the
-instance's normal/unlock-all policy is still enforced separately. Existing
-shadNet or guest databases are refused and are not migrated. The initial
-SQLite schema includes Steam name bindings and consumed ticket hashes.
+Use a fresh `DATA_DIR`. The database is bound to the trust ID
+`ctrnf:steam:480:5760:v1:<realm>` and to the instance's normal or unlock-all
+policy; shadNet or guest databases are refused and are not migrated.
 
-The Steam client issues `osw1.<SteamID>.<hex-ticket>.<base64url-online-ID>`.
-The original PS4 publisher envelope remains unchanged. The native helper
-checks the ticket using anonymous game-server authentication. The provider
-accepts only a matching validated SteamID and a nonzero owner, then atomically
-records the ticket's canonical SHA-256 hash and the SteamID/name binding.
-Names are 1–16 bytes of UTF-8 without control characters or surrounding
-spaces (the client derives them from the Steam persona). They are
-case-insensitively unique. The same SteamID may present a new name on a later
-admission: the binding, the 12/10 name and its leaderboard rows follow it. A name conflict, replay, unavailable store or helper failure
-refuses admission. No unverified Steam mode is implemented.
+Authentication replies are unsigned, so clients need the
+[CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch).
 
-Consumed hashes persist without a short expiry. Native Steam determines
-ticket validity; a verified 120-second Steam ticket age is not claimed.
-The existing 120-second publisher-ticket window is only a handoff deadline:
-an unclaimed native admission expires, while a claimed lobby connection has
-no elapsed-time or idle timeout. Each native admission can be claimed once.
-Connection close releases it; authentication/response-write failures release
-it too. Later Steam revocation or helper loss never disconnects an established
-publisher player. A failed helper generation refuses new admissions until
-the operator restarts the server.
+## Admission flow
 
-`GET /orbi/steam/v1` on the existing publisher HTTPS listener returns the
-protocol, AppID, title, realm and current helper server ID. It carries no
-credential and is marked `Cache-Control: no-store`. Hosts must validate the
-configured publisher's TLS identity and realm before issuing a bound ticket.
-The helper identity can change on restart. The endpoint is absent with other
-admission providers. Binding does not authenticate the online-ID field; the
-publisher's persistent binding owns that decision.
+The token format, helper protocol and verifier rules are specified in
+[osw1 token and auth-helper protocol](https://github.com/pierluigizagaria/orbisteamworks/blob/main/docs/OSW1_TOKEN_AND_HELPER.md).
+This server implements them as follows.
 
-Matchmaking, room rules and the shared Demonware wire protocol are unchanged.
-The lobby handshake gains only native-admission ownership at the existing
-issued-ticket boundary. Default shadNet and guest providers use no native
-admission object and keep their existing behavior.
+1. **Discovery.** `GET /orbi/steam/v1` on the auth HTTPS listener returns the
+   protocol, AppID, title, realm and current helper server ID, with
+   `Cache-Control: no-store`. It carries no credential and is absent with other
+   admission providers. The helper identity changes when it restarts. Clients
+   must validate the server's TLS identity and realm before requesting a bound
+   ticket.
+2. **Envelope.** The client sends `osw1.<SteamID>.<hex-ticket>.<base64url-online-ID>`
+   inside the original PS4 authentication envelope: `title_id` `5760`,
+   `auth_task` `46`, a decimal `iv_seed`, and `extra_data` → `token` →
+   `id_token`, in a body of at most 16 KiB.
+3. **Verification.** The helper validates the ticket through anonymous Steam
+   game-server authentication. The server requires the validated SteamID to
+   match the token and a nonzero owner (owner and user may differ), then records
+   the ticket's SHA-256 hash and the SteamID/name binding in one transaction.
+4. **Identity.** The player is admitted with PID = SteamID64, the online ID as
+   username, subject `steam:<SteamID64>` and kind `steam`.
+
+Names are 1–16 bytes of UTF-8 without control characters or surrounding spaces;
+the client derives them from the Steam persona. They are unique regardless of
+letter case. The same SteamID may present a new name on a later admission; the
+binding, the name used by friend lookups and the player's leaderboard rows
+follow it. A name conflict, replay, unavailable store or helper failure refuses
+admission. There is no unverified Steam mode.
+
+## Lifetime
+
+Consumed ticket hashes never expire; Steam decides ticket validity. A verified
+admission must be claimed by the game's lobby connection within the 120-second
+handoff window for issued lobby tickets, otherwise it expires. Each admission is
+claimed once, and closing that connection releases it, as do authentication or
+response-write failures. Later Steam revocation or helper loss does not
+disconnect an established player. After a helper failure the server refuses new
+admissions until the operator restarts it.
+
+Matchmaking, room rules and the Demonware wire protocol are the same as for
+other admission providers.

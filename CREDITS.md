@@ -32,7 +32,7 @@ Codex and architecture discussion/review with Claude.
 - **[shadPS4](https://github.com/shadps4-emu/shadPS4)** provides the independent
   PS4 emulator integration.
 - **[shadNet](https://github.com/shadps4-emu/shadNet)** provides the independent
-  account/identity service used by normal instances.
+  account/identity service used by `shadnet` admission.
 - **[CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch)**
   is the separate client-side signature-trust prerequisite for the tested PS4 game.
 

@@ -40,8 +40,8 @@ local P2P uses account-keyed rows shared across economy modes. See
 [Configuration](docs/CONFIGURATION.md#economy-and-storage).
 
 Shutdown stops admission, drains owned work, closes listeners and storage, and
-releases the instance lock. Established lobby sessions have no idle cutoff.
-Client-reported race outcomes remain client assertions; the server's duplicate
+releases the instance lock. Established lobby sessions have no idle or
+session-length limit. Client-reported race outcomes remain client assertions; the server's duplicate
 reward checks do not provide authoritative race simulation.
 
 ## Maintaining the fork

@@ -10,9 +10,11 @@ Pit Stop inventory, progression, leaderboards and NAT discovery. It can run as a
 central server or as a local publisher managed by a platform provider. Game
 execution and platform services belong to separate projects.
 
-**Experimental:** a compatible client integration is required.
-See [Current limitations](docs/LIMITATIONS.md). Diablo III code is retained only
-as an inactive compatibility reference.
+**Experimental:** a compatible client integration is required. Today the only
+published one is the [ctrnf-p2p](https://github.com/pierluigizagaria/ctrnf-p2p)
+mod, which uses local P2P mode; the central modes still wait for client support
+(see [client integrations](docs/LIMITATIONS.md#client-integrations)). Diablo III
+code is retained only as an inactive compatibility reference.
 
 ## Features
 
@@ -20,7 +22,7 @@ as an inactive compatibility reference.
 - Central matchmaking, or provider-backed peer matchmaking with local progression.
 - Normal progression and an opt-in unlock-all Pit Stop policy.
 - SQLite persistence, configurable menu news and monitoring endpoints.
-- Graceful shutdown with no idle cutoff for established lobby sessions.
+- Graceful shutdown that drains admitted work and closes storage cleanly.
 
 ## Build
 
@@ -51,8 +53,8 @@ admission provider, TLS and listener addresses, then run:
 ```
 
 The default is **shadNet admission, central matchmaking and normal progression**.
-It requires a configured shadNet issuer and a compatible client; the example is a
-settings reference, not a ready-to-connect deployment.
+It requires a configured shadNet issuer and a client with NPAuth support; the
+example is a settings reference, not a ready-to-connect deployment.
 
 | Integration | Admission | What starts the server |
 | --- | --- | --- |
@@ -61,12 +63,15 @@ settings reference, not a ready-to-connect deployment.
 | Local publisher with Steam peer transport | `local` | A compatible companion provider, such as orbiSteamworks |
 | Anonymous unlock-all instance | `guest` | Operator; requires an account-free client integration |
 
+Only the local P2P integration currently has a published client; see
+[client integrations](docs/LIMITATIONS.md#client-integrations).
+
 All authentication replies are unsigned. The client must enable the
 [CTR:NF Server Signature Patch](https://github.com/pierluigizagaria/ctrnf-server-signature-patch).
 The server includes neither a game client nor its routing and platform integration.
-For local P2P, use the host/bridge's setup instructions: `CTR_ADMISSION=local`
-requires a private inherited-pipe handshake and cannot be started as a standalone
-replacement for that provider.
+For local P2P, follow the ctrnf-p2p installation instructions: `CTR_ADMISSION=local`
+requires a private inherited-pipe handshake from its provider and cannot be
+started on its own.
 
 See [Configuration](docs/CONFIGURATION.md) for provider prerequisites, defaults,
 database ownership and the difference between central and local economy modes.

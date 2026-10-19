@@ -1,6 +1,21 @@
 # Current limitations
 
-This page describes incomplete services and the supported integration scope.
+This page describes client availability, incomplete services and the
+supported scope.
+
+## Client integrations
+
+The server needs a compatible game client for its admission provider:
+
+| Admission | Client integration |
+| --- | --- |
+| `local` | [ctrnf-p2p](https://github.com/pierluigizagaria/ctrnf-p2p) with the native port: published, experimental |
+| `shadnet` (default) | Needs NPAuth ID-token support in shadNet and shadPS4, proposed in [shadNet#44](https://github.com/shadps4-emu/shadNet/pull/44) and [shadPS4#5350](https://github.com/shadps4-emu/shadPS4/pull/5350) and not yet part of an official release |
+| `steam` | Needs a client that issues orbiSteamworks `osw1` tickets; none is published |
+| `guest` | Needs an account-free client integration; none is published |
+
+Until those integrations are available, the central modes can be built, configured
+and tested, but players cannot connect to them with released clients.
 
 ## Incomplete service behavior
 
@@ -26,8 +41,8 @@ This page describes incomplete services and the supported integration scope.
   or validate the result against an authoritative game simulation. See
   [race rewards](../internal/ctr/rewards.go) and
   [challenge rules](../internal/ctr/challenge_rules.go).
-- **The inherited central UDP relay is not qualified for PS4 races.** It is
-  disabled by default and separate from provider-backed local P2P transport.
+- **The inherited central UDP relay has not been tested with PS4 races.** It
+  is disabled by default and separate from provider-backed local P2P transport.
 
 The local companion protocol permits only a bounded set of room operations
 across peers. Its rejection rules are not equivalent to the central dispatcher's

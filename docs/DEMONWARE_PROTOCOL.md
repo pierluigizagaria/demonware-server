@@ -8,15 +8,15 @@ The PolyForm Shield license and original attribution remain unchanged.
 
 This is a specification of the dialect implemented here, not an official
 Demonware specification or a claim that every Demonware game is compatible.
-The current executable admits CTR PS4 title **5760** only. Retaining Diablo
-handlers and fixtures does not restore Diablo login or qualify Diablo PS4.
+The current executable admits CTR PS4 title **5760** only. The retained Diablo
+handlers and fixtures do not provide Diablo login or Diablo PS4 support.
 
 ## Evidence and scope
 
 Pinned source lineage:
 
 - Original Nextendo: `c3400c312a739cf7598204a981156959910ed874`.
-- Fork immediately before extraction: `c16b085`.
+- Baseline before `internal/demonware` was extracted: `c16b085`.
 - Historical clients: Diablo III Switch (title 5745), CTR Switch (5775).
   The active fork targets CTR PS4 CUSA13795 01.21 (5760).
 
@@ -41,11 +41,11 @@ applies to that title and version, not every Demonware client.
 
 | Contract | CTR evidence | Diablo evidence | Boundary and executable checks |
 | --- | --- | --- | --- |
-| Version negotiation, framed lobby, ticket-key handshake | Existing PS4 admission/integration fixtures; earlier local client acceptance | D3 NSO layout and upstream merged-server report (**U**) | Common wire code; `TestHelloAndTranscriptLayout`, `TestFrameBoundariesAndKeepalive`, original admission tests. Identity and ticket validity remain application policy. |
-| SHA-1 key derivation, directional AES-CBC and truncated MAC | Existing encrypted CTR flow; fixed pre-refactor vectors | Inherited `bdcrypto.go` D3 reconstruction (**U**) | `TestPreRefactorWireVectors`, `TestEncryptedFrameTamperingAndBounds`. Algorithm compatibility does not establish shared credentials or trust. |
+| Version negotiation, framed lobby, ticket-key handshake | PS4 admission and integration fixtures; a local game session | D3 NSO layout and upstream merged-server report (**U**) | Common wire code; `TestHelloAndTranscriptLayout`, `TestFrameBoundariesAndKeepalive`, original admission tests. Identity and ticket validity remain application policy. |
+| SHA-1 key derivation, directional AES-CBC and truncated MAC | Encrypted CTR flow; fixed wire vectors | Inherited `bdcrypto.go` D3 reconstruction (**U**) | `TestPreRefactorWireVectors`, `TestEncryptedFrameTamperingAndBounds`. Algorithm compatibility does not establish shared credentials or trust. |
 | Typed arguments, task/result envelopes | CTR task/reply fixtures, structured HTTP envelope assertions | D3 task reader notes and inherited handlers (**U**) | `Reader`, `Writer`, reply functions. A shared service number or envelope does not establish the same payload schema. |
-| Rich presence 68/3 argument shape | `TestCTRRichPresenceRoundTrip`, a synthetic inherited Switch fixture | `TestRichPresenceFromTheRealLog`, literal bytes described upstream as a D3 login capture (**U**) | Same context/account/platform/flag/blob shape in `richpresence.go`. Payload contents, platform ID mapping and live friend visibility remain unqualified across games. |
-| Presence state and disconnect cleanup | Existing presence/online-state tests | Same inherited implementation; no independent live D3 friend visibility proof | Application behavior (**I/U**), not a codec rule. Kept out of the package. |
+| Rich presence 68/3 argument shape | `TestCTRRichPresenceRoundTrip`, a synthetic inherited Switch fixture | `TestRichPresenceFromTheRealLog`, literal bytes described upstream as a D3 login capture (**U**) | Same context/account/platform/flag/blob shape in `richpresence.go`. Payload contents, platform ID mapping and live friend visibility are not verified across games. |
+| Presence state and disconnect cleanup | Presence and online-state tests | Same inherited implementation; no independent live D3 friend visibility proof | Application behavior (**I/U**), not a codec rule. Kept out of the package. |
 | Session IDs, typed blobs and result framing | CTR contextual matchmaking tests | D3 service-21 handlers and upstream create/find report (**U**) | Shared serialization; game attributes, search filters, party/merge rules and race transport stay outside. No claim of one matchmaking algorithm for every game. |
 | Struct buffers and HTTP proxy reply variant | CTR assertions, including immediate StructStart and both status fields | Shared SDK-shaped implementation; no independent D3 acceptance fixture for every variant | Generic wire helpers are reusable; this is not a claim that every variant was exercised by both games. |
 | Inventory, prices, coins, rewards, achievements | CTR-specific rules and tests | No implemented equivalent economy establishes parity | Remain in `ctr_*` and the CTR database. Similar names are insufficient evidence for a shared domain model. |
@@ -82,8 +82,7 @@ Arrows describe composition/dependencies, not additional services or network
 APIs. The entrypoint injects the CTR table into the lobby; the lobby never
 imports CTR. SQLite implements CTR's consumer-owned interfaces; CTR never
 imports the adapter. No admitted title or production entrypoint reaches Diablo.
-`httpserver` owns only the existing auth/dashboard transports. The protocol
-package and its original vectors are unchanged by the architecture refactor.
+`httpserver` owns only the auth and dashboard transports.
 
 
 Dependencies point from services to the wire package. It cannot import package
@@ -188,17 +187,18 @@ Treat compatibility as a set of contracts to demonstrate. Obtain lawful client
 evidence or captures for the specific game/platform/version; identify its hello,
 transcript, keys, frame dialect and task envelopes; add independent byte fixtures
 and negative cases; implement its admission and service schemas in the application;
-then qualify a real login and required operations before claiming game support.
+then verify a real login and required operations before claiming game support.
 Record unsupported variants explicitly. Do not weaken CTR admission, share its
 economy database or assume identical catalog/reward rules to make a new client fit.
 
 This establishes a reusable protocol boundary and a way to test future reuse.
 It does not establish how Demonware organizes its own production backend or
 which third game will be compatible without further evidence.
+
 ## JSON compatibility references
 
-The code-quality cleanup records JSON on the unchanged `06912ba` implementation
-before renaming any fields. Each package's `json_reference_test.go` and
+JSON reference fixtures, recorded from implementation `06912ba`, keep serialized
+field names and shapes stable. Each package's `json_reference_test.go` and
 `testdata/json_reference.json` cover zero and populated values, exact Marshal
 bytes, Encoder's trailing newline, and decoding a saved input into the original
 value. Anonymous wire structs are also checked against their production source
@@ -222,9 +222,8 @@ synthetic data only and have no regeneration mode.
 
 Nested types are exercised through their root values. The shared wire package
 does not serialize production JSON; its JSON use loads test fixtures. The
-architecture dispatcher fixture remains unchanged: 648 snapshots with exactly
-the existing 12 service-21 Diablo disconnection exceptions. No schema or SQL
-change accompanies these references.
+architecture dispatcher fixture contains 648 snapshots, including 12 service-21
+Diablo disconnection exceptions.
 
 ## Inherited router compatibility
 
