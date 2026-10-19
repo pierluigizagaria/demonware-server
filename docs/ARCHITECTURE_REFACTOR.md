@@ -1,5 +1,9 @@
 # CTR:NF server architecture refactor
 
+Historical implementation plan for the 2026-10-14 refactor. Its phase checklist
+and branch names describe that work, not the current setup procedure. See
+[Configuration](CONFIGURATION.md) and [Building and testing](BUILDING.md).
+
 Decision: 2026-10-14, by the user, after review of `33dc1c6` (protocol
 extraction, accepted in game with the shadNet A/B pair on 2026-10-14). The plan
 below was reviewed by Codex and Claude in two read-only rounds before

@@ -1,5 +1,9 @@
 # Diablo III (Switch) — local Demonware server: notes
 
+Historical upstream research. The current executable admits CTR:NF only; it
+does not run the Diablo/Nextendo setup described below. See the
+[documentation index](docs/README.md) for current contracts and setup.
+
 Everything here was read out of the game binary or observed live on a real
 console. Nothing is guessed unless marked **UNCONFIRMED**. Keep this file
 updated as you go: it is the map for the next game server too.

@@ -1,5 +1,9 @@
 # Architecture refactor implementation report
 
+Historical report for the revisions named below. Later admission and P2P work
+does not change what those tests established. See the [documentation index](README.md)
+for current setup and integration contracts.
+
 Review handoff for the user and Claude, 2026-10-14. Phases 0–4 of
 [the binding brief](ARCHITECTURE_REFACTOR.md) are implemented on the local
 `refactor/ctrnf-architecture` branch, based on `33dc1c6`.

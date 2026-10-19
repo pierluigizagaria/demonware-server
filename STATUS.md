@@ -1,4 +1,10 @@
-# CTR implementation update (2026-09-23)
+# Historical status notes
+
+This is a retained upstream-era assessment, not the current server's feature
+list. Balances, persistence, admission and other behavior changed afterward.
+Start with [README.md](README.md) and the [documentation index](docs/README.md).
+
+## CTR implementation update (2026-09-23)
 
 The current server includes CTR asynchronous party matchmaking, friend presence, optional UDP relay, persistent marketplace balances and item ownership, catalog purchases, Pit Stop refreshes, and original race reward tables. Marketplace and refresh behavior have been verified in-game. Economy writes are persisted atomically per account.
 

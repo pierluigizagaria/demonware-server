@@ -1,5 +1,9 @@
 # Seasons and their themes
 
+Historical Diablo III reference. The current CTR:NF executable does not generate
+or serve these season files. See the [documentation index](docs/README.md) for
+current server documentation.
+
 In Diablo III a season is a number and a window, plus a **theme**. The game gets the number and window from `Seasons.txt`, and the theme as community events in `Config.txt` (see [PUBFILES.md](PUBFILES.md)). This page lists what each season's theme is, so the server can switch the right events on when the season rotates (`season_rotation` in `pubfiles.json`).
 
 ## Where the information comes from

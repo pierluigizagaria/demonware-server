@@ -1,5 +1,9 @@
 # Publisher files
 
+Historical Diablo III reference. These generators are inactive in the current
+CTR:NF executable; the `pubfiles` command generates no files. Current storage
+settings are described in [Configuration](docs/CONFIGURATION.md#news-diagnostics-and-shutdown).
+
 When an online session starts, Diablo III asks the lobby for three small text files: the season, the community events with their multipliers, and an item blacklist. The server generates them from `pubfiles.json`.
 
 ## How it works

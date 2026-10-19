@@ -1,5 +1,12 @@
 # Implementation and provenance
 
+This file preserves implementation decisions and revision-specific observations.
+For current setup, use [Configuration](docs/CONFIGURATION.md) and
+[Building and testing](docs/BUILDING.md). Historical branch names identify past
+work; they are not required checkouts. Steam central admission and local P2P
+were added after the architecture history below; their current contracts are in
+[STEAM_ADMISSION.md](docs/STEAM_ADMISSION.md) and [P2P_LOCAL.md](docs/P2P_LOCAL.md).
+
 Base: `c3400c312a739cf7598204a981156959910ed874` from
 [NextendoNetwork/nextendo-demonware](https://github.com/NextendoNetwork/nextendo-demonware).
 License unchanged: PolyForm Shield.
@@ -27,9 +34,9 @@ architecture refactor. Profile B crashed once on `Game:Main` with `0xc0000005`
 about five seconds after the first match notification; it did not recur after
 restart. The cause remains open and unattributed.
 
-This fork admits only CTR:NF PS4 title 5760 through the configured shadNet or
-explicit guest provider. The shared protocol remains in `internal/demonware`;
-one CTR service table is wired per instance. Diablo III handlers and generators
+This fork admits only CTR:NF PS4 title 5760 through the configured shadNet,
+Steam, local-companion or explicit guest provider. The shared protocol remains
+in `internal/demonware`; one CTR service table is wired per instance. Diablo III handlers and generators
 are retained in `internal/diablo` for compatibility tests and cannot be reached
 by an admitted client. Nintendo sign-in, account gates, presence reporting and
 console friend lookups remain removed.
@@ -89,7 +96,7 @@ Keys and certificates stay in their own files, named by path.
 
 | Variable | Purpose |
 | --- | --- |
-| `CTR_ADMISSION` | `shadnet` (default) or `guest`. Guest requires `CTR_UNLOCK_ALL=1` and empty `SHADNET_*` values. Selection is passed to the auth handler; no mutable global admission switch. |
+| `CTR_ADMISSION` | `shadnet` (default), `steam`, `local` or `guest`. Guest requires `CTR_UNLOCK_ALL=1`; all non-shadNet providers require empty `SHADNET_*` values. See [provider requirements](docs/CONFIGURATION.md#admission-and-matchmaking). Selection is passed to the auth handler; no mutable global admission switch. |
 | `SHADNET_ISSUER`, `SHADNET_CLIENT_ID`, `SHADNET_TITLE_ID`, `SHADNET_SCOPES`, `SHADNET_JWKS_URL` | Required for shadNet admission: issuer, registered client and title, exact granted scopes (space-separated) and the trusted public key set |
 | `DATA_DIR` | Persistent state directory (default `data`): `ctrnf.db` holds the economy, ledger, mode, leaderboards and player names. |
 | `CTR_UNLOCK_ALL` | Optional instance-wide unlock-all: unset, `0`, `false` = off; `1`, `true` = on. A central database records the mode and refuses a different one; local admission shares one database across modes. |
@@ -236,6 +243,10 @@ Platform friends and invitations are not promised for anonymous identities.
 
 ## Two publisher servers
 
+This section's separate-instance layout applies to central admission. Local P2P
+uses one installation database and shares it between economy modes, as described
+in [Configuration](docs/CONFIGURATION.md#economy-and-storage).
+
 An unlock-all server and a normal economy server are two processes with their own
 `DATA_DIR`, listeners and matchmaking pools. Both may trust the same shadNet issuer,
 or the unlock-all instance can explicitly choose guest admission. Nothing is shared
@@ -297,7 +308,7 @@ go test -tags=integration -run TestShadNetPublisherInterop ./cmd/ctrnf-server   
 ```
 
 The opt-in integration test consumes tokens from a running native shadNet issuer
-and checks verification, the signed response, ticket issuance and lobby admission.
+and checks verification, the unsigned response, ticket issuance and lobby admission.
 It was not run for this offline architecture task. Full synthetic verification,
 package moves and remaining risks are recorded in the
 [final report](docs/ARCHITECTURE_REFACTOR_REPORT.md).
